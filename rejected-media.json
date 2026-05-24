@@ -1,0 +1,736 @@
+[
+  {
+    "time": "2026-05-22T09:58:00.259Z",
+    "reason": "title shorter than 3 chars",
+    "filename": "Ak.47.Kalashnikov.2020.720p.WEBRip.800MB.x264-GalaxyRG.mkv",
+    "title": "AK-47",
+    "normalizedTitle": "AK",
+    "tmdbId": null,
+    "streamUrl": "http://172.16.50.7/DHAKA-FLIX-7/English%20Movies/(2020)/AK-47%20-%20Kalashnikov%20(2020)%20720p%20WEBRip/Ak.47.Kalashnikov.2020.720p.WEBRip.800MB.x264-GalaxyRG.mkv",
+    "year": "2020"
+  },
+  {
+    "time": "2026-05-22T14:53:40.825Z",
+    "reason": "unsupported playable extension",
+    "filename": "Dept. Q (TV Series 2025– ) 1080p [Dual Audio]",
+    "title": "Dept. Q (TV Series 2025– ) 1080p [Dual Audio]",
+    "normalizedTitle": "Dept Q TV Series -",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2025"
+  },
+  {
+    "time": "2026-05-22T14:53:40.838Z",
+    "reason": "unsupported playable extension",
+    "filename": "House M.D. (TV Series 2004–2012) 1080p",
+    "title": "House M.D. (TV Series 2004–2012) 1080p",
+    "normalizedTitle": "House M D TV Series 2004-",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2012"
+  },
+  {
+    "time": "2026-05-22T14:53:40.935Z",
+    "reason": "title shorter than 3 chars",
+    "filename": "Season 3 (Hindi Dubbed)",
+    "title": "Season 3 (Hindi Dubbed)",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": ""
+  },
+  {
+    "time": "2026-05-22T14:53:40.935Z",
+    "reason": "invalid normalized title",
+    "filename": "Season 3 (Hindi Dubbed)",
+    "title": "Season 3 (Hindi Dubbed)",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": ""
+  },
+  {
+    "time": "2026-05-22T14:53:40.936Z",
+    "reason": "title shorter than 3 chars",
+    "filename": "Season 3",
+    "title": "Season 3",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": ""
+  },
+  {
+    "time": "2026-05-22T14:53:40.936Z",
+    "reason": "invalid normalized title",
+    "filename": "Season 3",
+    "title": "Season 3",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": ""
+  },
+  {
+    "time": "2026-05-22T14:53:41.013Z",
+    "reason": "unsupported playable extension",
+    "filename": "Mr Bates vs. The Post Office (TV Mini Series 2024) 1080p",
+    "title": "Mr Bates vs. The Post Office (TV Mini Series 2024) 1080p",
+    "normalizedTitle": "Mr Bates vs The Post Office TV Mini Series",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2024"
+  },
+  {
+    "time": "2026-05-22T14:53:41.013Z",
+    "reason": "unsupported playable extension",
+    "filename": "Mr. & Mrs. Smith (TV Series 2024– ) 1080p [Dual Audio]",
+    "title": "Mr. & Mrs. Smith (TV Series 2024– ) 1080p [Dual Audio]",
+    "normalizedTitle": "Mr & Mrs Smith TV Series -",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2024"
+  },
+  {
+    "time": "2026-05-22T14:53:41.073Z",
+    "reason": "title shorter than 3 chars",
+    "filename": "Season 1",
+    "title": "Season 1",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": ""
+  },
+  {
+    "time": "2026-05-22T14:53:41.073Z",
+    "reason": "invalid normalized title",
+    "filename": "Season 1",
+    "title": "Season 1",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": ""
+  },
+  {
+    "time": "2026-05-22T14:53:41.074Z",
+    "reason": "title shorter than 3 chars",
+    "filename": "Season 1 (Hindi Dubbed)",
+    "title": "Season 1 (Hindi Dubbed)",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": ""
+  },
+  {
+    "time": "2026-05-22T14:53:41.074Z",
+    "reason": "invalid normalized title",
+    "filename": "Season 1 (Hindi Dubbed)",
+    "title": "Season 1 (Hindi Dubbed)",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": ""
+  },
+  {
+    "time": "2026-05-22T14:53:41.213Z",
+    "reason": "title shorter than 3 chars",
+    "filename": "Season 1 (English Dubbed)",
+    "title": "Season 1 (English Dubbed)",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": ""
+  },
+  {
+    "time": "2026-05-22T14:53:41.213Z",
+    "reason": "invalid normalized title",
+    "filename": "Season 1 (English Dubbed)",
+    "title": "Season 1 (English Dubbed)",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": ""
+  },
+  {
+    "time": "2026-05-22T14:53:41.213Z",
+    "reason": "title shorter than 3 chars",
+    "filename": "Season 1 [Hindi+Korean]",
+    "title": "Season 1 [Hindi+Korean]",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": ""
+  },
+  {
+    "time": "2026-05-22T14:53:41.213Z",
+    "reason": "invalid normalized title",
+    "filename": "Season 1 [Hindi+Korean]",
+    "title": "Season 1 [Hindi+Korean]",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": ""
+  },
+  {
+    "time": "2026-05-22T14:53:41.429Z",
+    "reason": "title shorter than 3 chars",
+    "filename": "Season 1 [Dual Audio]",
+    "title": "Season 1 [Dual Audio]",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": ""
+  },
+  {
+    "time": "2026-05-22T14:53:41.429Z",
+    "reason": "invalid normalized title",
+    "filename": "Season 1 [Dual Audio]",
+    "title": "Season 1 [Dual Audio]",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": ""
+  },
+  {
+    "time": "2026-05-22T14:53:41.492Z",
+    "reason": "filename contains only release or codec tags",
+    "filename": "Season 1 [001–050] (Hindi Dubbed)",
+    "title": "Season 1 [001–050] (Hindi Dubbed)",
+    "normalizedTitle": "001-050",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": ""
+  },
+  {
+    "time": "2026-05-22T14:53:41.493Z",
+    "reason": "filename contains only release or codec tags",
+    "filename": "Season 1 [051–099] (Hindi Dubbed)",
+    "title": "Season 1 [051–099] (Hindi Dubbed)",
+    "normalizedTitle": "051-099",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": ""
+  },
+  {
+    "time": "2026-05-22T14:53:41.494Z",
+    "reason": "filename contains only release or codec tags",
+    "filename": "Season 1 [100–150] (Hindi Dubbed)",
+    "title": "Season 1 [100–150] (Hindi Dubbed)",
+    "normalizedTitle": "100-150",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": ""
+  },
+  {
+    "time": "2026-05-22T14:53:41.538Z",
+    "reason": "title shorter than 3 chars",
+    "filename": "Season 1 [Dual Audio] 1080p",
+    "title": "Season 1 [Dual Audio] 1080p",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": ""
+  },
+  {
+    "time": "2026-05-22T14:53:41.538Z",
+    "reason": "invalid normalized title",
+    "filename": "Season 1 [Dual Audio] 1080p",
+    "title": "Season 1 [Dual Audio] 1080p",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": ""
+  },
+  {
+    "time": "2026-05-22T14:53:41.538Z",
+    "reason": "title shorter than 3 chars",
+    "filename": "Season 1 [Multi Audio] 720p",
+    "title": "Season 1 [Multi Audio] 720p",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": ""
+  },
+  {
+    "time": "2026-05-22T14:53:41.538Z",
+    "reason": "invalid normalized title",
+    "filename": "Season 1 [Multi Audio] 720p",
+    "title": "Season 1 [Multi Audio] 720p",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": ""
+  },
+  {
+    "time": "2026-05-22T14:53:41.614Z",
+    "reason": "unsupported playable extension",
+    "filename": "Lockwood & Co. (TV Series 2023) 1080p [Dual Audio]",
+    "title": "Lockwood & Co. (TV Series 2023) 1080p [Dual Audio]",
+    "normalizedTitle": "Lockwood & Co TV Series",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2023"
+  },
+  {
+    "time": "2026-05-22T14:53:41.620Z",
+    "reason": "unsupported playable extension",
+    "filename": "Mrs. Davis (TV Mini Series 2023) 1080p",
+    "title": "Mrs. Davis (TV Mini Series 2023) 1080p",
+    "normalizedTitle": "Mrs Davis TV Mini Series",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2023"
+  },
+  {
+    "time": "2026-05-22T14:53:41.743Z",
+    "reason": "unsupported playable extension",
+    "filename": "Man vs. Bee (TV Series 2022) 1080p [Dual Audio]",
+    "title": "Man vs. Bee (TV Series 2022) 1080p [Dual Audio]",
+    "normalizedTitle": "Man vs Bee TV Series",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2022"
+  },
+  {
+    "time": "2026-05-22T14:53:41.748Z",
+    "reason": "unsupported playable extension",
+    "filename": "Mr. Bad (TV Series 2022) 720p",
+    "title": "Mr. Bad (TV Series 2022) 720p",
+    "normalizedTitle": "Mr Bad TV Series",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2022"
+  },
+  {
+    "time": "2026-05-22T14:53:41.748Z",
+    "reason": "unsupported playable extension",
+    "filename": "Ms. Marvel (TV Mini Series 2022) 1080p [Dual Audio]",
+    "title": "Ms. Marvel (TV Mini Series 2022) 1080p [Dual Audio]",
+    "normalizedTitle": "Ms Marvel TV Mini Series",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2022"
+  },
+  {
+    "time": "2026-05-22T14:53:41.845Z",
+    "reason": "unsupported playable extension",
+    "filename": "And Just Like That... (TV Series 2021– ) 720p",
+    "title": "And Just Like That... (TV Series 2021– ) 720p",
+    "normalizedTitle": "And Just Like That TV Series -",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2021"
+  },
+  {
+    "time": "2026-05-22T14:53:41.865Z",
+    "reason": "unsupported playable extension",
+    "filename": "Dr. Death (TV Series 2021–2023) 1080p",
+    "title": "Dr. Death (TV Series 2021–2023) 1080p",
+    "normalizedTitle": "Dr Death TV Series 2021-",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2023"
+  },
+  {
+    "time": "2026-05-22T14:53:41.905Z",
+    "reason": "unsupported playable extension",
+    "filename": "Mr. Corman (TV Series 2021) 720p",
+    "title": "Mr. Corman (TV Series 2021) 720p",
+    "normalizedTitle": "Mr Corman TV Series",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2021"
+  },
+  {
+    "time": "2026-05-22T14:53:41.916Z",
+    "reason": "unsupported playable extension",
+    "filename": "Please Feel at Ease Mr. Ling (TV Series 2021– ) 720p",
+    "title": "Please Feel at Ease Mr. Ling (TV Series 2021– ) 720p",
+    "normalizedTitle": "Please Feel at Ease Mr Ling TV Series -",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2021"
+  },
+  {
+    "time": "2026-05-22T14:53:41.930Z",
+    "reason": "unsupported playable extension",
+    "filename": "Special Ops 1.5-The Himmat Story (TV Mini Series 2021) 1080p",
+    "title": "Special Ops 1.5-The Himmat Story (TV Mini Series 2021) 1080p",
+    "normalizedTitle": "Special Ops 1 5-The Himmat Story TV Mini Series",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2021"
+  },
+  {
+    "time": "2026-05-22T14:53:42.089Z",
+    "reason": "unsupported playable extension",
+    "filename": "Mrs. America (TV Mini Series 2020) 720p",
+    "title": "Mrs. America (TV Mini Series 2020) 720p",
+    "normalizedTitle": "Mrs America TV Mini Series",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2020"
+  },
+  {
+    "time": "2026-05-22T14:53:42.115Z",
+    "reason": "unsupported playable extension",
+    "filename": "Self Made-Inspired by the Life of Madam C.J. Walker (TV Mini Series 2020) 720p",
+    "title": "Self Made-Inspired by the Life of Madam C.J. Walker (TV Mini Series 2020) 720p",
+    "normalizedTitle": "Self Made-Inspired by the Life of Madam C J Walker TV Mini Series",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2020"
+  },
+  {
+    "time": "2026-05-22T14:53:42.246Z",
+    "reason": "unsupported playable extension",
+    "filename": "L.A.'s Finest (TV Series 2019–2020) 720p",
+    "title": "L.A.'s Finest (TV Series 2019–2020) 720p",
+    "normalizedTitle": "L A 's Finest TV Series 2019-",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2020"
+  },
+  {
+    "time": "2026-05-22T14:53:42.263Z",
+    "reason": "unsupported playable extension",
+    "filename": "Mr. Iglesias (TV Series 2019–2020) 720p",
+    "title": "Mr. Iglesias (TV Series 2019–2020) 720p",
+    "normalizedTitle": "Mr Iglesias TV Series 2019-",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2020"
+  },
+  {
+    "time": "2026-05-22T14:53:42.264Z",
+    "reason": "unsupported playable extension",
+    "filename": "Mrs. Fletcher (TV Mini Series 2019) 1080p",
+    "title": "Mrs. Fletcher (TV Mini Series 2019) 1080p",
+    "normalizedTitle": "Mrs Fletcher TV Mini Series",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2019"
+  },
+  {
+    "time": "2026-05-22T14:53:42.375Z",
+    "reason": "title shorter than 3 chars",
+    "filename": "Season 2",
+    "title": "Season 2",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": ""
+  },
+  {
+    "time": "2026-05-22T14:53:42.375Z",
+    "reason": "invalid normalized title",
+    "filename": "Season 2",
+    "title": "Season 2",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": ""
+  },
+  {
+    "time": "2026-05-22T14:53:42.379Z",
+    "reason": "title shorter than 3 chars",
+    "filename": "Season 2 (Hindi Dubbed)",
+    "title": "Season 2 (Hindi Dubbed)",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": ""
+  },
+  {
+    "time": "2026-05-22T14:53:42.379Z",
+    "reason": "invalid normalized title",
+    "filename": "Season 2 (Hindi Dubbed)",
+    "title": "Season 2 (Hindi Dubbed)",
+    "normalizedTitle": "",
+    "tmdbId": null,
+    "streamUrl": ""
+  },
+  {
+    "time": "2026-05-22T14:53:42.409Z",
+    "reason": "unsupported playable extension",
+    "filename": "A.P. Bio (TV Series 2018–2021) 720p",
+    "title": "A.P. Bio (TV Series 2018–2021) 720p",
+    "normalizedTitle": "A P Bio TV Series 2018-",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2021"
+  },
+  {
+    "time": "2026-05-22T14:53:42.463Z",
+    "reason": "unsupported playable extension",
+    "filename": "Mayans M.C. (TV Series 2018–2023) 1080p",
+    "title": "Mayans M.C. (TV Series 2018–2023) 1080p",
+    "normalizedTitle": "Mayans M C TV Series 2018-",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2023"
+  },
+  {
+    "time": "2026-05-22T14:53:42.467Z",
+    "reason": "unsupported playable extension",
+    "filename": "Mrs. Wilson (TV Mini Series 2018) 1080p",
+    "title": "Mrs. Wilson (TV Mini Series 2018) 1080p",
+    "normalizedTitle": "Mrs Wilson TV Mini Series",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2018"
+  },
+  {
+    "time": "2026-05-22T14:53:42.533Z",
+    "reason": "unsupported playable extension",
+    "filename": "C.B. Strike (TV Series 2017– ) 1080p",
+    "title": "C.B. Strike (TV Series 2017– ) 1080p",
+    "normalizedTitle": "C B Strike TV Series -",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2017"
+  },
+  {
+    "time": "2026-05-22T14:53:42.567Z",
+    "reason": "unsupported playable extension",
+    "filename": "Mr. Mercedes (TV Series 2017–2019) 1080p",
+    "title": "Mr. Mercedes (TV Series 2017–2019) 1080p",
+    "normalizedTitle": "Mr Mercedes TV Series 2017-",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2019"
+  },
+  {
+    "time": "2026-05-22T14:53:42.571Z",
+    "reason": "unsupported playable extension",
+    "filename": "S.W.A.T. (TV Series 2017– ) 720p",
+    "title": "S.W.A.T. (TV Series 2017– ) 720p",
+    "normalizedTitle": "S W A T TV Series -",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2017"
+  },
+  {
+    "time": "2026-05-22T14:53:42.592Z",
+    "reason": "unsupported playable extension",
+    "filename": "The Marvelous Mrs. Maisel (TV Series 2017–2023) 1080p [Dual Audio]",
+    "title": "The Marvelous Mrs. Maisel (TV Series 2017–2023) 1080p [Dual Audio]",
+    "normalizedTitle": "The Marvelous Mrs Maisel TV Series 2017-",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2023"
+  },
+  {
+    "time": "2026-05-22T14:53:42.609Z",
+    "reason": "unsupported playable extension",
+    "filename": "11.22.63 (TV Mini Series 2016) 1080p",
+    "title": "11.22.63 (TV Mini Series 2016) 1080p",
+    "normalizedTitle": "11 22 63 TV Mini Series",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2016"
+  },
+  {
+    "time": "2026-05-22T14:53:42.740Z",
+    "reason": "unsupported playable extension",
+    "filename": "Mr. Robot (TV Series 2015–2019) 1080p [Dual Audio]",
+    "title": "Mr. Robot (TV Series 2015–2019) 1080p [Dual Audio]",
+    "normalizedTitle": "Mr Robot TV Series 2015-",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2019"
+  },
+  {
+    "time": "2026-05-22T14:53:42.803Z",
+    "reason": "unsupported playable extension",
+    "filename": "Inside No. 9 (TV Series 2014–2024) 720p",
+    "title": "Inside No. 9 (TV Series 2014–2024) 720p",
+    "normalizedTitle": "Inside No 9 TV Series 2014-",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2024"
+  },
+  {
+    "time": "2026-05-22T14:53:42.846Z",
+    "reason": "unsupported playable extension",
+    "filename": "Agents of S.H.I.E.L.D. (TV Series 2013–2020) 1080p",
+    "title": "Agents of S.H.I.E.L.D. (TV Series 2013–2020) 1080p",
+    "normalizedTitle": "Agents of S H I E L D TV Series 2013-",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2020"
+  },
+  {
+    "time": "2026-05-22T14:53:42.945Z",
+    "reason": "unsupported playable extension",
+    "filename": "Awkward. (TV Series 2011–2016) 720p",
+    "title": "Awkward. (TV Series 2011–2016) 720p",
+    "normalizedTitle": "Awkward TV Series 2011-",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2016"
+  },
+  {
+    "time": "2026-05-22T14:53:42.951Z",
+    "reason": "unsupported playable extension",
+    "filename": "Devon Ke Dev... Mahadev (TV Series 2011–2014) 720p",
+    "title": "Devon Ke Dev... Mahadev (TV Series 2011–2014) 720p",
+    "normalizedTitle": "Devon Ke Dev Mahadev TV Series 2011-",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2014"
+  },
+  {
+    "time": "2026-05-22T14:53:43.061Z",
+    "reason": "unsupported playable extension",
+    "filename": "The No. 1 Ladies' Detective Agency (TV Series 2008–2009) 720p",
+    "title": "The No. 1 Ladies' Detective Agency (TV Series 2008–2009) 720p",
+    "normalizedTitle": "The No 1 Ladies' Detective Agency TV Series 2008-",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2009"
+  },
+  {
+    "time": "2026-05-22T14:53:43.187Z",
+    "reason": "unsupported playable extension",
+    "filename": "The O.C. (TV Series 2003–2007) 720p",
+    "title": "The O.C. (TV Series 2003–2007) 720p",
+    "normalizedTitle": "The O C TV Series 2003-",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2007"
+  },
+  {
+    "time": "2026-05-22T14:53:43.216Z",
+    "reason": "unsupported playable extension",
+    "filename": "Ssshhhh... Koi Hai (TV Series 2001–2004) 480p",
+    "title": "Ssshhhh... Koi Hai (TV Series 2001–2004) 480p",
+    "normalizedTitle": "Ssshhhh Koi Hai TV Series 2001-",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2004"
+  },
+  {
+    "time": "2026-05-22T14:53:43.219Z",
+    "reason": "sample or trailer file",
+    "filename": "Trailer Park Boys (TV Series 2001–2018) 480p",
+    "title": "Trailer Park Boys (TV Series 2001–2018) 480p",
+    "normalizedTitle": "Trailer Park Boys TV Series 2001-",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2018"
+  },
+  {
+    "time": "2026-05-22T14:53:43.286Z",
+    "reason": "unsupported playable extension",
+    "filename": "The Adventures of Brisco County, Jr. (TV Series 1993–1994) 480p",
+    "title": "The Adventures of Brisco County, Jr. (TV Series 1993–1994) 480p",
+    "normalizedTitle": "The Adventures of Brisco County, Jr TV Series 1993-",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "1994"
+  },
+  {
+    "time": "2026-05-22T14:53:43.297Z",
+    "reason": "unsupported playable extension",
+    "filename": "Mr. Bean (TV Series 1990–1995) 1080p",
+    "title": "Mr. Bean (TV Series 1990–1995) 1080p",
+    "normalizedTitle": "Mr Bean TV Series 1990-",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "1995"
+  },
+  {
+    "time": "2026-05-22T14:53:43.327Z",
+    "reason": "unsupported playable extension",
+    "filename": "Magnum P.I. (TV Series 2018–2024) 720p",
+    "title": "Magnum P.I. (TV Series 2018–2024) 720p",
+    "normalizedTitle": "Magnum P I TV Series 2018-",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2024"
+  },
+  {
+    "time": "2026-05-22T14:53:43.427Z",
+    "reason": "unsupported playable extension",
+    "filename": "Snipers. Love in the Crosshairs (TV Mini Series 2012–2014) 720p",
+    "title": "Snipers. Love in the Crosshairs (TV Mini Series 2012–2014) 720p",
+    "normalizedTitle": "Snipers Love in the Crosshairs TV Mini Series 2012-",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2014"
+  },
+  {
+    "time": "2026-05-22T14:53:43.434Z",
+    "reason": "duplicate encode or release merged",
+    "filename": "Season 3 (Korean Language)",
+    "title": "Korean Language",
+    "normalizedTitle": "Korean Language",
+    "tmdbId": null,
+    "streamUrl": ""
+  },
+  {
+    "time": "2026-05-22T14:53:43.434Z",
+    "reason": "duplicate encode or release merged",
+    "filename": "Season 1 (Korean Language)",
+    "title": "Korean Language",
+    "normalizedTitle": "Korean Language",
+    "tmdbId": null,
+    "streamUrl": ""
+  },
+  {
+    "time": "2026-05-22T14:53:43.434Z",
+    "reason": "duplicate encode or release merged",
+    "filename": "Season 2 (Korean Language)",
+    "title": "Korean Language",
+    "normalizedTitle": "Korean Language",
+    "tmdbId": null,
+    "streamUrl": ""
+  },
+  {
+    "time": "2026-05-22T14:53:43.434Z",
+    "reason": "duplicate encode or release merged",
+    "filename": "Season 4 (Korean Language)",
+    "title": "Korean Language",
+    "normalizedTitle": "Korean Language",
+    "tmdbId": null,
+    "streamUrl": ""
+  },
+  {
+    "time": "2026-05-22T14:54:01.443Z",
+    "reason": "pure numeric title",
+    "filename": "001-050",
+    "title": "001-050",
+    "normalizedTitle": "001",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": ""
+  },
+  {
+    "time": "2026-05-22T14:54:01.443Z",
+    "reason": "pure numeric title",
+    "filename": "051-099",
+    "title": "051-099",
+    "normalizedTitle": "051",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": ""
+  },
+  {
+    "time": "2026-05-22T14:54:01.444Z",
+    "reason": "pure numeric title",
+    "filename": "100-150",
+    "title": "100-150",
+    "normalizedTitle": "100",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": ""
+  },
+  {
+    "time": "2026-05-22T14:54:03.502Z",
+    "reason": "sample or trailer file",
+    "filename": "Trailer Park Boys TV Series 2001-",
+    "title": "Trailer Park Boys TV Series 2001-",
+    "normalizedTitle": "Trailer Park Boys TV Series -",
+    "tmdbId": null,
+    "streamUrl": "",
+    "year": "2001"
+  },
+  {
+    "time": "2026-05-22T14:54:03.758Z",
+    "reason": "duplicate encode or release merged",
+    "filename": "Your Honor TV Series 2020-",
+    "title": "Your Honor TV Series -",
+    "normalizedTitle": "Your Honor TV Series -",
+    "tmdbId": null,
+    "streamUrl": ""
+  }
+]

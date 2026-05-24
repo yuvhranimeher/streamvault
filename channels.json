@@ -1,0 +1,17 @@
+[
+  { "id": "tsports",      "name": "T Sports",                     "category": "Sports",         "color": "#c8001a", "textColor": "#fff", "url": "http://172.22.1.2:3255/TSportsHD/index.m3u8" },
+  { "id": "starsports1",  "name": "Star Sports 1",                "category": "Sports",         "color": "#003087", "textColor": "#fff", "url": "http://172.22.1.2:3255/StarSports1/index.m3u8" },
+  { "id": "sonyten1",     "name": "Sony Ten Sports",              "category": "Sports",         "color": "#d35400", "textColor": "#fff", "url": "http://172.22.1.2:3255/SonyTenSports1/tracks-v1a1/mono.m3u8" },
+  { "id": "jamuna",       "name": "Jamuna TV",                    "category": "News",           "color": "#1a3a6e", "textColor": "#fff", "url": "http://172.22.1.2:3255/JAMUNATV/index.m3u8" },
+  { "id": "shomoy",       "name": "Shomoy TV",                    "category": "News",           "color": "#4a235a", "textColor": "#fff", "url": "http://172.22.1.2:3255/somyyt/index.m3u8" },
+  { "id": "channel24",    "name": "Channel 24",                   "category": "News",           "color": "#e63000", "textColor": "#fff", "url": "http://172.22.1.2:3255/CH24/index.m3u8" },
+  { "id": "channel9",     "name": "Channel 9",                    "category": "News",           "color": "#006633", "textColor": "#fff", "url": "http://172.22.1.2:3255/ch9_nk/index.m3u8" },
+  { "id": "independent",  "name": "Independent TV",               "category": "News",           "color": "#003366", "textColor": "#fff", "url": "http://172.22.1.2:3255/indopendettv/index.m3u8" },
+  { "id": "cnn",          "name": "CNN",                          "category": "News",           "color": "#cc0000", "textColor": "#fff", "url": "http://172.22.1.2:3255/cnn/index.m3u8" },
+  { "id": "aljazeera",    "name": "Al Jazeera",                   "category": "News",           "color": "#4a235a", "textColor": "#fff", "url": "http://172.22.1.2:3255/Aljazeera/index.m3u8" },
+  { "id": "sonyaath",     "name": "Sony Aath",                    "category": "Entertainment",  "color": "#0057a8", "textColor": "#fff", "url": "http://172.22.1.2:3255/SonyAath/index.m3u8" },
+  { "id": "sonyentertain","name": "Sony Entertainment Television","category": "Entertainment",  "color": "#c0392b", "textColor": "#fff", "url": "http://172.22.1.2:3255/SonyEntertainmentTelevisionHD/tracks-v1a1/mono.m3u8" },
+  { "id": "starjalsha",   "name": "Star Jalsha",                  "category": "Entertainment",  "color": "#e91e8c", "textColor": "#fff", "url": "http://172.22.1.2:3255/starjolsha/index.m3u8" },
+  { "id": "moviesnow",    "name": "Movies Now",                   "category": "Movies",         "color": "#1a1a2e", "textColor": "#fff", "url": "http://172.22.1.2:3255/MOVIES-NOW-HD/index.m3u8" },
+  { "id": "cartoon",      "name": "Cartoon Network",              "category": "Kids",           "color": "#7b2d8b", "textColor": "#fff", "url": "http://172.22.1.2:3255/CartoonNetwork/index.m3u8" }
+]

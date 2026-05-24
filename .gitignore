@@ -1,0 +1,12 @@
+cache/
+hls-cache/
+logs/
+scan-output/
+node_modules/
+.env
+*.log
+
+data/db/
+data/catalogs/*.json
+data/catalogs/archive/
+catalog/*.ndjson

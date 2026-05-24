@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a0a0a">
+<title>StreamVault</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://image.tmdb.org" crossorigin>
+<link rel="dns-prefetch" href="//image.tmdb.org">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css?v=20260520-downloads1">
+</head>
+<body>
+
+<nav id="nav">
+  <button class="logo" type="button" onclick="goHome()" aria-label="Insomnia Tapes home">
+    <img src="/assets/insomnia-tapes-logo.png" alt="Insomnia Tapes">
+  </button>
+  <button class="download-nav-btn" id="downloadNavBtn" type="button" onclick="switchTab('downloads')" aria-label="Explore Free Softwares">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a1 1 0 0 1 1 1v8.59l2.3-2.29 1.4 1.4-4.7 4.71-4.7-4.71 1.4-1.4 2.3 2.29V4a1 1 0 0 1 1-1zM5 18h14v2H5v-2z"/></svg>
+    <span>Explore Free Softwares</span>
+  </button>
+  <div class="nav-links">
+    <a onclick="switchTab('discover')">Discover</a>
+    <a onclick="switchTab('movies-browse')">Movies</a>
+    <a onclick="switchTab('series')">Shows</a>
+    <a onclick="switchTab('library')">Library</a>
+    <a onclick="switchTab('search')">Search</a>
+    <a onclick="scrollToRow('continueRow')">Continue Watching</a>
+    <a onclick="switchTab('series')">Series</a>
+    <a onclick="scrollToRow('newRow')">New</a>
+    <a onclick="scrollToRow('actionRow')">Action</a>
+    <a onclick="scrollToRow('dramaRow')">Drama</a>
+    <a onclick="scrollToRow('comedyRow')">Comedy</a>
+    <a onclick="scrollToRow('horrorRow')">Horror</a>
+    <a onclick="scrollToRow('scifiRow')">Sci-Fi</a>
+    <a onclick="scrollToRow('animationRow')">Animation</a>
+    <a onclick="scrollToRow('koreanRow')">K-Drama</a>
+    <a onclick="scrollToRow('hindiRow')">Bollywood</a>
+    <a onclick="scrollToRow('bengaliRow')">Bengali</a>
+    <a onclick="scrollToRow('animeRow')">Anime</a>
+    <a onclick="scrollToRow('highRatedRow')">Top Rated</a>
+    <a onclick="scrollToRow('disneyRow')">Disney</a>
+    <a onclick="scrollToRow('marvelRow')">Marvel</a>
+    <a onclick="scrollToRow('dcRow')">DC</a>
+    <a onclick="scrollToRow('allRow')">All Titles</a>
+  </div>
+  <div class="nav-right">
+    <button class="livetv-btn" id="livetvNavBtn" onclick="switchTab('live')">
+      <span class="livetv-btn-dot"></span><span>Live TV</span>
+    </button>
+    <button class="allMovies-btn" id="allMoviesNavBtn" onclick="switchTab('movies-browse')">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg>
+      <span>All Movies</span>
+    </button>
+    <div class="search-box">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="rgba(255,255,255,.35)" style="flex-shrink:0"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+      <input type="text" id="searchInputDesktop" placeholder="Search…" oninput="handleSearch(this.value)" autocomplete="off">
+    </div>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" aria-label="Toggle theme" title="Toggle theme">
+      <svg class="sun-icon" viewBox="0 0 24 24"><path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.8 1.42-1.42zM1 13h3v-2H1v2zm10-12v3h2V1h-2zm9.45 3.46l-1.41-1.41-1.8 1.79 1.42 1.42 1.79-1.8zM17.24 19.16l1.8 1.79 1.41-1.41-1.79-1.8-1.42 1.42zM20 11v2h3v-2h-3zM12 6a6 6 0 1 0 0 12A6 6 0 0 0 12 6zm-1 17h2v-3h-2v3zM3.55 19.54l1.41 1.41 1.8-1.79-1.42-1.42-1.79 1.8z"/></svg>
+      <svg class="moon-icon" viewBox="0 0 24 24"><path d="M12.1 2.1a9.9 9.9 0 1 0 9.8 11.5 7.4 7.4 0 0 1-9.5-9.5c.2-.7.1-1.4-.3-2z"/></svg>
+    </button>
+    <button class="search-toggle" onclick="switchTab('search')" aria-label="Search">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+    </button>
+  </div>
+</nav>
+
+<div class="search-overlay" id="searchOverlay">
+  <div class="search-overlay-row">
+    <div class="search-overlay-box">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="rgba(255,255,255,.3)"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+      <input type="search" id="searchInputMobile" placeholder="Search movies &amp; series…" oninput="handleSearch(this.value)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    </div>
+    <button class="search-cancel" onclick="closeSearchOverlay()">Cancel</button>
+  </div>
+  <div class="search-overlay-label" id="mobileSearchLabel"></div>
+  <div class="search-overlay-results"><div class="search-overlay-grid" id="mobileSearchGrid"></div></div>
+</div>
+
+<section class="page-intro discover-intro" id="discoverIntro">
+  <div>
+    <div class="page-title">Discover</div>
+    <div class="page-kicker">Featured picks, fresh arrivals, and rows from your vault</div>
+  </div>
+  <div class="page-actions">
+    <button class="top-action-btn" onclick="switchTab('mobile-mp4')" aria-label="Playable on mobile" title="Playable on mobile">
+      <svg viewBox="0 0 24 24"><path d="M17 1H7C5.9 1 5 1.9 5 3v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-2-2-2zm0 17H7V4h10v14zm-3 3h-4v-1h4v1z"/></svg>
+    </button>
+    <button class="top-action-btn" onclick="toggleTheme()" aria-label="Toggle theme" title="Toggle theme">
+      <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20V2zm0 2.2v15.6a7.8 7.8 0 0 1 0-15.6z"/></svg>
+    </button>
+  </div>
+</section>
+
+<div class="featured-showcase" id="hero">
+  <div class="row-header">
+    <div>
+      <div class="row-title">Exclusive & Viral Picks</div>
+      <div class="row-subtitle">Popular studio hits from Netflix, Marvel, DC, Disney, Warner, HBO, Apple TV+, and Universal</div>
+    </div>
+  </div>
+  <div class="featured-track" id="heroCards"></div>
+  <div class="hero-slides" id="heroSlides" style="display:none"></div>
+  <div class="hero-vignette" style="display:none"></div>
+  <div class="hero-content" style="display:none">
+    <div class="hero-badge"><span class="hero-badge-dot"></span>NOW STREAMING</div>
+    <div class="hero-title" id="heroTitle">Loading…</div>
+    <div class="hero-meta">
+      <span class="hero-rating" id="heroRating"></span>
+      <span class="hero-year" id="heroYear"></span>
+      <span class="hero-runtime" id="heroRuntime"></span>
+      <span class="hero-type" id="heroType" style="display:none"></span>
+      <span class="hero-genre" id="heroGenre"></span>
+    </div>
+    <div class="hero-overview" id="heroOverview"></div>
+    <div class="hero-btns">
+      <button class="btn btn-play" id="heroPlayBtn"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="flex-shrink:0"><path d="M8 5v14l11-7z"/></svg>Play</button>
+      <button class="btn btn-info" onclick="cycleHero()">Shuffle</button>
+    </div>
+  </div>
+  <div class="hero-dots" id="heroDots" style="display:none"></div>
+  <div class="hero-thumbs" id="heroThumbs" style="display:none"></div>
+</div>
+
+<div class="content" id="mainSection">
+  <div class="row" id="liveHomeRow" style="display:none">
+    <div class="row-header">
+      <div class="row-title">
+        <span class="row-title-live-dot"></span>Watch Live TV
+      </div>
+      <div class="row-explore" onclick="switchTab('live')">All Channels →</div>
+    </div>
+    <div class="live-home-track" id="liveHomeTrack"></div>
+  </div>
+  <div class="row" id="netflixRow" style="display:none">
+    <div class="row-header"><div class="row-title"><span class="row-title-accent">🔴</span> Netflix Originals</div></div>
+    <div class="cards-track" id="netflixTrack"></div>
+  </div>
+  <div class="row" id="marvelRow" style="display:none">
+    <div class="row-header"><div class="row-title"><span class="row-title-accent">⚡</span> Marvel Studios</div></div>
+    <div class="cards-track" id="marvelTrack"></div>
+  </div>
+  <div class="row" id="dcRow" style="display:none">
+    <div class="row-header"><div class="row-title"><span class="row-title-accent">🦇</span> DC</div></div>
+    <div class="cards-track" id="dcTrack"></div>
+  </div>
+  <div class="row" id="disneyRow" style="display:none">
+    <div class="row-header"><div class="row-title"><span class="row-title-accent">🏰</span> Disney & Pixar</div></div>
+    <div class="cards-track" id="disneyTrack"></div>
+  </div>
+  <div class="row" id="trendingRow" style="display:none">
+    <div class="row-header"><div class="row-title">🔥 Trending Now</div></div>
+    <div class="cards-track" id="trendingTrack"></div>
+  </div>
+  <div class="row" id="mobilePlayableRow" style="display:none">
+    <div class="row-header"><div class="row-title">📱 Playable on Mobiles</div><div class="row-explore" onclick="switchTab('mobile-mp4')">Browse All →</div></div>
+    <div class="cards-track" id="mobilePlayableTrack"></div>
+  </div>
+  <div class="row" id="continueRow" style="display:none">
+    <div class="row-header"><div class="row-title">Continue Watching</div></div>
+    <div class="cards-track" id="continueTrack"></div>
+  </div>
+  <div class="row" id="becauseRow" style="display:none">
+    <div class="row-header">
+      <div class="row-title because-title">
+        <span style="color:var(--red);font-size:.9rem;flex-shrink:0">✦</span>
+        <span class="because-label">Because you watched</span>
+        <span id="becauseTitle" class="because-name"></span>
+      </div>
+    </div>
+    <div class="cards-track" id="becauseTrack"></div>
+  </div>
+  <div class="row" id="seriesRow" style="display:none">
+    <div class="row-header"><div class="row-title">Series</div><div class="row-explore" onclick="switchTab('series')">Browse All →</div></div>
+    <div class="cards-track" id="seriesTrack"></div>
+  </div>
+  <div class="row" id="newRow" style="display:none">
+    <div class="row-header"><div class="row-title">New to StreamVault</div></div>
+    <div class="cards-track" id="newTrack"></div>
+  </div>
+  <div class="row" id="actionRow" style="display:none">
+    <div class="row-header"><div class="row-title">Action &amp; Adventure</div></div>
+    <div class="cards-track" id="actionTrack"></div>
+  </div>
+  <div class="row" id="comedyRow" style="display:none">
+    <div class="row-header"><div class="row-title">Comedy &amp; Humor</div></div>
+    <div class="cards-track" id="comedyTrack"></div>
+  </div>
+  <div class="row" id="dramaRow" style="display:none">
+    <div class="row-header"><div class="row-title">Drama &amp; Emotion</div></div>
+    <div class="cards-track" id="dramaTrack"></div>
+  </div>
+  <div class="row" id="romanticRow" style="display:none">
+    <div class="row-header"><div class="row-title">Romance &amp; Love Stories</div></div>
+    <div class="cards-track" id="romanticTrack"></div>
+  </div>
+  <div class="row" id="scifiRow" style="display:none">
+    <div class="row-header"><div class="row-title">Sci-Fi &amp; Futuristic</div></div>
+    <div class="cards-track" id="scifiTrack"></div>
+  </div>
+  <div class="row" id="fantasyRow" style="display:none">
+    <div class="row-header"><div class="row-title">Fantasy &amp; Magic</div></div>
+    <div class="cards-track" id="fantasyTrack"></div>
+  </div>
+  <div class="row" id="animationRow" style="display:none">
+    <div class="row-header"><div class="row-title">Animation &amp; Family</div></div>
+    <div class="cards-track" id="animationTrack"></div>
+  </div>
+  <div class="row" id="horrorRow" style="display:none">
+    <div class="row-header"><div class="row-title">Horror &amp; Suspense</div></div>
+    <div class="cards-track" id="horrorTrack"></div>
+  </div>
+  <div class="row" id="thrillerRow" style="display:none">
+    <div class="row-header"><div class="row-title">Thriller &amp; Crime</div></div>
+    <div class="cards-track" id="thrillerTrack"></div>
+  </div>
+  <div class="row" id="documentaryRow" style="display:none">
+    <div class="row-header"><div class="row-title">Documentary &amp; Biography</div></div>
+    <div class="cards-track" id="documentaryTrack"></div>
+  </div>
+  <div class="row" id="sportRow" style="display:none">
+    <div class="row-header"><div class="row-title">Sports &amp; Motivation</div></div>
+    <div class="cards-track" id="sportTrack"></div>
+  </div>
+  <div class="row" id="historicalRow" style="display:none">
+    <div class="row-header"><div class="row-title">Historical &amp; Epic</div></div>
+    <div class="cards-track" id="historicalTrack"></div>
+  </div>
+  <div class="row" id="musicalRow" style="display:none">
+    <div class="row-header"><div class="row-title">Musical &amp; Dance</div></div>
+    <div class="cards-track" id="musicalTrack"></div>
+  </div>
+  <div class="row" id="mysteryRow" style="display:none">
+    <div class="row-header"><div class="row-title">Mystery &amp; Psychological</div></div>
+    <div class="cards-track" id="mysteryTrack"></div>
+  </div>
+  <div class="row" id="koreanRow" style="display:none">
+    <div class="row-header"><div class="row-title">Korean / K-Drama</div></div>
+    <div class="cards-track" id="koreanTrack"></div>
+  </div>
+  <div class="row" id="hindiRow" style="display:none">
+    <div class="row-header"><div class="row-title">Hindi / Bollywood</div></div>
+    <div class="cards-track" id="hindiTrack"></div>
+  </div>
+  <div class="row" id="bengaliRow" style="display:none">
+    <div class="row-header"><div class="row-title">Bengali Films</div></div>
+    <div class="cards-track" id="bengaliTrack"></div>
+  </div>
+  <div class="row" id="animeRow" style="display:none">
+    <div class="row-header"><div class="row-title">Anime</div></div>
+    <div class="cards-track" id="animeTrack"></div>
+  </div>
+  <div class="row" id="westernRow" style="display:none">
+    <div class="row-header"><div class="row-title">Western</div></div>
+    <div class="cards-track" id="westernTrack"></div>
+  </div>
+  <div class="row" id="warRow" style="display:none">
+    <div class="row-header"><div class="row-title">War &amp; Military</div></div>
+    <div class="cards-track" id="warTrack"></div>
+  </div>
+  <div class="row" id="biographyRow" style="display:none">
+    <div class="row-header"><div class="row-title">Biography &amp; True Story</div></div>
+    <div class="cards-track" id="biographyTrack"></div>
+  </div>
+  <div class="row" id="crimeRow" style="display:none">
+    <div class="row-header"><div class="row-title">Crime &amp; Heist</div></div>
+    <div class="cards-track" id="crimeTrack"></div>
+  </div>
+  <div class="row" id="familyRow" style="display:none">
+    <div class="row-header"><div class="row-title">Family &amp; Kids</div></div>
+    <div class="cards-track" id="familyTrack"></div>
+  </div>
+  <div class="row" id="adventureRow" style="display:none">
+    <div class="row-header"><div class="row-title">Adventure</div></div>
+    <div class="cards-track" id="adventureTrack"></div>
+  </div>
+  <div class="row" id="superHeroRow" style="display:none">
+    <div class="row-header"><div class="row-title">Superhero &amp; Comic</div></div>
+    <div class="cards-track" id="superHeroTrack"></div>
+  </div>
+  <div class="row" id="hollywoodRow" style="display:none">
+    <div class="row-header"><div class="row-title">Hollywood Blockbusters</div></div>
+    <div class="cards-track" id="hollywoodTrack"></div>
+  </div>
+  <div class="row" id="universalRow" style="display:none">
+    <div class="row-header"><div class="row-title"><span class="row-title-accent">🌍</span> Universal Pictures</div></div>
+    <div class="cards-track" id="universalTrack"></div>
+  </div>
+  <div class="row" id="dreamworksRow" style="display:none">
+    <div class="row-header"><div class="row-title"><span class="row-title-accent">🎣</span> DreamWorks</div></div>
+    <div class="cards-track" id="dreamworksTrack"></div>
+  </div>
+  <div class="row" id="a24Row" style="display:none">
+    <div class="row-header"><div class="row-title"><span class="row-title-accent">🎬</span> A24</div></div>
+    <div class="cards-track" id="a24Track"></div>
+  </div>
+  <div class="row" id="paramountRow" style="display:none">
+    <div class="row-header"><div class="row-title"><span class="row-title-accent">⛰️</span> Paramount Pictures</div></div>
+    <div class="cards-track" id="paramountTrack"></div>
+  </div>
+  <div class="row" id="tamilRow" style="display:none">
+    <div class="row-header"><div class="row-title">Tamil Films</div></div>
+    <div class="cards-track" id="tamilTrack"></div>
+  </div>
+  <div class="row" id="teluguRow" style="display:none">
+    <div class="row-header"><div class="row-title">Telugu Films</div></div>
+    <div class="cards-track" id="teluguTrack"></div>
+  </div>
+  <div class="row" id="chineseRow" style="display:none">
+    <div class="row-header"><div class="row-title">Chinese / Mandarin</div></div>
+    <div class="cards-track" id="chineseTrack"></div>
+  </div>
+  <div class="row" id="japaneseRow" style="display:none">
+    <div class="row-header"><div class="row-title">Japanese Films</div></div>
+    <div class="cards-track" id="japaneseTrack"></div>
+  </div>
+  <div class="row" id="turkishRow" style="display:none">
+    <div class="row-header"><div class="row-title">Turkish / Dizi</div></div>
+    <div class="cards-track" id="turkishTrack"></div>
+  </div>
+  <div class="row" id="spanishRow" style="display:none">
+    <div class="row-header"><div class="row-title">Spanish &amp; Latino</div></div>
+    <div class="cards-track" id="spanishTrack"></div>
+  </div>
+  <div class="row" id="highRatedRow" style="display:none">
+    <div class="row-header"><div class="row-title">⭐ Top Rated (8+)</div></div>
+    <div class="cards-track" id="highRatedTrack"></div>
+  </div>
+  <div class="row" id="allRow">
+    <div class="row-header"><div class="row-title">All Movies</div></div>
+    <div class="cards-track" id="allTrack"></div>
+  </div>
+</div>
+
+<div id="mobileMp4Section" style="display:none">
+  <div class="movies-header">
+    <div class="movies-header-left">
+      <div class="movies-page-title">Mobile Ready</div>
+      <div class="movies-count" id="mobileMp4Count"></div>
+    </div>
+  </div>
+  <div class="movies-grid" id="mobileMp4Grid"></div>
+</div>
+<div id="moviesSection">
+  <div class="movies-header">
+    <div class="movies-header-left">
+      <div class="movies-page-title">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg>
+        Movies
+      </div>
+      <div class="movies-count" id="moviesCount"></div>
+    </div>
+  </div>
+  <div class="movies-filters" id="moviesFilters">
+    <div class="movies-search-wrap">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="rgba(255,255,255,.35)" style="flex-shrink:0"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+      <input type="search" id="moviesSearchInput" placeholder="Search movies…" oninput="debounceMoviesPage()" autocomplete="off" autocorrect="off" spellcheck="false">
+    </div>
+    <button class="filter-toggle-btn" type="button" onclick="toggleFilterPanel('moviesFilters')" aria-label="Show movie filters" aria-expanded="false">
+      <svg viewBox="0 0 24 24"><path d="M3 5h18v2H3V5zm4 6h10v2H7v-2zm3 6h4v2h-4v-2z"/></svg>
+    </button>
+    <div class="filter-panel">
+    <select class="movies-select" id="moviesGenreFilter" onchange="filterMoviesPage()">
+      <option value="">All Genres</option>
+      <option value="Action">Action</option>
+      <option value="Adventure">Adventure</option>
+      <option value="Biography">Biography</option>
+      <option value="Comedy">Comedy</option>
+      <option value="Crime">Crime</option>
+      <option value="Documentary">Documentary</option>
+      <option value="Drama">Drama</option>
+      <option value="Family">Family</option>
+      <option value="Fantasy">Fantasy</option>
+      <option value="History">History</option>
+      <option value="Horror">Horror</option>
+      <option value="Music">Music</option>
+      <option value="Mystery">Mystery</option>
+      <option value="Romance">Romance</option>
+      <option value="Sci-Fi">Sci-Fi</option>
+      <option value="Sport">Sport</option>
+      <option value="Thriller">Thriller</option>
+      <option value="War">War</option>
+      <option value="Western">Western</option>
+    </select>
+    <select class="movies-select" id="moviesLangFilter" onchange="filterMoviesPage()">
+      <option value="">All Languages</option>
+      <option value="Bengali">Bengali</option>
+      <option value="Chinese">Chinese</option>
+      <option value="English">English</option>
+      <option value="Hindi">Hindi</option>
+      <option value="Japanese">Japanese</option>
+      <option value="Korean">Korean</option>
+      <option value="Spanish">Spanish</option>
+      <option value="Tamil">Tamil</option>
+      <option value="Telugu">Telugu</option>
+      <option value="Turkish">Turkish</option>
+    </select>
+    <select class="movies-select" id="moviesYearFilter" onchange="filterMoviesPage()">
+      <option value="">All Years</option>
+      <option value="2024-2025">2024 – 2025</option>
+      <option value="2020-2023">2020 – 2023</option>
+      <option value="2015-2019">2015 – 2019</option>
+      <option value="2010-2014">2010 – 2014</option>
+      <option value="2000-2009">2000 – 2009</option>
+      <option value="1990-1999">1990 – 1999</option>
+      <option value="0-1989">Before 1990</option>
+    </select>
+    <select class="movies-select" id="moviesRatingFilter" onchange="filterMoviesPage()">
+      <option value="">Any Rating</option>
+      <option value="8">★ 8.0 and above</option>
+      <option value="7">★ 7.0 and above</option>
+      <option value="6">★ 6.0 and above</option>
+      <option value="5">★ 5.0 and above</option>
+    </select>
+    <select class="movies-select" id="moviesPublisherFilter" onchange="filterMoviesPage()">
+      <option value="">All Studios</option>
+      <option value="disney">🏰 Disney / Pixar</option>
+      <option value="marvel">⚡ Marvel Studios</option>
+      <option value="dc">🦇 DC / Warner Bros</option>
+      <option value="universal">🌍 Universal</option>
+      <option value="dreamworks">🎣 DreamWorks</option>
+      <option value="netflix">🔴 Netflix</option>
+      <option value="a24">🎬 A24</option>
+      <option value="paramount">⛰️ Paramount</option>
+    </select>
+    <select class="movies-select" id="moviesSortFilter" onchange="filterMoviesPage()">
+      <option value="default">Sort: Default</option>
+      <option value="rating-desc">Sort: Top Rated</option>
+      <option value="year-desc">Sort: Newest First</option>
+      <option value="year-asc">Sort: Oldest First</option>
+      <option value="az">Sort: A → Z</option>
+      <option value="za">Sort: Z → A</option>
+    </select>
+  </div>
+  </div>
+  <div class="active-filters" id="moviesActiveFilters"></div>
+  <div class="movies-grid" id="moviesGrid"></div>
+  <div class="load-more-wrap" id="moviesLoadMoreWrap" style="display:none">
+    <button class="load-more-btn" onclick="moviesLoadMore()">Load More</button>
+  </div>
+</div>
+
+<div id="seriesSection">
+  <div class="movies-header">
+    <div class="movies-header-left">
+      <div class="movies-page-title">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg>
+        Shows
+      </div>
+      <div class="movies-count" id="seriesCount"></div>
+    </div>
+  </div>
+  <div class="movies-filters" id="seriesFilters">
+    <div class="movies-search-wrap">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="rgba(255,255,255,.35)" style="flex-shrink:0"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+      <input type="search" id="seriesSearchInput" placeholder="Search series…" oninput="debounceSeriesPage()" autocomplete="off" autocorrect="off" spellcheck="false">
+    </div>
+    <button class="filter-toggle-btn" type="button" onclick="toggleFilterPanel('seriesFilters')" aria-label="Show series filters" aria-expanded="false">
+      <svg viewBox="0 0 24 24"><path d="M3 5h18v2H3V5zm4 6h10v2H7v-2zm3 6h4v2h-4v-2z"/></svg>
+    </button>
+    <div class="filter-panel">
+    <select class="movies-select" id="seriesGenreFilter" onchange="filterSeriesPage()">
+      <option value="">All Genres</option>
+      <option value="Action">Action</option>
+      <option value="Adventure">Adventure</option>
+      <option value="Biography">Biography</option>
+      <option value="Comedy">Comedy</option>
+      <option value="Crime">Crime</option>
+      <option value="Documentary">Documentary</option>
+      <option value="Drama">Drama</option>
+      <option value="Family">Family</option>
+      <option value="Fantasy">Fantasy</option>
+      <option value="History">History</option>
+      <option value="Horror">Horror</option>
+      <option value="Music">Music</option>
+      <option value="Mystery">Mystery</option>
+      <option value="Romance">Romance</option>
+      <option value="Sci-Fi">Sci-Fi</option>
+      <option value="Thriller">Thriller</option>
+      <option value="War">War</option>
+      <option value="Western">Western</option>
+    </select>
+    <select class="movies-select" id="seriesLangFilter" onchange="filterSeriesPage()">
+      <option value="">All Languages</option>
+      <option value="Bengali">Bengali</option>
+      <option value="Chinese">Chinese</option>
+      <option value="English">English</option>
+      <option value="Hindi">Hindi</option>
+      <option value="Japanese">Japanese</option>
+      <option value="Korean">Korean</option>
+      <option value="Spanish">Spanish</option>
+      <option value="Tamil">Tamil</option>
+      <option value="Telugu">Telugu</option>
+      <option value="Turkish">Turkish</option>
+    </select>
+    <select class="movies-select" id="seriesYearFilter" onchange="filterSeriesPage()">
+      <option value="">All Years</option>
+      <option value="2024-2025">2024 – 2025</option>
+      <option value="2020-2023">2020 – 2023</option>
+      <option value="2015-2019">2015 – 2019</option>
+      <option value="2010-2014">2010 – 2014</option>
+      <option value="2000-2009">2000 – 2009</option>
+      <option value="1990-1999">1990 – 1999</option>
+      <option value="0-1989">Before 1990</option>
+    </select>
+    <select class="movies-select" id="seriesRatingFilter" onchange="filterSeriesPage()">
+      <option value="">Any Rating</option>
+      <option value="8">★ 8.0 and above</option>
+      <option value="7">★ 7.0 and above</option>
+      <option value="6">★ 6.0 and above</option>
+      <option value="5">★ 5.0 and above</option>
+    </select>
+    <select class="movies-select" id="seriesSortFilter" onchange="filterSeriesPage()">
+      <option value="default">Sort: Default</option>
+      <option value="rating-desc">Sort: Top Rated</option>
+      <option value="year-desc">Sort: Newest First</option>
+      <option value="year-asc">Sort: Oldest First</option>
+      <option value="az">Sort: A → Z</option>
+      <option value="za">Sort: Z → A</option>
+    </select>
+  </div>
+  </div>
+  <div class="active-filters" id="seriesActiveFilters"></div>
+  <div id="seriesGrid"></div>
+  <div class="load-more-wrap" id="seriesLoadMoreWrap" style="display:none">
+    <button class="load-more-btn" onclick="seriesLoadMore()">Load More</button>
+  </div>
+</div>
+
+<div id="liveSection">
+  <div class="live-section-header">
+    <div class="live-section-title">
+      <span class="live-pulse"></span>Live TV
+    </div>
+  </div>
+  <div class="live-cats" id="liveCats"></div>
+  <div class="live-grid" id="liveGrid"></div>
+</div>
+
+<div id="searchSection">
+  <div class="search-page-header">
+    <div>
+      <div class="search-page-title">Search</div>
+      <div class="search-page-subtitle">Find movies and shows in your StreamVault library</div>
+    </div>
+  </div>
+  <div class="search-page-bar">
+    <svg viewBox="0 0 24 24" width="22" height="22"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+    <input type="search" id="searchPageInput" placeholder="Search movies and shows" oninput="handleSearch(this.value)" autocomplete="off" autocorrect="off" spellcheck="false">
+  </div>
+  <div class="search-heading" id="searchLabel">Start typing to search your vault</div>
+  <div class="search-grid" id="searchGrid"></div>
+</div>
+
+<div id="downloadsSection">
+  <div class="downloads-header">
+    <div>
+      <div class="downloads-title">Explore Free Softwares</div>
+      <div class="downloads-subtitle">Catalog links from your FTP servers</div>
+    </div>
+  </div>
+  <div class="downloads-search-bar">
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+    <input type="search" id="downloadsSearchInput" placeholder="Search software, APKs, games, OS files" oninput="handleDownloadSearch(this.value)" autocomplete="off" autocorrect="off" spellcheck="false">
+  </div>
+  <div class="downloads-filter-chips" id="downloadsFilters">
+    <button class="download-filter active" type="button" onclick="setDownloadFilter('All')">All</button>
+    <button class="download-filter" type="button" onclick="setDownloadFilter('Windows')">Windows</button>
+    <button class="download-filter" type="button" onclick="setDownloadFilter('Android')">Android</button>
+    <button class="download-filter" type="button" onclick="setDownloadFilter('Games')">Games</button>
+    <button class="download-filter" type="button" onclick="setDownloadFilter('Console')">Console</button>
+    <button class="download-filter" type="button" onclick="setDownloadFilter('OS')">OS</button>
+    <button class="download-filter" type="button" onclick="setDownloadFilter('Archives')">Archives</button>
+  </div>
+  <div class="downloads-warning">Only download files you trust. Scan before installing.</div>
+  <div class="downloads-count" id="downloadsCount"></div>
+  <div class="downloads-grid" id="downloadsGrid"></div>
+</div>
+
+<div id="librarySection">
+  <div class="library-header">
+    <div>
+      <div class="library-title">Library</div>
+      <div class="library-subtitle" id="librarySubtitle">Your watchlist, watched titles, and recent activity</div>
+    </div>
+  </div>
+  <div class="library-groups" id="libraryGroups"></div>
+</div>
+
+<div class="detail-modal" id="movieDetailModal">
+  <button class="detail-floating detail-back" onclick="closeMovieDetail()" aria-label="Back">
+    <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+  </button>
+  <button class="detail-floating detail-more" id="mdWatchlistTopBtn" onclick="toggleMovieWatchlistFromDetail()" aria-label="Toggle watchlist">
+    <svg id="mdWatchlistTopIcon" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2v16z"/></svg>
+  </button>
+  <div class="detail-hero">
+    <img id="mdBackdrop" class="detail-backdrop" src="" alt="">
+    <div class="detail-hero-vignette"></div>
+    <div class="detail-hero-content">
+      <img id="mdPoster" class="detail-poster" src="" alt="">
+      <div class="detail-kicker" id="mdKicker">Movie</div>
+      <div class="detail-title" id="mdTitle"></div>
+      <div class="detail-meta" id="mdMeta"></div>
+      <div class="detail-actions">
+        <button class="action-pill primary" id="mdWatchBtn">
+          <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          Watch
+        </button>
+        <button class="action-pill secondary" id="mdWatchlistBtn" onclick="toggleMovieWatchlistFromDetail()">
+          <svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2v16z"/></svg>
+          Watchlist
+        </button>
+      </div>
+    </div>
+  </div>
+  <div class="detail-body">
+    <section class="detail-section" id="mdOverviewSection">
+      <div class="detail-section-title">Overview</div>
+      <div class="detail-overview is-collapsed" id="mdOverview"></div>
+      <button class="show-more-btn" id="mdShowMoreBtn" onclick="toggleDetailOverview()">Show More</button>
+    </section>
+    <section class="detail-section" id="mdSimilarSection">
+      <div class="detail-section-title" id="mdSimilarTitle">Similar Movies</div>
+      <div class="detail-related-track" id="mdSimilarTrack"></div>
+    </section>
+    <section class="detail-section" id="mdMediaSection">
+      <div class="detail-section-title">Playback Info</div>
+      <div class="metadata-grid" id="mdMediaGrid"></div>
+    </section>
+    <section class="detail-section" id="mdAboutSection">
+      <div class="detail-section-title">About</div>
+      <div class="metadata-grid" id="mdAboutGrid"></div>
+    </section>
+  </div>
+</div>
+
+<div class="series-modal" id="seriesModal">
+  <button class="sm-back" onclick="closeSeriesModal()">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="white"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+  </button>
+  <div class="sm-hero">
+    <img id="smBackdrop" class="sm-backdrop" src="" alt="">
+    <div class="sm-hero-vignette"></div>
+    <div class="sm-info">
+      <img id="smPoster" class="sm-poster" src="" alt="">
+      <div class="sm-badge">SERIES</div>
+      <div class="sm-title" id="smTitle"></div>
+      <div class="sm-meta">
+        <span class="sm-rating" id="smRating"></span>
+        <span class="sm-dot" id="smDot1"></span>
+        <span id="smYear"></span>
+        <span class="sm-dot" id="smDot2"></span>
+        <span id="smGenre"></span>
+      </div>
+      <div class="sm-overview" id="smOverview"></div>
+      <button class="show-more-btn" id="smShowMoreBtn" onclick="toggleSeriesOverview()">Show More</button>
+      <button class="sm-play-btn" id="smPlayBtn">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        Play
+      </button>
+    </div>
+  </div>
+  <div class="series-modal-inner">
+    <div class="sm-tabs-row">
+      <div class="sm-section-title">Episodes</div>
+      <div class="season-tabs" id="seasonTabs"></div>
+    </div>
+    <div class="ep-grid" id="epList"></div>
+    <section class="detail-section" id="smSimilarSection">
+      <div class="detail-section-title">Similar Shows</div>
+      <div class="detail-related-track" id="smSimilarTrack"></div>
+    </section>
+    <section class="detail-section" id="smMediaSection">
+      <div class="detail-section-title">Playback Info</div>
+      <div class="metadata-grid" id="smMediaGrid"></div>
+    </section>
+    <section class="detail-section" id="smAboutSection">
+      <div class="detail-section-title">About</div>
+      <div class="metadata-grid" id="smAboutGrid"></div>
+    </section>
+  </div>
+</div>
+
+<div class="player-modal" id="playerModal">
+  <div class="player-wrap" id="playerWrap">
+    <video id="videoPlayer" playsinline webkit-playsinline preload="metadata"
+      x-webkit-airplay="deny"
+      controlslist="nodownload nofullscreen noremoteplayback"></video>
+    <div class="subtitle-overlay" id="subtitleOverlay"></div>
+    <div class="player-spinner" id="playerSpinner"><div class="spinner-ring"></div></div>
+    <div class="seek-flash left" id="seekFlashLeft"><div class="seek-flash-ring"></div><div class="seek-flash-label">-10s</div></div>
+    <div class="seek-flash right" id="seekFlashRight"><div class="seek-flash-ring"></div><div class="seek-flash-label">+10s</div></div>
+    <div class="center-flash" id="centerFlash"></div>
+    <div class="player-notice" id="playerNotice"></div>
+    <div class="player-ui" id="playerUI">
+      <div class="player-top">
+        <button class="player-back" onclick="closePlayer()">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="white"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+        </button>
+        <div class="player-title-wrap">
+          <div class="player-title" id="playerTitle"></div>
+          <div class="player-subtitle-title" id="playerSubTitle"></div>
+        </div>
+        <div class="player-live-badge" id="playerLiveBadge">
+          <span class="player-live-dot"></span>LIVE
+        </div>
+      </div>
+      <div class="player-middle">
+        <div class="player-tap-zone" id="tapZone"></div>
+        <div class="skip-center">
+          <button class="skip-btn" onclick="seekBy(-10)">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="white"><path d="M12.5 3a9 9 0 1 0 8.46 5.88L19.2 9.8A7 7 0 1 1 12.5 5V3z"/><path d="M12.5 3v5l-4-2.5 4-2.5z"/><text x="10" y="16" font-size="6" fill="white">10</text></svg>
+            <span>10s</span>
+          </button>
+          <button class="play-pause-center" id="ppCenterBtn" onclick="togglePlay()">
+            <svg id="ppCenterIcon" viewBox="0 0 24 24" width="34" height="34" fill="white"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+          <button class="skip-btn" onclick="seekBy(10)">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="white"><path d="M11.5 3a9 9 0 1 1-8.46 5.88L4.8 9.8A7 7 0 1 0 11.5 5V3z"/><path d="M11.5 3v5l4-2.5-4-2.5z"/><text x="10" y="16" font-size="6" fill="white">10</text></svg>
+            <span>10s</span>
+          </button>
+        </div>
+      </div>
+      <div class="player-bottom">
+        <div class="progress-wrap" id="progressWrap">
+          <div class="progress-track">
+            <div class="progress-buffered" id="progressBuffered"></div>
+            <div class="progress-played" id="progressPlayed"></div>
+          </div>
+          <div class="progress-thumb" id="progressThumb"></div>
+          <div class="progress-tooltip" id="progressTooltip">0:00</div>
+        </div>
+        <div class="series-player-bar" id="seriesPlayerBar">
+          <button class="next-ep-btn" id="nextEpBtn" onclick="playNextEpisode()">
+            <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM16 6h2v12h-2z"/></svg>
+            Next Episode
+          </button>
+          <div style="position:relative;flex-shrink:0">
+            <button class="series-ctrl-btn" id="seriesEpBtn" onclick="openSeriesDropdown('seriesEpDD',this)">
+              <svg viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
+              <span class="series-ctrl-btn-text" id="seriesEpLabel">Episode</span>
+              <svg viewBox="0 0 24 24" width="14" height="14" style="margin-left:2px;opacity:.5"><path d="M7 10l5 5 5-5z"/></svg>
+            </button>
+            <div class="spd-series" id="seriesEpDD"></div>
+          </div>
+          <div style="position:relative;flex-shrink:0">
+            <button class="series-ctrl-btn" id="seriesShowBtn" onclick="openSeriesDropdown('seriesShowDD',this)">
+              <svg viewBox="0 0 24 24"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg>
+              <span class="series-ctrl-btn-text" id="seriesShowLabel">Series</span>
+              <svg viewBox="0 0 24 24" width="14" height="14" style="margin-left:2px;opacity:.5"><path d="M7 10l5 5 5-5z"/></svg>
+            </button>
+            <div class="spd-series" id="seriesShowDD"></div>
+          </div>
+        </div>
+        <div class="controls-row">
+          <button class="ctrl ctrl-icon-only" onclick="togglePlay()" title="Play/Pause">
+            <svg id="ppIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+          <div class="vol-wrap">
+            <button class="ctrl ctrl-icon-only" onclick="toggleMute()" id="volIcon" title="Mute">
+              <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+            </button>
+            <input type="range" class="vol-slider" id="volSlider" min="0" max="1" step="0.02" value="1" oninput="setVolume(this.value)">
+          </div>
+          <div class="ctrl-sep vol-sep"></div>
+          <span class="time-display"><span id="timeNow">0:00</span> / <span id="timeDur">--:--</span></span>
+          <div class="spacer"></div>
+          <div class="player-tool-wrap sub-tool" style="position:relative;flex-shrink:0">
+            <button class="ctrl" id="subBtn" onclick="openDropdown('subDD',this)" title="Subtitles">
+              <svg viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-9 4h2v2h-2V8zm0 3h2v2h-2v-2zm-3-3h2v2H8V8zm0 3h2v2H8v-2zm-1 5H6v-2h1v2zm8-2h-7v-1h7v1zm0 2h-7v-1h7v1zm3 0h-1v-2h1v2zm0-3h-4v-2h4v2z"/></svg>
+              <span id="subLabel">CC</span>
+            </button>
+            <div class="player-dropdown" id="subDD">
+              <div class="pd-header">Subtitles</div>
+              <div id="subList"></div>
+            </div>
+          </div>
+          <div class="ctrl-sep tool-sep"></div>
+                    <!-- AUDIO TRACK BUTTON & DROPDOWN -->
+          <div class="player-tool-wrap audio-tool" style="position:relative;flex-shrink:0">
+            <button class="ctrl" id="audioBtn" onclick="openDropdown('audioDD',this)" title="Audio Track">
+              <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+              <span id="audioLabel">Audio</span>
+            </button>
+            <div class="player-dropdown" id="audioDD">
+              <div class="pd-header">Audio Track</div>
+              <div id="audioList"></div>
+            </div>
+          </div>
+          <div class="ctrl-sep speed-sep"></div>
+          <div class="player-tool-wrap speed-tool" style="position:relative;flex-shrink:0">
+            <button class="ctrl" onclick="openDropdown('speedDD',this)" title="Speed">
+              <svg viewBox="0 0 24 24"><path d="M20.38 8.57l-1.23 1.85a8 8 0 0 1-.22 7.58H5.07A8 8 0 0 1 15.58 6.85l1.85-1.23A10 10 0 0 0 3.35 19a2 2 0 0 0 1.72 1h13.85a2 2 0 0 0 1.74-1 10 10 0 0 0-.27-10.44zM10.59 15.41a2 2 0 0 0 2.83 0l5.66-8.49-8.49 5.66a2 2 0 0 0 0 2.83z"/></svg>
+              <span id="speedLabel">1×</span>
+            </button>
+            <div class="player-dropdown" id="speedDD">
+              <div class="pd-header">Playback Speed</div>
+              <div id="speedList"></div>
+            </div>
+          </div>
+          <div class="ctrl-sep pip-sep"></div>
+          <button class="ctrl ctrl-icon-only" id="pipBtn" onclick="togglePiP()" title="Picture in Picture" style="display:none">
+            <svg id="pipIcon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 7h-8v6h8V7zm2-4H3c-1.1 0-2 .9-2 2v14c0 1.1.9 1.99 2 1.99h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16.01H3V4.99h18v14.02z"/></svg>
+          </button>
+          <div class="ctrl-sep fs-sep"></div>
+          <button class="ctrl ctrl-icon-only" onclick="toggleFullscreen()" id="fsBtn" title="Fullscreen">
+            <svg id="fsIcon" viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="bottom-nav" id="bottomNav">
+  <div class="bn-item active" id="bnDiscover" onclick="bnTap('discover')">
+    <span class="bn-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12 2l2.9 6.2 6.6.8-4.9 4.6 1.3 6.4L12 16.7 6.1 20l1.3-6.4L2.5 9l6.6-.8L12 2z"/></svg></span>
+    <span class="bn-label">Discover</span>
+  </div>
+  <div class="bn-item" id="bnMovies" onclick="bnTap('movies-browse')">
+    <span class="bn-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg></span>
+    <span class="bn-label">Movies</span>
+  </div>
+  <div class="bn-item" id="bnShows" onclick="bnTap('series')">
+    <span class="bn-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg></span>
+    <span class="bn-label">Shows</span>
+  </div>
+  <div class="bn-item" id="bnDownloads" onclick="bnTap('downloads')" aria-label="Explore Free Softwares" title="Explore Free Softwares">
+    <span class="bn-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12 3a1 1 0 0 1 1 1v8.59l2.3-2.29 1.4 1.4-4.7 4.71-4.7-4.71 1.4-1.4 2.3 2.29V4a1 1 0 0 1 1-1zM5 18h14v2H5v-2z"/></svg></span>
+    <span class="bn-label">Softwares</span>
+  </div>
+  <div class="bn-item" id="bnSearch" onclick="bnTap('search')">
+    <span class="bn-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg></span>
+    <span class="bn-label">Search</span>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script defer src="/app.js?v=20260521-desktop-noffmpeg2"></script>
+<script defer src="/details.js?v=20260520-postercache3"></script>
+<script defer src="/home.js?v=20260523-exclusive2"></script>
+<script defer src="/downloads.js?v=20260520-downloads1"></script>
+<script defer src="/search.js?v=20260520-downloads1"></script>
+<script defer src="/livetv.js?v=20260519-hls-fallback3"></script>
+<script defer src="/player.js?v=20260519-playback-rollback"></script>
+<script defer src="/boot.js?v=20260519-hls-fallback3"></script>
+</body>
+</html>  

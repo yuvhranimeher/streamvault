@@ -13,3 +13,14 @@ catalog/*.ndjson
 dist-newstyle/
 *.bak-v*
 
+
+# Local junk / experiments
+New Text Document.txt
+_infrastructure-report/
+auto-push.ps1
+folder-tree.txt
+scan-infrastructure.ps1
+sv-build-home-sections-v5.js
+dist-newstyle/
+*.bak*
+

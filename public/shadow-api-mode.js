@@ -26,8 +26,9 @@
   const originalFetch = window.fetch.bind(window);
 
   function shouldShadow(pathname){
+    // IMPORTANT: do NOT shadow /api/home-feed yet.
+    // It controls Discover rows and still differs enough to blank the homepage.
     return (
-      pathname === '/api/home-feed' ||
       pathname.startsWith('/api/section/') ||
       pathname === '/api/movies' ||
       pathname === '/api/series' ||
@@ -82,7 +83,7 @@
   window.addEventListener('DOMContentLoaded', function(){
     try {
       const badge = document.createElement('div');
-      badge.textContent = 'Haskell Shadow API';
+      badge.textContent = 'Haskell Shadow API: partial';
       badge.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:99999;background:rgba(0,0,0,.82);color:#fff;font:12px system-ui;padding:7px 10px;border-radius:999px;pointer-events:none;box-shadow:0 6px 24px rgba(0,0,0,.25)';
       document.body.appendChild(badge);
     } catch {}

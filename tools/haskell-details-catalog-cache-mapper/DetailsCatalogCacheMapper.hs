@@ -1,4 +1,4 @@
-﻿-- StreamVault Details Catalog-to-Cache Mapper
+﻿-- StreamVault Details Catalog-to-Cache Mapper V2
 -- Read-only Haskell tool.
 -- Maps sampled frontend IDs/titles to detail-cache.json keys:
 --   movie:<clean title>:<year>
@@ -10,7 +10,7 @@ module Main where
 import System.Directory (doesFileExist, createDirectoryIfMissing)
 import System.FilePath ((</>))
 import Data.Char (isDigit, isSpace)
-import Data.List (isInfixOf, stripPrefix)
+import Data.List (isInfixOf)
 
 data Probe = Probe
   { pKind :: String
@@ -39,8 +39,8 @@ readProbes p = do
     ls <- lines <$> readFile p
     pure [x | Just x <- map parseProbe (drop 1 ls)]
 
-contains :: String -> String -> Bool
-contains needle haystack = ("\"" ++ needle ++ "\"") `isInfixOf` haystack
+containsKey :: String -> String -> Bool
+containsKey needle haystack = ("\"" ++ needle ++ "\"") `isInfixOf` haystack
 
 startsWith :: String -> String -> Bool
 startsWith [] _ = True
@@ -65,8 +65,11 @@ trimYearParen s =
 trimQualityNoise :: String -> String
 trimQualityNoise s =
   let markers =
-        [ " 1080p", " 720p", " 2160p", " BluRay", " WEBRip", " WEB-DL"
-        , " AMZN", " NF", " Hindi", " Dual Audio", " Multi Audio"
+        [ " 1080p", " 720p", " 2160p", " 480p"
+        , " BluRay", " WEBRip", " WEB-DL", " HDRip", " BRRip"
+        , " AMZN", " NF", " DSNP", " HMAX"
+        , " Hindi", " English", " Dual Audio", " Multi Audio"
+        , " x264", " x265", " HEVC", " AAC", " DTS", " ESub", " MSubs"
         , " TV Series", " TV Mini Series"
         ]
   in cutAtAny markers s
@@ -98,16 +101,20 @@ candidateKeys p =
       title = cleanTitle (pTitle p)
       rawTitle = trimYearParen (pTitle p)
       yr = pYear p
-  in filter (not . null)
+  in filter validKey
       [ pref ++ title ++ ":" ++ yr
       , pref ++ rawTitle ++ ":" ++ yr
       , pref ++ pId p ++ ":" ++ yr
+      , pref ++ title ++ ":"
+      , pref ++ rawTitle ++ ":"
       ]
+  where
+    validKey x = length x > 8
 
 statusFor :: String -> Probe -> [String]
 statusFor cache p =
   let cands = candidateKeys p
-      hits = filter (`contains` cache) cands
+      hits = filter (`containsKey` cache) cands
   in [ pKind p
      , pId p
      , pTitle p
@@ -122,9 +129,13 @@ joinPipe [] = ""
 joinPipe [x] = x
 joinPipe (x:xs) = x ++ " | " ++ joinPipe xs
 
+safe :: String -> String
+safe = map (\c -> if c == '\t' || c == '\n' || c == '\r' then ' ' else c)
+
 tsvLine :: [String] -> String
-tsvLine = foldr1 (\a b -> safe a ++ "\t" ++ b)
-  where safe = map (\c -> if c == '\t' || c == '\n' || c == '\r' then ' ' else c)
+tsvLine [] = ""
+tsvLine [x] = safe x
+tsvLine (x:xs) = safe x ++ "\t" ++ tsvLine xs
 
 countHits :: [[String]] -> Int
 countHits rows = length [() | r <- rows, length r > 4, r !! 4 == "HIT"]
@@ -148,7 +159,7 @@ main = do
         (unlines (tsvLine header : map tsvLine rows))
 
       let report =
-            [ "StreamVault Haskell Details Catalog-to-Cache Mapper Report"
+            [ "StreamVault Haskell Details Catalog-to-Cache Mapper V2 Report"
             , replicate 72 '='
             , ""
             , "Status: read-only mapping prototype."
@@ -169,8 +180,8 @@ main = do
             , "- Use HIT rows to build first /api/details fixture parity."
             , "- Keep details shadow disabled until output parity is proven."
             , ""
-            , "First 30 rows:"
-            ] ++ map (joinPipe) (take 30 rows)
+            , "First 40 rows:"
+            ] ++ map (joinPipe) (take 40 rows)
 
       writeFile ("tools" </> "haskell-details-catalog-cache-mapper" </> "out" </> "details-catalog-cache-mapper-report.txt")
         (unlines report)

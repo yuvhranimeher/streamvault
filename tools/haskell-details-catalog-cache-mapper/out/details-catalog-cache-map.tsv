@@ -1,1 +1,101 @@
 kind	id	title	year	status	matchedKey	candidateKeys
+movie	ftp_0	2040 2019	2040	MISS		movie:2040 2019:2040 | movie:2040 2019:2040 | movie:ftp_0:2040 | movie:2040 2019: | movie:2040 2019:
+movie	ftp_1	The Hunt for Gollum (2009)	2027	HIT	movie:The Hunt for Gollum:2027	movie:The Hunt for Gollum:2027 | movie:The Hunt for Gollum:2027 | movie:ftp_1:2027 | movie:The Hunt for Gollum: | movie:The Hunt for Gollum:
+movie	ftp_2	From the Ashes (Jaras Enzar) (2024)	2027	MISS		movie:From the Ashes (Jaras Enzar):2027 | movie:From the Ashes (Jaras Enzar):2027 | movie:ftp_2:2027 | movie:From the Ashes (Jaras Enzar): | movie:From the Ashes (Jaras Enzar):
+movie	ftp_3	Hamlet (1996)	2026	MISS		movie:Hamlet:2026 | movie:Hamlet:2026 | movie:ftp_3:2026 | movie:Hamlet: | movie:Hamlet:
+movie	ftp_4	Go (2007)	2007	HIT	movie:Go:2007	movie:Go:2007 | movie:Go:2007 | movie:ftp_4:2007 | movie:Go: | movie:Go:
+movie	ftp_5	Heaven (2022)	2026	MISS		movie:Heaven:2026 | movie:Heaven:2026 | movie:ftp_5:2026 | movie:Heaven: | movie:Heaven:
+movie	ftp_6	Broken (2021)	2026	MISS		movie:Broken:2026 | movie:Broken:2026 | movie:ftp_6:2026 | movie:Broken: | movie:Broken:
+movie	ftp_7	The Internship (2026)	2026	MISS		movie:The Internship:2026 | movie:The Internship:2026 | movie:ftp_7:2026 | movie:The Internship: | movie:The Internship:
+movie	ftp_8	Teen Spirit (2018)	2026	MISS		movie:Teen Spirit:2026 | movie:Teen Spirit:2026 | movie:ftp_8:2026 | movie:Teen Spirit: | movie:Teen Spirit:
+movie	ftp_9	Mary (2024)	2026	HIT	movie:Mary:2026	movie:Mary:2026 | movie:Mary:2026 | movie:ftp_9:2026 | movie:Mary: | movie:Mary:
+movie	ftp_10	Dolly (2025)	2026	HIT	movie:Dolly:2026	movie:Dolly:2026 | movie:Dolly:2026 | movie:ftp_10:2026 | movie:Dolly: | movie:Dolly:
+movie	ftp_11	Good Luck, Have Fun, Don't Die (2025)	2026	MISS		movie:Good Luck, Have Fun, Don't Die:2026 | movie:Good Luck, Have Fun, Don't Die:2026 | movie:ftp_11:2026 | movie:Good Luck, Have Fun, Don't Die: | movie:Good Luck, Have Fun, Don't Die:
+movie	ftp_12	Primate (2025)	2026	MISS		movie:Primate:2026 | movie:Primate:2026 | movie:ftp_12:2026 | movie:Primate: | movie:Primate:
+movie	ftp_13	Redux Redux (2025)	2026	MISS		movie:Redux Redux:2026 | movie:Redux Redux:2026 | movie:ftp_13:2026 | movie:Redux Redux: | movie:Redux Redux:
+movie	ftp_14	The Dutchman (2025)	2026	HIT	movie:The Dutchman:2026	movie:The Dutchman:2026 | movie:The Dutchman:2026 | movie:ftp_14:2026 | movie:The Dutchman: | movie:The Dutchman:
+movie	ftp_15	28 Years Later-The Bone Temple (2026)	2026	HIT	movie:28 Years Later-The Bone Temple:2026	movie:28 Years Later-The Bone Temple:2026 | movie:28 Years Later-The Bone Temple:2026 | movie:ftp_15:2026 | movie:28 Years Later-The Bone Temple: | movie:28 Years Later-The Bone Temple:
+movie	ftp_16	Cold Storage (2026)	2026	MISS		movie:Cold Storage:2026 | movie:Cold Storage:2026 | movie:ftp_16:2026 | movie:Cold Storage: | movie:Cold Storage:
+movie	ftp_17	Crime 101 (2026)	2026	MISS		movie:Crime 101:2026 | movie:Crime 101:2026 | movie:ftp_17:2026 | movie:Crime 101: | movie:Crime 101:
+movie	ftp_18	Greenland 2-Migration (2026)	2026	MISS		movie:Greenland 2-Migration:2026 | movie:Greenland 2-Migration:2026 | movie:ftp_18:2026 | movie:Greenland 2-Migration: | movie:Greenland 2-Migration:
+movie	ftp_19	Mercy (2026)	2026	HIT	movie:Mercy:2026	movie:Mercy:2026 | movie:Mercy:2026 | movie:ftp_19:2026 | movie:Mercy: | movie:Mercy:
+movie	ftp_20	Peaky Blinders-The Immortal Man (2026)	2026	MISS		movie:Peaky Blinders-The Immortal Man:2026 | movie:Peaky Blinders-The Immortal Man:2026 | movie:ftp_20:2026 | movie:Peaky Blinders-The Immortal Man: | movie:Peaky Blinders-The Immortal Man:
+movie	ftp_21	People We Meet on Vacation (2026)	2026	HIT	movie:People We Meet on Vacation:2026	movie:People We Meet on Vacation:2026 | movie:People We Meet on Vacation:2026 | movie:ftp_21:2026 | movie:People We Meet on Vacation: | movie:People We Meet on Vacation:
+movie	ftp_22	Scream 7 (2026)	2026	HIT	movie:Scream 7:2026	movie:Scream 7:2026 | movie:Scream 7:2026 | movie:ftp_22:2026 | movie:Scream 7: | movie:Scream 7:
+movie	ftp_23	Send Help (2026)	2026	MISS		movie:Send Help:2026 | movie:Send Help:2026 | movie:ftp_23:2026 | movie:Send Help: | movie:Send Help:
+movie	ftp_24	Shelter (2026)	2026	MISS		movie:Shelter:2026 | movie:Shelter:2026 | movie:ftp_24:2026 | movie:Shelter: | movie:Shelter:
+movie	ftp_25	The Bluff (2026)	2026	MISS		movie:The Bluff:2026 | movie:The Bluff:2026 | movie:ftp_25:2026 | movie:The Bluff: | movie:The Bluff:
+movie	ftp_26	The Rip (2026)	2026	MISS		movie:The Rip:2026 | movie:The Rip:2026 | movie:ftp_26:2026 | movie:The Rip: | movie:The Rip:
+movie	ftp_27	The Strangers-Chapter 3 (2026)	2026	MISS		movie:The Strangers-Chapter 3:2026 | movie:The Strangers-Chapter 3:2026 | movie:ftp_27:2026 | movie:The Strangers-Chapter 3: | movie:The Strangers-Chapter 3:
+movie	ftp_28	The Wrecking Crew (2026)	2026	HIT	movie:The Wrecking Crew:2026	movie:The Wrecking Crew:2026 | movie:The Wrecking Crew:2026 | movie:ftp_28:2026 | movie:The Wrecking Crew: | movie:The Wrecking Crew:
+movie	ftp_29	War Machine (2026)	2026	MISS		movie:War Machine:2026 | movie:War Machine:2026 | movie:ftp_29:2026 | movie:War Machine: | movie:War Machine:
+movie	ftp_30	Wuthering Heights (2026)	2026	MISS		movie:Wuthering Heights:2026 | movie:Wuthering Heights:2026 | movie:ftp_30:2026 | movie:Wuthering Heights: | movie:Wuthering Heights:
+movie	ftp_31	Hum (2020)	2026	MISS		movie:Hum:2026 | movie:Hum:2026 | movie:ftp_31:2026 | movie:Hum: | movie:Hum:
+movie	ftp_32	Karma (2018)	2018	MISS		movie:Karma:2018 | movie:Karma:2018 | movie:ftp_32:2018 | movie:Karma: | movie:Karma:
+movie	ftp_33	Mard (1985)	2026	MISS		movie:Mard:2026 | movie:Mard:2026 | movie:ftp_33:2026 | movie:Mard: | movie:Mard:
+movie	ftp_34	Good Luck (2008)	2026	MISS		movie:Good Luck:2026 | movie:Good Luck:2026 | movie:ftp_34:2026 | movie:Good Luck: | movie:Good Luck:
+movie	ftp_35	Mithya (2008)	2026	MISS		movie:Mithya:2026 | movie:Mithya:2026 | movie:ftp_35:2026 | movie:Mithya: | movie:Mithya:
+movie	ftp_36	Raftaar (2009)	2026	MISS		movie:Raftaar:2026 | movie:Raftaar:2026 | movie:ftp_36:2026 | movie:Raftaar: | movie:Raftaar:
+movie	ftp_37	Ek Din	2026	MISS		movie:Ek Din:2026 | movie:Ek Din:2026 | movie:ftp_37:2026 | movie:Ek Din: | movie:Ek Din:
+movie	ftp_38	Singh Vs Kaur (2013)	2026	MISS		movie:Singh Vs Kaur:2026 | movie:Singh Vs Kaur:2026 | movie:ftp_38:2026 | movie:Singh Vs Kaur: | movie:Singh Vs Kaur:
+movie	ftp_39	Mardaani (2014)	2026	MISS		movie:Mardaani:2026 | movie:Mardaani:2026 | movie:ftp_39:2026 | movie:Mardaani: | movie:Mardaani:
+movie	ftp_40	Saka (2016)	2026	MISS		movie:Saka:2026 | movie:Saka:2026 | movie:ftp_40:2026 | movie:Saka: | movie:Saka:
+movie	ftp_41	Maatr (2017)	2026	MISS		movie:Maatr:2026 | movie:Maatr:2026 | movie:ftp_41:2026 | movie:Maatr: | movie:Maatr:
+movie	ftp_42	Rabb Da Radio (2017)	2026	MISS		movie:Rabb Da Radio:2026 | movie:Rabb Da Radio:2026 | movie:ftp_42:2026 | movie:Rabb Da Radio: | movie:Rabb Da Radio:
+movie	ftp_43	Bharat (2019)	2026	MISS		movie:Bharat:2026 | movie:Bharat:2026 | movie:ftp_43:2026 | movie:Bharat: | movie:Bharat:
+movie	ftp_44	One Friday Night (2022)	2026	MISS		movie:One Friday Night:2026 | movie:One Friday Night:2026 | movie:ftp_44:2026 | movie:One Friday Night: | movie:One Friday Night:
+movie	ftp_45	Lakadbaggha (2023)	2026	MISS		movie:Lakadbaggha:2026 | movie:Lakadbaggha:2026 | movie:ftp_45:2026 | movie:Lakadbaggha: | movie:Lakadbaggha:
+movie	ftp_46	Dhurandhar (2025)	2026	HIT	movie:Dhurandhar:2026	movie:Dhurandhar:2026 | movie:Dhurandhar:2026 | movie:ftp_46:2026 | movie:Dhurandhar: | movie:Dhurandhar:
+movie	ftp_47	Maalik (2025)	2026	MISS		movie:Maalik:2026 | movie:Maalik:2026 | movie:ftp_47:2026 | movie:Maalik: | movie:Maalik:
+movie	ftp_48	Mayasabha (2026)	2026	MISS		movie:Mayasabha:2026 | movie:Mayasabha:2026 | movie:ftp_48:2026 | movie:Mayasabha: | movie:Mayasabha:
+movie	ftp_49	Vadh 2 (2025)	2026	MISS		movie:Vadh 2:2026 | movie:Vadh 2:2026 | movie:ftp_49:2026 | movie:Vadh 2: | movie:Vadh 2:
+movie	ftp_50	Assi (2026)	2026	MISS		movie:Assi:2026 | movie:Assi:2026 | movie:ftp_50:2026 | movie:Assi: | movie:Assi:
+movie	ftp_51	Bhabiji Ghar Par Hain-Fun on the Run (2026)	2026	MISS		movie:Bhabiji Ghar Par Hain-Fun on the Run:2026 | movie:Bhabiji Ghar Par Hain-Fun on the Run:2026 | movie:ftp_51:2026 | movie:Bhabiji Ghar Par Hain-Fun on the Run: | movie:Bhabiji Ghar Par Hain-Fun on the Run:
+movie	ftp_52	Border 2 (2026)	2026	MISS		movie:Border 2:2026 | movie:Border 2:2026 | movie:ftp_52:2026 | movie:Border 2: | movie:Border 2:
+movie	ftp_53	Dhurandhar-The Revenge (2026)	2026	MISS		movie:Dhurandhar-The Revenge:2026 | movie:Dhurandhar-The Revenge:2026 | movie:ftp_53:2026 | movie:Dhurandhar-The Revenge: | movie:Dhurandhar-The Revenge:
+movie	ftp_54	Do Deewane Seher Mein (2026)	2026	MISS		movie:Do Deewane Seher Mein:2026 | movie:Do Deewane Seher Mein:2026 | movie:ftp_54:2026 | movie:Do Deewane Seher Mein: | movie:Do Deewane Seher Mein:
+movie	ftp_55	Everybody Loves Sohrab Handa (2026)	2026	MISS		movie:Everybody Loves Sohrab Handa:2026 | movie:Everybody Loves Sohrab Handa:2026 | movie:ftp_55:2026 | movie:Everybody Loves Sohrab Handa: | movie:Everybody Loves Sohrab Handa:
+movie	ftp_56	Happy Patel-Khatarnak Jasoos (2026)	2026	MISS		movie:Happy Patel-Khatarnak Jasoos:2026 | movie:Happy Patel-Khatarnak Jasoos:2026 | movie:ftp_56:2026 | movie:Happy Patel-Khatarnak Jasoos: | movie:Happy Patel-Khatarnak Jasoos:
+movie	ftp_57	Ikkis (2026)	2026	MISS		movie:Ikkis:2026 | movie:Ikkis:2026 | movie:ftp_57:2026 | movie:Ikkis: | movie:Ikkis:
+movie	ftp_58	Mardaani 3 (2026)	2026	MISS		movie:Mardaani 3:2026 | movie:Mardaani 3:2026 | movie:ftp_58:2026 | movie:Mardaani 3: | movie:Mardaani 3:
+movie	ftp_59	O' Romeo (2026)	2026	MISS		movie:O' Romeo:2026 | movie:O' Romeo:2026 | movie:ftp_59:2026 | movie:O' Romeo: | movie:O' Romeo:
+movie	ftp_60	Rahu Ketu (2026)	2026	MISS		movie:Rahu Ketu:2026 | movie:Rahu Ketu:2026 | movie:ftp_60:2026 | movie:Rahu Ketu: | movie:Rahu Ketu:
+movie	ftp_61	The Kerala Story 2-Goes Beyond (2026)	2026	MISS		movie:The Kerala Story 2-Goes Beyond:2026 | movie:The Kerala Story 2-Goes Beyond:2026 | movie:ftp_61:2026 | movie:The Kerala Story 2-Goes Beyond: | movie:The Kerala Story 2-Goes Beyond:
+movie	ftp_62	Tu Yaa Main (2026)	2026	MISS		movie:Tu Yaa Main:2026 | movie:Tu Yaa Main:2026 | movie:ftp_62:2026 | movie:Tu Yaa Main: | movie:Tu Yaa Main:
+movie	ftp_63	Alice (2022)	2022	MISS		movie:Alice:2022 | movie:Alice:2022 | movie:ftp_63:2022 | movie:Alice: | movie:Alice:
+movie	ftp_64	Sniper (1993)	2026	MISS		movie:Sniper:2026 | movie:Sniper:2026 | movie:ftp_64:2026 | movie:Sniper: | movie:Sniper:
+movie	ftp_65	Street Smart (1987)	2026	HIT	movie:Street Smart:2026	movie:Street Smart:2026 | movie:Street Smart:2026 | movie:ftp_65:2026 | movie:Street Smart: | movie:Street Smart:
+movie	ftp_66	Supergirl (1984)	2026	MISS		movie:Supergirl:2026 | movie:Supergirl:2026 | movie:ftp_66:2026 | movie:Supergirl: | movie:Supergirl:
+movie	ftp_67	The Paper (1994)	2026	MISS		movie:The Paper:2026 | movie:The Paper:2026 | movie:ftp_67:2026 | movie:The Paper: | movie:The Paper:
+movie	ftp_68	Twisted (2026)	2026	MISS		movie:Twisted:2026 | movie:Twisted:2026 | movie:ftp_68:2026 | movie:Twisted: | movie:Twisted:
+movie	ftp_69	Hop (2011)	2026	MISS		movie:Hop:2026 | movie:Hop:2026 | movie:ftp_69:2026 | movie:Hop: | movie:Hop:
+movie	ftp_70	Boulevard (2014)	2026	MISS		movie:Boulevard:2026 | movie:Boulevard:2026 | movie:ftp_70:2026 | movie:Boulevard: | movie:Boulevard:
+movie	ftp_71	The Cure (2020)	2026	MISS		movie:The Cure:2026 | movie:The Cure:2026 | movie:ftp_71:2026 | movie:The Cure: | movie:The Cure:
+movie	ftp_72	Goat (2016)	2026	MISS		movie:Goat:2026 | movie:Goat:2026 | movie:ftp_72:2026 | movie:Goat: | movie:Goat:
+movie	ftp_73	The Mermaid (2016)	2026	MISS		movie:The Mermaid:2026 | movie:The Mermaid:2026 | movie:ftp_73:2026 | movie:The Mermaid: | movie:The Mermaid:
+movie	ftp_74	Revenge (2017)	2026	MISS		movie:Revenge:2026 | movie:Revenge:2026 | movie:ftp_74:2026 | movie:Revenge: | movie:Revenge:
+movie	ftp_75	Waru (2017)	2026	MISS		movie:Waru:2026 | movie:Waru:2026 | movie:ftp_75:2026 | movie:Waru: | movie:Waru:
+movie	ftp_76	Black Flowers (2018)	2026	MISS		movie:Black Flowers:2026 | movie:Black Flowers:2026 | movie:ftp_76:2026 | movie:Black Flowers: | movie:Black Flowers:
+movie	ftp_77	Don't Go (2018)	2026	MISS		movie:Don't Go:2026 | movie:Don't Go:2026 | movie:ftp_77:2026 | movie:Don't Go: | movie:Don't Go:
+movie	ftp_78	The World Is Full of Secrets (2018)	2026	MISS		movie:The World Is Full of Secrets:2026 | movie:The World Is Full of Secrets:2026 | movie:ftp_78:2026 | movie:The World Is Full of Secrets: | movie:The World Is Full of Secrets:
+movie	ftp_79	Drama Drama (2019)	2026	MISS		movie:Drama Drama:2026 | movie:Drama Drama:2026 | movie:ftp_79:2026 | movie:Drama Drama: | movie:Drama Drama:
+movie	ftp_80	Mayday (2021)	2021	MISS		movie:Mayday:2021 | movie:Mayday:2021 | movie:ftp_80:2021 | movie:Mayday: | movie:Mayday:
+movie	ftp_81	Obsession (2019)	2026	MISS		movie:Obsession:2026 | movie:Obsession:2026 | movie:ftp_81:2026 | movie:Obsession: | movie:Obsession:
+movie	ftp_82	Safe Spaces (2019)	2026	MISS		movie:Safe Spaces:2026 | movie:Safe Spaces:2026 | movie:ftp_82:2026 | movie:Safe Spaces: | movie:Safe Spaces:
+movie	ftp_83	The Assistant (2022)	2026	MISS		movie:The Assistant:2026 | movie:The Assistant:2026 | movie:ftp_83:2026 | movie:The Assistant: | movie:The Assistant:
+movie	ftp_84	The Giant (2019)	2026	MISS		movie:The Giant:2026 | movie:The Giant:2026 | movie:ftp_84:2026 | movie:The Giant: | movie:The Giant:
+movie	ftp_85	Toxicity (2019)	2026	MISS		movie:Toxicity:2026 | movie:Toxicity:2026 | movie:ftp_85:2026 | movie:Toxicity: | movie:Toxicity:
+movie	ftp_86	Paper Tiger (2020)	2026	MISS		movie:Paper Tiger:2026 | movie:Paper Tiger:2026 | movie:ftp_86:2026 | movie:Paper Tiger: | movie:Paper Tiger:
+movie	ftp_87	Pressure (2020)	2026	MISS		movie:Pressure:2026 | movie:Pressure:2026 | movie:ftp_87:2026 | movie:Pressure: | movie:Pressure:
+movie	ftp_88	The Florist (2020)	2026	MISS		movie:The Florist:2026 | movie:The Florist:2026 | movie:ftp_88:2026 | movie:The Florist: | movie:The Florist:
+movie	ftp_89	American Dream (2021)	2026	MISS		movie:American Dream:2026 | movie:American Dream:2026 | movie:ftp_89:2026 | movie:American Dream: | movie:American Dream:
+movie	ftp_90	Apex (2021)	2026	MISS		movie:Apex:2026 | movie:Apex:2026 | movie:ftp_90:2026 | movie:Apex: | movie:Apex:
+movie	ftp_91	Assistant (2021)	2026	MISS		movie:Assistant:2026 | movie:Assistant:2026 | movie:ftp_91:2026 | movie:Assistant: | movie:Assistant:
+movie	ftp_92	Hot Water (2021)	2026	MISS		movie:Hot Water:2026 | movie:Hot Water:2026 | movie:ftp_92:2026 | movie:Hot Water: | movie:Hot Water:
+movie	ftp_93	Whitetail (2021)	2026	MISS		movie:Whitetail:2026 | movie:Whitetail:2026 | movie:ftp_93:2026 | movie:Whitetail: | movie:Whitetail:
+movie	ftp_94	Head to Head (2023)	2026	HIT	movie:Head to Head:2026	movie:Head to Head:2026 | movie:Head to Head:2026 | movie:ftp_94:2026 | movie:Head to Head: | movie:Head to Head:
+movie	ftp_95	The Blind (2023)	2026	MISS		movie:The Blind:2026 | movie:The Blind:2026 | movie:ftp_95:2026 | movie:The Blind: | movie:The Blind:
+movie	ftp_96	Distant (2024)	2026	MISS		movie:Distant:2026 | movie:Distant:2026 | movie:ftp_96:2026 | movie:Distant: | movie:Distant:
+movie	ftp_97	Love Me (2024)	2026	MISS		movie:Love Me:2026 | movie:Love Me:2026 | movie:ftp_97:2026 | movie:Love Me: | movie:Love Me:
+movie	ftp_98	We Bury the Dead (2024)	2026	MISS		movie:We Bury the Dead:2026 | movie:We Bury the Dead:2026 | movie:ftp_98:2026 | movie:We Bury the Dead: | movie:We Bury the Dead:
+movie	ftp_99	Broke (2025)	2026	MISS		movie:Broke:2026 | movie:Broke:2026 | movie:ftp_99:2026 | movie:Broke: | movie:Broke:

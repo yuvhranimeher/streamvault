@@ -1,0 +1,22 @@
+StreamVault Haskell Details Catalog-to-Cache Mapper Report
+========================================================================
+
+Status: read-only mapping prototype.
+No frontend/server/playback/FFmpeg files were changed.
+
+Probe count: 0
+Cache key hits: 0
+Cache key misses: 0
+
+Interpretation:
+- HIT means Haskell can likely serve details from detail-cache.json after ID/title mapping.
+- MISS means Haskell needs catalog normalization/TMDB fallback/Node-compatible lookup.
+
+Output:
+- details-catalog-cache-map.tsv
+
+Next:
+- Use HIT rows to build first /api/details fixture parity.
+- Keep details shadow disabled until output parity is proven.
+
+First 30 rows:

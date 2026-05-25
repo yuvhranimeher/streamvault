@@ -1,22 +1,33 @@
-﻿-- StreamVault Details Catalog-to-Cache Mapper V2
+﻿-- StreamVault Details Catalog-to-Cache Mapper V3
 -- Read-only Haskell tool.
--- Maps sampled frontend IDs/titles to detail-cache.json keys:
---   movie:<clean title>:<year>
---   tv:<clean title>:<year>
--- Also checks if raw title/year and id/year keys exist.
+-- Improved mapper:
+--   1) exact key using title year first,
+--   2) exact key using API/catalog year,
+--   3) fuzzy normalized title-only cache key match.
+--
+-- No production routes are changed.
 
 module Main where
 
 import System.Directory (doesFileExist, createDirectoryIfMissing)
 import System.FilePath ((</>))
-import Data.Char (isDigit, isSpace)
-import Data.List (isInfixOf)
+import Data.Char (isAlphaNum, isDigit, isSpace, toLower)
+import Data.List (isInfixOf, stripPrefix, nub)
 
 data Probe = Probe
   { pKind :: String
   , pId :: String
   , pTitle :: String
   , pYear :: String
+  , pTitleYear :: String
+  } deriving Show
+
+data CacheKey = CacheKey
+  { ckRaw :: String
+  , ckKind :: String
+  , ckTitle :: String
+  , ckYear :: String
+  , ckNormTitle :: String
   } deriving Show
 
 splitTab :: String -> [String]
@@ -29,7 +40,7 @@ splitTab s = go s "" []
 parseProbe :: String -> Maybe Probe
 parseProbe line =
   case splitTab line of
-    [k,i,t,y] -> Just (Probe k i t y)
+    [k,i,t,y,ty] -> Just (Probe k i t y ty)
     _ -> Nothing
 
 readProbes :: FilePath -> IO [Probe]
@@ -39,40 +50,141 @@ readProbes p = do
     ls <- lines <$> readFile p
     pure [x | Just x <- map parseProbe (drop 1 ls)]
 
-containsKey :: String -> String -> Bool
-containsKey needle haystack = ("\"" ++ needle ++ "\"") `isInfixOf` haystack
+scanTopKeys :: String -> [String]
+scanTopKeys = reverse . keys . foldl step emptyState
+  where
+    step st c
+      | inString st =
+          if escapeNext st
+            then st { currentString = currentString st ++ [c], escapeNext = False }
+            else case c of
+              '\\' -> st { escapeNext = True }
+              '"'  -> st { inString = False, currentString = "", lastString = Just (currentString st) }
+              _    -> st { currentString = currentString st ++ [c] }
 
-startsWith :: String -> String -> Bool
-startsWith [] _ = True
-startsWith _ [] = False
-startsWith (a:as) (b:bs) = a == b && startsWith as bs
+      | c == '"' =
+          st { inString = True, currentString = "", escapeNext = False }
+
+      | c == '{' =
+          st { depth = depth st + 1, expectTopKey = depth st == 0 }
+
+      | c == '}' =
+          st { depth = max 0 (depth st - 1), expectTopKey = False }
+
+      | c == ':' && depth st == 1 =
+          case lastString st of
+            Just k | expectTopKey st ->
+              st { keys = k : keys st, lastString = Nothing, expectTopKey = False }
+            _ -> st
+
+      | c == ',' && depth st == 1 =
+          st { expectTopKey = True, lastString = Nothing }
+
+      | otherwise =
+          st
+
+data ScanState = ScanState
+  { depth :: Int
+  , inString :: Bool
+  , escapeNext :: Bool
+  , currentString :: String
+  , lastString :: Maybe String
+  , expectTopKey :: Bool
+  , keys :: [String]
+  } deriving Show
+
+emptyState :: ScanState
+emptyState = ScanState 0 False False "" Nothing True []
+
+parseCacheKey :: String -> Maybe CacheKey
+parseCacheKey raw =
+  case stripPrefix "movie:" raw of
+    Just rest -> make "movie" raw rest
+    Nothing ->
+      case stripPrefix "tv:" raw of
+        Just rest -> make "series" raw rest
+        Nothing -> Nothing
+  where
+    make k r body =
+      let (titlePart, yearPart) = splitLastColon body
+      in Just (CacheKey r k titlePart yearPart (normalizeTitle titlePart))
+
+splitLastColon :: String -> (String, String)
+splitLastColon s =
+  let rev = reverse s
+      (yrRev, restRev) = break (== ':') rev
+  in case restRev of
+       [] -> (s, "")
+       (_:titleRev) -> (reverse titleRev, reverse yrRev)
+
+keyPrefix :: String -> String
+keyPrefix "movie" = "movie:"
+keyPrefix "series" = "tv:"
+keyPrefix "tv" = "tv:"
+keyPrefix _ = ""
+
+candidateYears :: Probe -> [String]
+candidateYears p = nub $ filter (not . null) [pTitleYear p, pYear p, extractYearFromTitle (pTitle p)]
+
+candidateTitles :: Probe -> [String]
+candidateTitles p = nub $ filter (not . null)
+  [ cleanTitle (pTitle p)
+  , trimYearParen (pTitle p)
+  , pTitle p
+  ]
+
+candidateKeys :: Probe -> [String]
+candidateKeys p =
+  let pref = keyPrefix (pKind p)
+      years = candidateYears p
+      titles = candidateTitles p
+      exacts = [pref ++ t ++ ":" ++ y | t <- titles, y <- years]
+      loose  = [pref ++ t ++ ":" | t <- titles]
+      ids    = [pref ++ pId p ++ ":" ++ y | y <- years]
+  in nub (filter (\x -> length x > 8) (exacts ++ ids ++ loose))
+
+findExact :: [String] -> [CacheKey] -> Maybe String
+findExact candidates cks =
+  case [ckRaw ck | ck <- cks, ckRaw ck `elem` candidates] of
+    (x:_) -> Just x
+    [] -> Nothing
+
+findFuzzy :: Probe -> [CacheKey] -> Maybe String
+findFuzzy p cks =
+  let wantedKind = pKind p
+      wantedNorms = nub $ filter (not . null) $ map normalizeTitle (candidateTitles p)
+      sameKind ck = ckKind ck == wantedKind || (wantedKind == "tv" && ckKind ck == "series")
+      hits = [ckRaw ck | ck <- cks, sameKind ck, ckNormTitle ck `elem` wantedNorms]
+  in case hits of
+       (x:_) -> Just x
+       [] -> Nothing
+
+statusFor :: [CacheKey] -> Probe -> [String]
+statusFor cks p =
+  let cands = candidateKeys p
+      exact = findExact cands cks
+      fuzzy = findFuzzy p cks
+  in case exact of
+       Just k ->
+         [pKind p, pId p, pTitle p, pYear p, pTitleYear p, "HIT_EXACT", k, joinPipe cands]
+       Nothing ->
+         case fuzzy of
+           Just k -> [pKind p, pId p, pTitle p, pYear p, pTitleYear p, "HIT_TITLE_FUZZY", k, joinPipe cands]
+           Nothing -> [pKind p, pId p, pTitle p, pYear p, pTitleYear p, "MISS", "", joinPipe cands]
 
 cleanTitle :: String -> String
-cleanTitle s =
-  trimSpaces $ trimYearParen $ trimQualityNoise s
-
-trimSpaces :: String -> String
-trimSpaces = reverse . dropWhile isSpace . reverse . dropWhile isSpace
-
-trimYearParen :: String -> String
-trimYearParen s =
-  let t = trimSpaces s
-  in case reverse t of
-       (')':a:b:c:d:'(':rest)
-         | all isDigit [a,b,c,d] -> trimSpaces (reverse rest)
-       _ -> t
+cleanTitle = trimSpaces . removeBracketContent . trimYearParen . trimQualityNoise
 
 trimQualityNoise :: String -> String
 trimQualityNoise s =
-  let markers =
-        [ " 1080p", " 720p", " 2160p", " 480p"
-        , " BluRay", " WEBRip", " WEB-DL", " HDRip", " BRRip"
-        , " AMZN", " NF", " DSNP", " HMAX"
-        , " Hindi", " English", " Dual Audio", " Multi Audio"
-        , " x264", " x265", " HEVC", " AAC", " DTS", " ESub", " MSubs"
-        , " TV Series", " TV Mini Series"
-        ]
-  in cutAtAny markers s
+  cutAtAny
+    [ " 1080p", " 720p", " 2160p", " 480p", " 4K"
+    , " BluRay", " WEBRip", " WEB-DL", " HDRip", " BRRip", " DVDRip"
+    , " AMZN", " NF", " DSNP", " HMAX"
+    , " Hindi", " English", " Dual Audio", " Multi Audio"
+    , " x264", " x265", " HEVC", " AAC", " DTS", " ESub", " MSubs"
+    , " TV Series", " TV Mini Series"
+    ] s
 
 cutAtAny :: [String] -> String -> String
 cutAtAny [] s = s
@@ -86,43 +198,51 @@ breakOn needle haystack = go "" haystack
   where
     go _ [] = Nothing
     go acc rest
-      | needle `startsWith` rest = Just (reverse acc)
+      | startsWith needle rest = Just (reverse acc)
       | otherwise = go (head rest : acc) (tail rest)
 
-keyPrefix :: String -> String
-keyPrefix "movie" = "movie:"
-keyPrefix "series" = "tv:"
-keyPrefix "tv" = "tv:"
-keyPrefix _ = ""
+startsWith :: String -> String -> Bool
+startsWith [] _ = True
+startsWith _ [] = False
+startsWith (a:as) (b:bs) = a == b && startsWith as bs
 
-candidateKeys :: Probe -> [String]
-candidateKeys p =
-  let pref = keyPrefix (pKind p)
-      title = cleanTitle (pTitle p)
-      rawTitle = trimYearParen (pTitle p)
-      yr = pYear p
-  in filter validKey
-      [ pref ++ title ++ ":" ++ yr
-      , pref ++ rawTitle ++ ":" ++ yr
-      , pref ++ pId p ++ ":" ++ yr
-      , pref ++ title ++ ":"
-      , pref ++ rawTitle ++ ":"
-      ]
+trimYearParen :: String -> String
+trimYearParen s =
+  trimSpaces (removeYearParens s)
+
+removeYearParens :: String -> String
+removeYearParens [] = []
+removeYearParens ('(':a:b:c:d:')':xs)
+  | all isDigit [a,b,c,d] = removeYearParens xs
+removeYearParens (x:xs) = x : removeYearParens xs
+
+extractYearFromTitle :: String -> String
+extractYearFromTitle [] = ""
+extractYearFromTitle ('(':a:b:c:d:')':_)
+  | all isDigit [a,b,c,d] && (a == '1' || a == '2') = [a,b,c,d]
+extractYearFromTitle (_:xs) = extractYearFromTitle xs
+
+removeBracketContent :: String -> String
+removeBracketContent [] = []
+removeBracketContent ('(':xs) = removeBracketContent (dropUntil ')' xs)
+removeBracketContent ('[':xs) = removeBracketContent (dropUntil ']' xs)
+removeBracketContent (x:xs) = x : removeBracketContent xs
+
+dropUntil :: Char -> String -> String
+dropUntil _ [] = []
+dropUntil c (x:xs)
+  | c == x = xs
+  | otherwise = dropUntil c xs
+
+normalizeTitle :: String -> String
+normalizeTitle = unwords . words . map norm . cleanTitle
   where
-    validKey x = length x > 8
+    norm c
+      | isAlphaNum c = toLower c
+      | otherwise = ' '
 
-statusFor :: String -> Probe -> [String]
-statusFor cache p =
-  let cands = candidateKeys p
-      hits = filter (`containsKey` cache) cands
-  in [ pKind p
-     , pId p
-     , pTitle p
-     , pYear p
-     , if null hits then "MISS" else "HIT"
-     , if null hits then "" else head hits
-     , joinPipe cands
-     ]
+trimSpaces :: String -> String
+trimSpaces = reverse . dropWhile isSpace . reverse . dropWhile isSpace
 
 joinPipe :: [String] -> String
 joinPipe [] = ""
@@ -137,8 +257,8 @@ tsvLine [] = ""
 tsvLine [x] = safe x
 tsvLine (x:xs) = safe x ++ "\t" ++ tsvLine xs
 
-countHits :: [[String]] -> Int
-countHits rows = length [() | r <- rows, length r > 4, r !! 4 == "HIT"]
+countStatus :: String -> [[String]] -> Int
+countStatus st rows = length [() | r <- rows, length r > 5, r !! 5 == st]
 
 main :: IO ()
 main = do
@@ -150,38 +270,45 @@ main = do
     then putStrLn "detail-cache.json not found"
     else do
       cache <- readFile "detail-cache.json"
-      let rows = map (statusFor cache) probes
+      let cacheKeys = [ck | Just ck <- map parseCacheKey (scanTopKeys cache)]
+      let rows = map (statusFor cacheKeys) probes
       let total = length rows
-      let hits = countHits rows
-      let misses = total - hits
-      let header = ["kind","id","title","year","status","matchedKey","candidateKeys"]
+      let exactHits = countStatus "HIT_EXACT" rows
+      let fuzzyHits = countStatus "HIT_TITLE_FUZZY" rows
+      let misses = countStatus "MISS" rows
+      let header = ["kind","id","title","year","titleYear","status","matchedKey","candidateKeys"]
       writeFile ("tools" </> "haskell-details-catalog-cache-mapper" </> "out" </> "details-catalog-cache-map.tsv")
         (unlines (tsvLine header : map tsvLine rows))
 
       let report =
-            [ "StreamVault Haskell Details Catalog-to-Cache Mapper V2 Report"
+            [ "StreamVault Haskell Details Catalog-to-Cache Mapper V3 Report"
             , replicate 72 '='
             , ""
-            , "Status: read-only mapping prototype."
+            , "Status: read-only improved mapping prototype."
             , "No frontend/server/playback/FFmpeg files were changed."
             , ""
             , "Probe count: " ++ show total
-            , "Cache key hits: " ++ show hits
+            , "Cache keys parsed: " ++ show (length cacheKeys)
+            , "Exact key hits: " ++ show exactHits
+            , "Fuzzy title hits: " ++ show fuzzyHits
+            , "Total hits: " ++ show (exactHits + fuzzyHits)
             , "Cache key misses: " ++ show misses
             , ""
             , "Interpretation:"
-            , "- HIT means Haskell can likely serve details from detail-cache.json after ID/title mapping."
-            , "- MISS means Haskell needs catalog normalization/TMDB fallback/Node-compatible lookup."
+            , "- HIT_EXACT = safe strongest candidate for Haskell detail-cache lookup."
+            , "- HIT_TITLE_FUZZY = likely candidate, but must verify output parity before frontend shadow."
+            , "- MISS = needs TMDB/catalog fallback or better title normalization."
             , ""
             , "Output:"
             , "- details-catalog-cache-map.tsv"
             , ""
             , "Next:"
-            , "- Use HIT rows to build first /api/details fixture parity."
-            , "- Keep details shadow disabled until output parity is proven."
+            , "- Build Haskell /api/details fixtures for HIT_EXACT first."
+            , "- Then compare Node vs Haskell details responses."
+            , "- Keep details shadow disabled until parity is proven."
             , ""
-            , "First 40 rows:"
-            ] ++ map (joinPipe) (take 40 rows)
+            , "First 50 rows:"
+            ] ++ map joinPipe (take 50 rows)
 
       writeFile ("tools" </> "haskell-details-catalog-cache-mapper" </> "out" </> "details-catalog-cache-mapper-report.txt")
         (unlines report)

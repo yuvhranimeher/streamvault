@@ -11,7 +11,7 @@ Write-Host "Compiling DetailsCatalogCacheMapper.hs..."
 ghc -O2 -o $exe $src
 
 Write-Host ""
-Write-Host "Running catalog/cache mapper..."
+Write-Host "Running catalog/cache mapper V3..."
 & $exe
 
 Write-Host ""

@@ -1,9 +1,7 @@
-# StreamVault Haskell Section APIs Parity Audit
+# StreamVault Haskell Section APIs Parity Audit V2
 # Safe: no frontend/server/playback changes.
-# Purpose:
-# - Find /api/section usages in frontend.
-# - Compare Node API on 3000 vs Haskell shadow API on 3031 for homepage/section rows.
-# - Decide which section fixtures/routes must be expanded before enabling Haskell sections.
+# Fixes PowerShell URL interpolation bug: /api/section/${key}?page=...
+# Previous audit accidentally generated /api/section/=0&limit=...
 
 $ErrorActionPreference = "Stop"
 
@@ -11,10 +9,10 @@ $root = "C:\Users\Mac Mini\Desktop\Website Host\Streaming_Website\streamvault"
 if (!(Test-Path $root)) { throw "Project root not found: $root" }
 Set-Location $root
 
-Write-Host "== StreamVault Haskell Section APIs Parity Audit =="
+Write-Host "== StreamVault Haskell Section APIs Parity Audit V2 =="
 Write-Host "Project root: $root"
 
-git checkout -B test-haskell-section-param-audit | Out-Host
+git checkout -B test-haskell-section-param-audit-v2 | Out-Host
 
 $out = Join-Path $root "tools\haskell-section-param-audit\out"
 New-Item -ItemType Directory -Force -Path $out | Out-Null
@@ -38,7 +36,6 @@ foreach ($f in $frontendFiles) {
 $frontendReport = Join-Path $out "frontend-section-fetches.txt"
 $sectionMatches | Format-List | Out-String | Set-Content -Path $frontendReport -Encoding UTF8
 
-# Known/high-priority homepage section keys.
 $sectionKeys = @(
   "netflix",
   "marvel",
@@ -68,9 +65,11 @@ $tests = @()
 
 foreach ($key in $sectionKeys) {
   $safe = ($key -replace '[^A-Za-z0-9\-]+', '-')
-  $tests += @{ Name="section-$safe-page0-limit12-summary"; Url="/api/section/$key?page=0&limit=12&summary=1" }
-  $tests += @{ Name="section-$safe-page0-limit24-summary"; Url="/api/section/$key?page=0&limit=24&summary=1" }
-  $tests += @{ Name="section-$safe-page0-limit12"; Url="/api/section/$key?page=0&limit=12" }
+  $tests += @{ Name="section-$safe-page0-limit12-summary"; Url="/api/section/${key}?page=0&limit=12&summary=1" }
+  $tests += @{ Name="section-$safe-page0-limit24-summary"; Url="/api/section/${key}?page=0&limit=24&summary=1" }
+  $tests += @{ Name="section-$safe-page0-limit60-summary"; Url="/api/section/${key}?page=0&limit=60&summary=1" }
+  $tests += @{ Name="section-$safe-page1-limit60-summary"; Url="/api/section/${key}?page=1&limit=60&summary=1" }
+  $tests += @{ Name="section-$safe-page0-limit12"; Url="/api/section/${key}?page=0&limit=12" }
 }
 
 $rows = @()
@@ -111,8 +110,8 @@ $txt = Join-Path $out "section-param-parity-report.txt"
 $rows | Export-Csv -NoTypeInformation -Path $csv -Encoding UTF8
 
 $report = @()
-$report += "StreamVault Haskell Section APIs Parity Audit"
-$report += "============================================="
+$report += "StreamVault Haskell Section APIs Parity Audit V2"
+$report += "==============================================="
 $report += ""
 $report += "Frontend /api/section usage found in:"
 $report += ""
@@ -145,11 +144,11 @@ Write-Host "  $frontendReport"
 Write-Host ""
 Write-Host "Committing audit tool only..."
 git add -- "tools/haskell-section-param-audit/run-section-param-audit.ps1" | Out-Host
-git commit -m "Add Haskell section API parity audit" | Out-Host
+git commit -m "Fix Haskell section API parity audit URL interpolation" | Out-Host
 
 Write-Host ""
 Write-Host "Pushing branch..."
-git push -u origin test-haskell-section-param-audit | Out-Host
+git push -u origin test-haskell-section-param-audit-v2 | Out-Host
 
 Write-Host ""
 Write-Host "DONE."

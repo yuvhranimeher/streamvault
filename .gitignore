@@ -10,3 +10,6 @@ data/db/
 data/catalogs/*.json
 data/catalogs/archive/
 catalog/*.ndjson
+dist-newstyle/
+*.bak-v*
+

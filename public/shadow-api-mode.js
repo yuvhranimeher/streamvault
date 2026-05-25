@@ -1,40 +1,90 @@
 ﻿(function(){
-  var KEY = 'sv_shadow_api_enabled';
-  var SHADOW = 'http://127.0.0.1:3031';
+  const SHADOW_ORIGIN = 'http://127.0.0.1:3031';
+  const STORE_KEY = 'sv_shadow_api';
 
-  function params(){
-    try { return new URLSearchParams(window.location.search || ''); }
-    catch(e){ return new URLSearchParams(''); }
+  function paramValue(){
+    try { return new URLSearchParams(location.search).get('shadowApi'); }
+    catch { return null; }
   }
 
-  var q = params();
-  if (q.has('shadowApi')) {
-    if (q.get('shadowApi') === '1') {
-      try { localStorage.setItem(KEY, '1'); } catch(e) {}
-    } else if (q.get('shadowApi') === '0') {
-      try { localStorage.removeItem(KEY); } catch(e) {}
-    }
-  }
+  const p = paramValue();
+  try {
+    if (p === '1') localStorage.setItem(STORE_KEY, '1');
+    if (p === '0') localStorage.removeItem(STORE_KEY);
+  } catch {}
 
-  var enabled = false;
-  try { enabled = localStorage.getItem(KEY) === '1'; } catch(e) {}
+  const enabled = p === '1' || (() => {
+    try { return localStorage.getItem(STORE_KEY) === '1'; }
+    catch { return false; }
+  })();
+
+  window.SV_SHADOW_API_ENABLED = enabled;
+  window.SV_SHADOW_API_ORIGIN = SHADOW_ORIGIN;
+
   if (!enabled) return;
 
-  var nativeFetch = window.fetch ? window.fetch.bind(window) : null;
-  if (!nativeFetch) return;
+  const originalFetch = window.fetch.bind(window);
 
-  window.__SV_SHADOW_API__ = true;
-  console.warn('[StreamVault] Shadow API mode ON:', SHADOW);
+  function shouldShadow(pathname){
+    return (
+      pathname === '/api/home-feed' ||
+      pathname.startsWith('/api/section/') ||
+      pathname === '/api/movies' ||
+      pathname === '/api/series' ||
+      pathname === '/api/search' ||
+      pathname === '/api/downloads'
+    );
+  }
 
-  window.fetch = function(input, init){
+  function rawUrl(input){
+    if (typeof input === 'string') return input;
+    if (input && typeof input.url === 'string') return input.url;
+    return '';
+  }
+
+  window.fetch = async function(input, init){
+    const raw = rawUrl(input);
+    if (!raw) return originalFetch(input, init);
+
+    let url;
+    try { url = new URL(raw, location.origin); }
+    catch { return originalFetch(input, init); }
+
+    if (url.origin !== location.origin || !shouldShadow(url.pathname)) {
+      return originalFetch(input, init);
+    }
+
+    const shadowUrl = SHADOW_ORIGIN + url.pathname + url.search;
+
     try {
-      var raw = (input && input.url) ? input.url : String(input || '');
-      var u = new URL(raw, window.location.origin);
-      if (u.origin === window.location.origin && u.pathname.indexOf('/api/') === 0) {
-        var shadowUrl = SHADOW + u.pathname + u.search;
-        return nativeFetch(shadowUrl, init);
-      }
-    } catch(e) {}
-    return nativeFetch(input, init);
+      const res = await originalFetch(shadowUrl, init);
+      const text = await res.clone().text();
+
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (!text || !text.trim()) throw new Error('empty shadow response');
+      if (text.indexOf('No matching Haskell fixture') !== -1) throw new Error('missing Haskell fixture');
+
+      const headers = new Headers(res.headers);
+      headers.set('x-sv-shadow-api', '1');
+      console.log('[SV shadow API]', url.pathname + url.search, '->', shadowUrl);
+
+      return new Response(text, {
+        status: res.status,
+        statusText: res.statusText,
+        headers
+      });
+    } catch (err) {
+      console.warn('[SV shadow API fallback to Node]', url.pathname + url.search, err && err.message ? err.message : err);
+      return originalFetch(input, init);
+    }
   };
+
+  window.addEventListener('DOMContentLoaded', function(){
+    try {
+      const badge = document.createElement('div');
+      badge.textContent = 'Haskell Shadow API';
+      badge.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:99999;background:rgba(0,0,0,.82);color:#fff;font:12px system-ui;padding:7px 10px;border-radius:999px;pointer-events:none;box-shadow:0 6px 24px rgba(0,0,0,.25)';
+      document.body.appendChild(badge);
+    } catch {}
+  });
 })();

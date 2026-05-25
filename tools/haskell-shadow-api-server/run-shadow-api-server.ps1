@@ -38,6 +38,69 @@ function Has-Param($query, [string]$key, [string]$value) {
   return ($null -ne $v -and "$v" -eq $value)
 }
 
+function Search-Slug([string]$s) {
+  $x = "$s".ToLowerInvariant()
+  $x = [regex]::Replace($x, '[^a-z0-9]+', '-')
+  $x = $x.Trim('-')
+  if ([string]::IsNullOrWhiteSpace($x)) { return "empty" }
+  return $x
+}
+
+function Resolve-Search-Fixture($query, [string]$rawQuery) {
+  if ([string]::IsNullOrWhiteSpace($rawQuery)) {
+    return "11-api-search-empty.json"
+  }
+
+  $q = "$($query['q'])"
+  $queryParam = "$($query['query'])"
+
+  if ([string]::IsNullOrWhiteSpace($q) -and ![string]::IsNullOrWhiteSpace($queryParam)) {
+    $slug = Search-Slug $queryParam
+    $name = "11-api-search-query-$slug.json"
+    if (Test-Path (Join-Path $outDir $name)) { return $name }
+    return $null
+  }
+
+  if ([string]::IsNullOrWhiteSpace($q)) {
+    return "11-api-search-empty.json"
+  }
+
+  $slug = Search-Slug $q
+  $kind = "$($query['kind'])"
+  $hasKind = ![string]::IsNullOrWhiteSpace($kind)
+  $hasPage = $null -ne $query['page'] -and "$($query['page'])" -ne ""
+  $hasLimit = $null -ne $query['limit'] -and "$($query['limit'])" -ne ""
+
+  $page = Get-IntParam $query "page" 0
+  $limit = Get-IntParam $query "limit" 0
+
+  $candidates = @()
+
+  if ($hasKind -and $hasPage -and $hasLimit) {
+    $candidates += "11-api-search-q-$slug-kind-$kind-page-$page-limit-$limit.json"
+  }
+  if ($hasPage -and $hasLimit) {
+    $candidates += "11-api-search-q-$slug-page-$page-limit-$limit.json"
+  }
+  if ($hasLimit -and !$hasPage -and !$hasKind) {
+    $candidates += "11-api-search-q-$slug-limit-$limit.json"
+  }
+  if (!$hasLimit -and !$hasPage -and !$hasKind) {
+    $candidates += "11-api-search-q-$slug.json"
+  }
+
+  # Fallbacks for common frontend behavior.
+  $candidates += "11-api-search-q-$slug-limit-12.json"
+  $candidates += "11-api-search-q-$slug-page-0-limit-48.json"
+  $candidates += "11-api-search-q-$slug.json"
+
+  foreach ($name in $candidates) {
+    if (Test-Path (Join-Path $outDir $name)) { return $name }
+  }
+
+  return $null
+}
+
 function Resolve-Fixture($req) {
   $path = $req.Url.AbsolutePath
   $query = [System.Web.HttpUtility]::ParseQueryString($req.Url.Query)
@@ -56,7 +119,6 @@ function Resolve-Fixture($req) {
     $candidate = "12-api-downloads-page-$page-limit-$limit.json"
     if (Test-Path (Join-Path $outDir $candidate)) { return $candidate }
 
-    # If frontend asks an unseen download page/limit, fall back to full default list.
     return "12-api-downloads-default.json"
   }
 
@@ -96,11 +158,7 @@ function Resolve-Fixture($req) {
   }
 
   if ($path -eq "/api/search") {
-    $q = "$($query['q'])"
-    if ($q -match "netflix") { return "11-api-search-netflix-limit-12.json" }
-    if (Test-Path (Join-Path $outDir "11-api-search-netflix-limit-12.json")) {
-      return "11-api-search-netflix-limit-12.json"
-    }
+    return Resolve-Search-Fixture $query $req.Url.Query
   }
 
   if ($path -like "/api/section/*") {

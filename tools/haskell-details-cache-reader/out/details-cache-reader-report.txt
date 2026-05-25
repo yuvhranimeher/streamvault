@@ -1,0 +1,60 @@
+StreamVault Haskell Details Cache Reader Report
+========================================================================
+
+Status: read-only cache inspection.
+No frontend/server/playback/FFmpeg files were changed.
+
+File: detail-cache.json
+Path: detail-cache.json
+Exists: yes
+Bytes: 2155229
+Object markers '{': 5214
+Array markers '[': 602
+Important key marker counts:
+  "title": 66
+  "name": 4257
+  "poster": 2053
+  "backdrop": 2053
+  "overview": 2053
+  "cast": 66
+  "crew": 66
+  "genres": 66
+  "similar": 66
+  "trailer": 0
+  "episodes": 0
+  "seasons": 252
+  "streamUrl": 1987
+  "tmdb": 0
+  "imdb": 0
+  "rating": 2053
+
+File: episode-title-cache.json
+Path: episode-title-cache.json
+Exists: yes
+Bytes: 16749
+Object markers '{': 47
+Array markers '[': 6
+Important key marker counts:
+  "title": 46
+  "name": 0
+  "poster": 0
+  "backdrop": 0
+  "overview": 46
+  "cast": 0
+  "crew": 0
+  "genres": 0
+  "similar": 0
+  "trailer": 0
+  "episodes": 0
+  "seasons": 0
+  "streamUrl": 0
+  "tmdb": 0
+  "imdb": 0
+  "rating": 46
+
+Next implementation target:
+- Implement compatible cache lookup in Haskell.
+- Preserve Node response fields before enabling details shadow.
+- Keep playback/direct stream routes in Node.
+
+This report is intentionally structural; it does not expose cache contents.

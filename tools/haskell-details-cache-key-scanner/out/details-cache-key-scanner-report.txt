@@ -1,0 +1,169 @@
+StreamVault Haskell Details Cache Key Scanner Report
+========================================================================
+
+Status: read-only key format discovery.
+No frontend/server/playback/FFmpeg files were changed.
+
+File: detail-cache.json
+Path: detail-cache.json
+Exists: yes
+Top-level key count: 66
+
+First 80 top-level keys:
+  movie:Man of Steel:2013
+  tv:76479:2019
+  movie:The Dark Knight:2008
+  movie:The Avengers:2012
+  movie:Pirates of the Caribbean-Dead Men Tell No Tales:2017
+  movie:A Time for Bravery:2025
+  movie:Sweetness:2026
+  movie:Mary:2026
+  movie:The Voyeurs:2021
+  movie:The Dark Knight Rises:2012
+  movie:Survival Island:2002
+  movie:Dhurandhar:2026
+  movie:The Dutchman:2026
+  movie:28 Years Later-The Bone Temple:2026
+  movie:1234731:2025
+  tv:322867:2026
+  movie:1316092:2026
+  tv:201646:2024
+  tv:322743:2026
+  movie:791373:2021
+  movie:539681:2022
+  movie:1265609:2026
+  movie:1339876:2026
+  movie:609681:2023
+  movie:The Fantastic Four-First Steps:2025
+  movie:Superman:2025
+  movie:Bullet Train Explosion:2025
+  movie:The Siege at Thorn High:2025
+  movie:Jurassic Hunt:2021
+  movie:Head to Head:2026
+  movie:701387:2025
+  movie:The Hunt for Gollum:2027
+  movie:603:1999
+  movie:Street Smart:2026
+  movie:The Voice of Hind Rajab:2025
+  movie:To the Moon and Back:
+  movie:Hear Me:2026
+  movie:Warriors of Future:2022
+  movie:Go:2007
+  movie:Mahanagar:
+  movie:Night Patrol:2026
+  movie:Sentimental Value:2025
+  movie:Dolly:2026
+  movie:People We Meet on Vacation:2026
+  movie:Mercy:2026
+  movie:The Wrecking Crew:2026
+  movie:Repo Men:2010
+  movie:The Odyssey:2026
+  movie:The Batman:2022
+  movie:Beast:2026
+  tv:His & Hers:2026
+  tv:Adolescence:2025
+  movie:Head to Head:2023
+  movie:Scream 7:2026
+  movie:Devil's Advocate:2025
+  movie:Iron Man:2008
+  movie:Oppenheimer:2023
+  movie:Extraction:2020
+  movie:Extraction 2:2023
+  movie:How to Train Your Dragon:2025
+  movie:Sing Street:2016
+  movie:Batman Begins:2005
+  movie:Red Notice:2021
+  movie:Spider-Man - No Way Home:2021
+  movie:Room in Rome:2010
+  movie:Enola Holmes:2020
+
+First 80 likely media/detail keys:
+  movie:Man of Steel:2013
+  movie:The Dark Knight:2008
+  movie:The Avengers:2012
+  movie:Pirates of the Caribbean-Dead Men Tell No Tales:2017
+  movie:A Time for Bravery:2025
+  movie:Sweetness:2026
+  movie:Mary:2026
+  movie:The Voyeurs:2021
+  movie:The Dark Knight Rises:2012
+  movie:Survival Island:2002
+  movie:Dhurandhar:2026
+  movie:The Dutchman:2026
+  movie:28 Years Later-The Bone Temple:2026
+  movie:1234731:2025
+  movie:1316092:2026
+  movie:791373:2021
+  movie:539681:2022
+  movie:1265609:2026
+  movie:1339876:2026
+  movie:609681:2023
+  movie:The Fantastic Four-First Steps:2025
+  movie:Superman:2025
+  movie:Bullet Train Explosion:2025
+  movie:The Siege at Thorn High:2025
+  movie:Jurassic Hunt:2021
+  movie:Head to Head:2026
+  movie:701387:2025
+  movie:The Hunt for Gollum:2027
+  movie:603:1999
+  movie:Street Smart:2026
+  movie:The Voice of Hind Rajab:2025
+  movie:To the Moon and Back:
+  movie:Hear Me:2026
+  movie:Warriors of Future:2022
+  movie:Go:2007
+  movie:Mahanagar:
+  movie:Night Patrol:2026
+  movie:Sentimental Value:2025
+  movie:Dolly:2026
+  movie:People We Meet on Vacation:2026
+  movie:Mercy:2026
+  movie:The Wrecking Crew:2026
+  movie:Repo Men:2010
+  movie:The Odyssey:2026
+  movie:The Batman:2022
+  movie:Beast:2026
+  movie:Head to Head:2023
+  movie:Scream 7:2026
+  movie:Devil's Advocate:2025
+  movie:Iron Man:2008
+  movie:Oppenheimer:2023
+  movie:Extraction:2020
+  movie:Extraction 2:2023
+  movie:How to Train Your Dragon:2025
+  movie:Sing Street:2016
+  movie:Batman Begins:2005
+  movie:Red Notice:2021
+  movie:Spider-Man - No Way Home:2021
+  movie:Room in Rome:2010
+  movie:Enola Holmes:2020
+
+File: episode-title-cache.json
+Path: episode-title-cache.json
+Exists: yes
+Top-level key count: 11
+
+First 80 top-level keys:
+  __tmdb_id__A Knight of the Seven Kingdoms
+  A Knight of the Seven Kingdoms__S1
+  __tmdb_id__Stranger Things
+  Stranger Things__S1
+  __tmdb_id__It-Welcome to Derry
+  It-Welcome to Derry__S1
+  __tmdb_id__Loki
+  Loki__S1
+  __tmdb_id__WandaVision
+  WandaVision__S1
+  Stranger Things__S4
+
+First 80 likely media/detail keys:
+  __tmdb_id__A Knight of the Seven Kingdoms
+  __tmdb_id__Stranger Things
+  __tmdb_id__It-Welcome to Derry
+  __tmdb_id__Loki
+  __tmdb_id__WandaVision
+
+Next:
+- Use these key formats to implement Haskell cache lookup.
+- Keep /api/details and playback on Node until output parity is proven.

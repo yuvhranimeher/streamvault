@@ -1,5 +1,7 @@
 ﻿$ErrorActionPreference = "Stop"
 
+Add-Type -AssemblyName System.Web
+
 $root = "C:\Users\Mac Mini\Desktop\Website Host\Streaming_Website\streamvault"
 $outDir = Join-Path $root "tools\haskell-safe-suite\out"
 
@@ -19,9 +21,7 @@ function Send-Json($ctx, [string]$text, [int]$status = 200) {
 
 function Read-Fixture([string]$name) {
   $path = Join-Path $outDir $name
-  if (Test-Path $path) {
-    return Get-Content -Path $path -Raw
-  }
+  if (Test-Path $path) { return Get-Content -Path $path -Raw }
   return $null
 }
 
@@ -31,6 +31,11 @@ function Get-IntParam($query, [string]$key, [int]$default) {
   $n = 0
   if ([int]::TryParse("$v", [ref]$n)) { return $n }
   return $default
+}
+
+function Has-Param($query, [string]$key, [string]$value) {
+  $v = $query[$key]
+  return ($null -ne $v -and "$v" -eq $value)
 }
 
 function Resolve-Fixture($req) {
@@ -46,36 +51,44 @@ function Resolve-Fixture($req) {
   }
 
   if ($path -eq "/api/movies") {
-    $rawQuery = $req.Url.Query
-    if ([string]::IsNullOrWhiteSpace($rawQuery)) {
-      return "09-api-movies-default.json"
-    }
-
+    if ([string]::IsNullOrWhiteSpace($req.Url.Query)) { return "09-api-movies-default.json" }
     $page = Get-IntParam $query "page" 0
     $limit = Get-IntParam $query "limit" 100
     $candidate = "09-api-movies-page-$page-limit-$limit.json"
     if (Test-Path (Join-Path $outDir $candidate)) { return $candidate }
-
-    # Safe fallback: if an unseen page/limit is requested, use Node-compatible default only if present.
-    if (Test-Path (Join-Path $outDir "09-api-movies-default.json")) {
-      return "09-api-movies-default.json"
-    }
+    return "09-api-movies-default.json"
   }
 
   if ($path -eq "/api/series") {
+    if ([string]::IsNullOrWhiteSpace($req.Url.Query)) {
+      return "10-api-series-default.json"
+    }
+
     $page = Get-IntParam $query "page" 0
-    $limit = Get-IntParam $query "limit" 12
-    foreach ($name in @(
-      "10-api-series-page-$page-limit-$limit.json",
-      "10-api-series-page-0-limit-12.json"
-    )) {
-      if (Test-Path (Join-Path $outDir $name)) { return $name }
+    $limit = Get-IntParam $query "limit" 100
+    $summary = Has-Param $query "summary" "1"
+    $envelope = Has-Param $query "envelope" "1"
+
+    if ($summary -and $envelope) {
+      $candidate = "10-api-series-page-$page-limit-$limit-summary-1-envelope-1.json"
+      if (Test-Path (Join-Path $outDir $candidate)) { return $candidate }
+    }
+
+    if ($summary -and !$envelope -and $page -eq 0) {
+      $candidate = "10-api-series-summary-1-limit-$limit.json"
+      if (Test-Path (Join-Path $outDir $candidate)) { return $candidate }
+    }
+
+    $candidate = "10-api-series-page-$page-limit-$limit.json"
+    if (Test-Path (Join-Path $outDir $candidate)) { return $candidate }
+
+    if (Test-Path (Join-Path $outDir "10-api-series-default.json")) {
+      return "10-api-series-default.json"
     }
   }
 
   if ($path -eq "/api/search") {
     $q = "$($query['q'])"
-    $limit = Get-IntParam $query "limit" 12
     if ($q -match "netflix") { return "11-api-search-netflix-limit-12.json" }
     if (Test-Path (Join-Path $outDir "11-api-search-netflix-limit-12.json")) {
       return "11-api-search-netflix-limit-12.json"

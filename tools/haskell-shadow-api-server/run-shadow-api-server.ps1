@@ -47,7 +47,17 @@ function Resolve-Fixture($req) {
   }
 
   if ($path -eq "/api/downloads") {
-    return "12-api-downloads-page-0-limit-12.json"
+    if ([string]::IsNullOrWhiteSpace($req.Url.Query)) {
+      return "12-api-downloads-default.json"
+    }
+
+    $page = Get-IntParam $query "page" 0
+    $limit = Get-IntParam $query "limit" 12
+    $candidate = "12-api-downloads-page-$page-limit-$limit.json"
+    if (Test-Path (Join-Path $outDir $candidate)) { return $candidate }
+
+    # If frontend asks an unseen download page/limit, fall back to full default list.
+    return "12-api-downloads-default.json"
   }
 
   if ($path -eq "/api/movies") {
@@ -82,9 +92,7 @@ function Resolve-Fixture($req) {
     $candidate = "10-api-series-page-$page-limit-$limit.json"
     if (Test-Path (Join-Path $outDir $candidate)) { return $candidate }
 
-    if (Test-Path (Join-Path $outDir "10-api-series-default.json")) {
-      return "10-api-series-default.json"
-    }
+    return "10-api-series-default.json"
   }
 
   if ($path -eq "/api/search") {

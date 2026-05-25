@@ -26,7 +26,13 @@
   const originalFetch = window.fetch.bind(window);
 
   function shouldShadow(pathname){
-    return pathname === '/api/downloads' || pathname === '/api/movies';
+    // Exact safe endpoints only.
+    // Do NOT shadow /api/series/detail or /api/movies/keywords yet.
+    return (
+      pathname === '/api/downloads' ||
+      pathname === '/api/movies' ||
+      pathname === '/api/series'
+    );
   }
 
   function rawUrl(input){
@@ -59,7 +65,7 @@
 
       const headers = new Headers(res.headers);
       headers.set('x-sv-shadow-api', '1');
-      console.log('[SV shadow API downloads+movies]', url.pathname + url.search, '->', shadowUrl);
+      console.log('[SV shadow API]', url.pathname + url.search, '->', shadowUrl);
 
       return new Response(text, {
         status: res.status,
@@ -75,7 +81,7 @@
   window.addEventListener('DOMContentLoaded', function(){
     try {
       const badge = document.createElement('div');
-      badge.textContent = 'Haskell Shadow API: downloads + movies';
+      badge.textContent = 'Haskell Shadow API: downloads + movies + series';
       badge.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:99999;background:rgba(0,0,0,.82);color:#fff;font:12px system-ui;padding:7px 10px;border-radius:999px;pointer-events:none;box-shadow:0 6px 24px rgba(0,0,0,.25)';
       document.body.appendChild(badge);
     } catch {}

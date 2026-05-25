@@ -1,0 +1,19 @@
+﻿StreamVault Haskell Movies Fixture Expansion Report
+==================================================
+
+/api/movies -> 09-api-movies-default.json bytes=45141
+/api/movies?page=0&limit=12 -> 09-api-movies-page-0-limit-12.json bytes=7459
+/api/movies?page=0&limit=24 -> 09-api-movies-page-0-limit-24.json bytes=16127
+/api/movies?page=0&limit=50 -> 09-api-movies-page-0-limit-50.json bytes=31596
+/api/movies?page=0&limit=72 -> 09-api-movies-page-0-limit-72.json bytes=45141
+/api/movies?page=0&limit=100 -> 09-api-movies-page-0-limit-100.json bytes=61066
+/api/movies?page=1&limit=100 -> 09-api-movies-page-1-limit-100.json bytes=64758
+/api/movies?page=2&limit=100 -> 09-api-movies-page-2-limit-100.json bytes=72210
+
+Shadow server route file patched:
+C:\Users\Mac Mini\Desktop\Website Host\Streaming_Website\streamvault\tools\haskell-shadow-api-server\run-shadow-api-server.ps1
+
+Next:
+1. Stop old shadow server with Ctrl+C
+2. Start: powershell -ExecutionPolicy Bypass -File "C:\Users\Mac Mini\Desktop\Website Host\Streaming_Website\streamvault\tools\haskell-shadow-api-server\run-shadow-api-server.ps1"
+3. Test movies params again.

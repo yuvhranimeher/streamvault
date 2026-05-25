@@ -1,103 +1,112 @@
-﻿$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = "Stop"
 
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Root = Resolve-Path (Join-Path $ScriptDir "..\..")
-$FixtureDir = Join-Path $Root "tools\haskell-safe-suite\out"
-$LogDir = Join-Path $ScriptDir "out"
-New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
-$LogFile = Join-Path $LogDir "shadow-api-server.log"
+$root = "C:\Users\Mac Mini\Desktop\Website Host\Streaming_Website\streamvault"
+$outDir = Join-Path $root "tools\haskell-safe-suite\out"
 
-if (!(Test-Path $FixtureDir)) {
-  throw "Missing fixture directory: $FixtureDir. Run the safe-suite/shape-fix patches first."
-}
+$prefix = "http://127.0.0.1:3031/"
+$listener = New-Object System.Net.HttpListener
+$listener.Prefixes.Add($prefix)
 
-function Write-Log($msg) {
-  $line = "[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $msg
-  Add-Content -Encoding UTF8 -Path $LogFile -Value $line
-  Write-Host $line
-}
-
-function Parse-Query([string]$queryString) {
-  $result = @{}
-  if ([string]::IsNullOrWhiteSpace($queryString)) { return $result }
-  $q = $queryString.TrimStart('?')
-  foreach ($part in $q -split '&') {
-    if ([string]::IsNullOrWhiteSpace($part)) { continue }
-    $kv = $part -split '=', 2
-    $k = [uri]::UnescapeDataString($kv[0])
-    $v = if ($kv.Count -gt 1) { [uri]::UnescapeDataString($kv[1]) } else { '' }
-    $result[$k] = $v
-  }
-  return $result
-}
-
-function Slug([string]$value) {
-  if ([string]::IsNullOrWhiteSpace($value)) { return '' }
-  $s = $value.ToLowerInvariant() -replace '[^a-z0-9]+','-'
-  $s = $s.Trim('-')
-  return $s
-}
-
-function First-Match([string[]]$patterns) {
-  foreach ($pattern in $patterns) {
-    $hit = Get-ChildItem -Path $FixtureDir -Filter $pattern -File -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -First 1
-    if ($hit) { return $hit.FullName }
-  }
-  return $null
-}
-
-function Resolve-ShadowFile($request) {
-  $path = $request.Url.AbsolutePath
-  $q = Parse-Query $request.Url.Query
-  $limit = if ($q.ContainsKey('limit') -and $q['limit']) { $q['limit'] } else { '12' }
-  $page = if ($q.ContainsKey('page') -and $q['page']) { $q['page'] } else { '0' }
-
-  if ($path -eq '/api/home-feed') {
-    return First-Match @("*-api-home-feed-limit-$limit.json", "*-api-home-feed*.json")
-  }
-
-  if ($path -match '^/api/section/([^/]+)$') {
-    $section = Slug $Matches[1]
-    return First-Match @("*-api-section-$section-page-$page-limit-$limit.json", "*-api-section-$section*.json")
-  }
-
-  if ($path -eq '/api/movies') {
-    return First-Match @("*-api-movies-page-$page-limit-$limit.json", "*-api-movies*.json")
-  }
-
-  if ($path -eq '/api/series') {
-    return First-Match @("*-api-series-page-$page-limit-$limit.json", "*-api-series*.json")
-  }
-
-  if ($path -eq '/api/downloads') {
-    return First-Match @("*-api-downloads-page-$page-limit-$limit.json", "*-api-downloads*.json")
-  }
-
-  if ($path -eq '/api/search') {
-    $term = ''
-    foreach ($key in @('q','query','term','search')) {
-      if ($q.ContainsKey($key) -and $q[$key]) { $term = Slug $q[$key]; break }
-    }
-    if (!$term) { $term = 'netflix' }
-    return First-Match @("*-api-search-$term-limit-$limit.json", "*-api-search-$term.json", "*-api-search-$term*.json", "*-api-search*.json")
-  }
-
-  return $null
-}
-
-function Send-Json($ctx, [string]$json, [int]$status = 200) {
-  $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+function Send-Json($ctx, [string]$text, [int]$status = 200) {
+  $bytes = [System.Text.Encoding]::UTF8.GetBytes($text)
   $ctx.Response.StatusCode = $status
-  $ctx.Response.ContentType = 'application/json; charset=utf-8'
-  $ctx.Response.Headers['Access-Control-Allow-Origin'] = '*'
+  $ctx.Response.ContentType = "application/json; charset=utf-8"
+  $ctx.Response.Headers.Add("Access-Control-Allow-Origin", "*")
   $ctx.Response.ContentLength64 = $bytes.Length
   $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length)
   $ctx.Response.OutputStream.Close()
 }
 
-$prefix = 'http://127.0.0.1:3031/'
-$listener = [System.Net.HttpListener]::new()
-$listener.Prefixes.Add($prefix)
+function Read-Fixture([string]$name) {
+  $path = Join-Path $outDir $name
+  if (Test-Path $path) {
+    return Get-Content -Path $path -Raw
+  }
+  return $null
+}
+
+function Get-IntParam($query, [string]$key, [int]$default) {
+  $v = $query[$key]
+  if ($null -eq $v -or "$v" -eq "") { return $default }
+  $n = 0
+  if ([int]::TryParse("$v", [ref]$n)) { return $n }
+  return $default
+}
+
+function Resolve-Fixture($req) {
+  $path = $req.Url.AbsolutePath
+  $query = [System.Web.HttpUtility]::ParseQueryString($req.Url.Query)
+
+  if ($path -eq "/api/home-feed") {
+    return "01-api-home-feed-limit-12.json"
+  }
+
+  if ($path -eq "/api/downloads") {
+    return "12-api-downloads-page-0-limit-12.json"
+  }
+
+  if ($path -eq "/api/movies") {
+    $rawQuery = $req.Url.Query
+    if ([string]::IsNullOrWhiteSpace($rawQuery)) {
+      return "09-api-movies-default.json"
+    }
+
+    $page = Get-IntParam $query "page" 0
+    $limit = Get-IntParam $query "limit" 100
+    $candidate = "09-api-movies-page-$page-limit-$limit.json"
+    if (Test-Path (Join-Path $outDir $candidate)) { return $candidate }
+
+    # Safe fallback: if an unseen page/limit is requested, use Node-compatible default only if present.
+    if (Test-Path (Join-Path $outDir "09-api-movies-default.json")) {
+      return "09-api-movies-default.json"
+    }
+  }
+
+  if ($path -eq "/api/series") {
+    $page = Get-IntParam $query "page" 0
+    $limit = Get-IntParam $query "limit" 12
+    foreach ($name in @(
+      "10-api-series-page-$page-limit-$limit.json",
+      "10-api-series-page-0-limit-12.json"
+    )) {
+      if (Test-Path (Join-Path $outDir $name)) { return $name }
+    }
+  }
+
+  if ($path -eq "/api/search") {
+    $q = "$($query['q'])"
+    $limit = Get-IntParam $query "limit" 12
+    if ($q -match "netflix") { return "11-api-search-netflix-limit-12.json" }
+    if (Test-Path (Join-Path $outDir "11-api-search-netflix-limit-12.json")) {
+      return "11-api-search-netflix-limit-12.json"
+    }
+  }
+
+  if ($path -like "/api/section/*") {
+    $key = ($path -replace "^/api/section/", "")
+    $page = Get-IntParam $query "page" 0
+    $limit = Get-IntParam $query "limit" 12
+
+    $map = @{
+      "netflix" = "02-api-section-netflix-page-0-limit-12.json"
+      "marvel" = "03-api-section-marvel-page-0-limit-12.json"
+      "dc" = "04-api-section-dc-page-0-limit-12.json"
+      "trending" = "05-api-section-trending-page-0-limit-12.json"
+      "series" = "06-api-section-series-page-0-limit-12.json"
+      "top-rated" = "07-api-section-top-rated-page-0-limit-12.json"
+      "topRated" = "07-api-section-top-rated-page-0-limit-12.json"
+      "all-movies" = "08-api-section-all-movies-page-0-limit-12.json"
+      "allMovies" = "08-api-section-all-movies-page-0-limit-12.json"
+    }
+
+    if ($map.ContainsKey($key)) { return $map[$key] }
+
+    $candidate = "04-api-section-$key-page-$page-limit-$limit.json"
+    if (Test-Path (Join-Path $outDir $candidate)) { return $candidate }
+  }
+
+  return $null
+}
 
 try {
   $listener.Start()
@@ -105,34 +114,48 @@ try {
   throw "Could not start shadow server at $prefix. Close anything using port 3031 and try again. Details: $($_.Exception.Message)"
 }
 
-Write-Log "Shadow API server started at $prefix"
-Write-Log "Fixture dir: $FixtureDir"
-Write-Log "Stop with Ctrl+C"
+Write-Host "Shadow API server started at $prefix"
+Write-Host "Serving fixtures from: $outDir"
+Write-Host "Press Ctrl+C to stop."
 
 try {
   while ($listener.IsListening) {
     $ctx = $listener.GetContext()
-    $req = $ctx.Request
+    try {
+      if ($ctx.Request.HttpMethod -eq "OPTIONS") {
+        $ctx.Response.Headers.Add("Access-Control-Allow-Origin", "*")
+        $ctx.Response.Headers.Add("Access-Control-Allow-Methods", "GET, OPTIONS")
+        $ctx.Response.Headers.Add("Access-Control-Allow-Headers", "Content-Type")
+        $ctx.Response.StatusCode = 204
+        $ctx.Response.Close()
+        continue
+      }
 
-    if ($req.HttpMethod -eq 'OPTIONS') {
-      Send-Json $ctx '{}' 204
-      continue
+      $fixture = Resolve-Fixture $ctx.Request
+      if ($null -eq $fixture) {
+        $payload = @{ ok = $false; error = "No matching Haskell fixture"; path = $ctx.Request.Url.AbsolutePath; query = $ctx.Request.Url.Query } | ConvertTo-Json -Compress
+        Send-Json $ctx $payload 404
+        Write-Host "404 $($ctx.Request.RawUrl)"
+        continue
+      }
+
+      $body = Read-Fixture $fixture
+      if ($null -eq $body) {
+        $payload = @{ ok = $false; error = "Fixture file missing"; fixture = $fixture } | ConvertTo-Json -Compress
+        Send-Json $ctx $payload 404
+        Write-Host "404 missing fixture $fixture"
+        continue
+      }
+
+      Send-Json $ctx $body 200
+      Write-Host "200 $($ctx.Request.RawUrl) -> $fixture"
+    } catch {
+      try {
+        $payload = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+        Send-Json $ctx $payload 500
+      } catch {}
     }
-
-    $file = Resolve-ShadowFile $req
-    if (!$file -or !(Test-Path $file)) {
-      $notFound = @{ ok = $false; error = 'No matching Haskell fixture'; path = $req.Url.AbsolutePath; query = $req.Url.Query } | ConvertTo-Json -Compress
-      Write-Log "404 $($req.Url.PathAndQuery)"
-      Send-Json $ctx $notFound 404
-      continue
-    }
-
-    $json = Get-Content -Raw -Encoding UTF8 $file
-    Write-Log "200 $($req.Url.PathAndQuery) -> $(Split-Path -Leaf $file)"
-    Send-Json $ctx $json 200
   }
 } finally {
   try { $listener.Stop() } catch {}
-  try { $listener.Close() } catch {}
-  Write-Log "Shadow API server stopped"
 }

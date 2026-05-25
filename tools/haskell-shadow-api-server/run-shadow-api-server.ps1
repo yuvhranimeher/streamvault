@@ -46,6 +46,14 @@ function Search-Slug([string]$s) {
   return $x
 }
 
+function Safe-Key([string]$s) {
+  $x = "$s"
+  $x = [regex]::Replace($x, '[^A-Za-z0-9\-]+', '-')
+  $x = $x.Trim('-')
+  if ([string]::IsNullOrWhiteSpace($x)) { return "unknown" }
+  return $x
+}
+
 function Resolve-Search-Fixture($query, [string]$rawQuery) {
   if ([string]::IsNullOrWhiteSpace($rawQuery)) {
     return "11-api-search-empty.json"
@@ -89,10 +97,51 @@ function Resolve-Search-Fixture($query, [string]$rawQuery) {
     $candidates += "11-api-search-q-$slug.json"
   }
 
-  # Fallbacks for common frontend behavior.
   $candidates += "11-api-search-q-$slug-limit-12.json"
   $candidates += "11-api-search-q-$slug-page-0-limit-48.json"
   $candidates += "11-api-search-q-$slug.json"
+
+  foreach ($name in $candidates) {
+    if (Test-Path (Join-Path $outDir $name)) { return $name }
+  }
+
+  return $null
+}
+
+function Resolve-Section-Fixture($req, $query) {
+  $keyRaw = ($req.Url.AbsolutePath -replace "^/api/section/", "")
+  $key = [System.Web.HttpUtility]::UrlDecode($keyRaw)
+  $safe = Safe-Key $key
+
+  $page = Get-IntParam $query "page" 0
+  $limit = Get-IntParam $query "limit" 12
+  $summary = Has-Param $query "summary" "1"
+
+  $candidates = @()
+
+  if ($summary) {
+    $candidates += "13-api-section-$safe-page-$page-limit-$limit-summary-1.json"
+  }
+
+  $candidates += "13-api-section-$safe-page-$page-limit-$limit.json"
+
+  # Compatibility aliases.
+  if ($key -eq "allMovies") {
+    $candidates += "13-api-section-all-movies-page-$page-limit-$limit-summary-1.json"
+    $candidates += "13-api-section-all-movies-page-$page-limit-$limit.json"
+  }
+  if ($key -eq "all-movies") {
+    $candidates += "13-api-section-allMovies-page-$page-limit-$limit-summary-1.json"
+    $candidates += "13-api-section-allMovies-page-$page-limit-$limit.json"
+  }
+  if ($key -eq "topRated") {
+    $candidates += "13-api-section-top-rated-page-$page-limit-$limit-summary-1.json"
+    $candidates += "13-api-section-top-rated-page-$page-limit-$limit.json"
+  }
+  if ($key -eq "top-rated") {
+    $candidates += "13-api-section-topRated-page-$page-limit-$limit-summary-1.json"
+    $candidates += "13-api-section-topRated-page-$page-limit-$limit.json"
+  }
 
   foreach ($name in $candidates) {
     if (Test-Path (Join-Path $outDir $name)) { return $name }
@@ -162,26 +211,7 @@ function Resolve-Fixture($req) {
   }
 
   if ($path -like "/api/section/*") {
-    $key = ($path -replace "^/api/section/", "")
-    $page = Get-IntParam $query "page" 0
-    $limit = Get-IntParam $query "limit" 12
-
-    $map = @{
-      "netflix" = "02-api-section-netflix-page-0-limit-12.json"
-      "marvel" = "03-api-section-marvel-page-0-limit-12.json"
-      "dc" = "04-api-section-dc-page-0-limit-12.json"
-      "trending" = "05-api-section-trending-page-0-limit-12.json"
-      "series" = "06-api-section-series-page-0-limit-12.json"
-      "top-rated" = "07-api-section-top-rated-page-0-limit-12.json"
-      "topRated" = "07-api-section-top-rated-page-0-limit-12.json"
-      "all-movies" = "08-api-section-all-movies-page-0-limit-12.json"
-      "allMovies" = "08-api-section-all-movies-page-0-limit-12.json"
-    }
-
-    if ($map.ContainsKey($key)) { return $map[$key] }
-
-    $candidate = "04-api-section-$key-page-$page-limit-$limit.json"
-    if (Test-Path (Join-Path $outDir $candidate)) { return $candidate }
+    return Resolve-Section-Fixture $req $query
   }
 
   return $null

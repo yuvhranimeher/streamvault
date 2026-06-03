@@ -11,7 +11,7 @@ module CatalogApi
 
 import Control.Exception (SomeException, try)
 import Data.Aeson
-import Data.Aeson.Key (fromText)
+import Data.Aeson.Key (fromText, toText)
 import qualified Data.Aeson.KeyMap as KM
 import qualified Data.ByteString.Lazy as BL
 import Data.Char (isAlphaNum, isDigit, isSpace, toLower)
@@ -38,6 +38,7 @@ data CatalogState = CatalogState
   , csLocalSeries   :: [Value]
   , csDownloads     :: [Value]
   , csChannels      :: Value
+  , csDetailCache   :: KM.KeyMap Value
   }
 
 type CatalogCache = IORef (Maybe CatalogState)
@@ -55,6 +56,7 @@ loadCatalogState root = do
   catalog <- readJsonValue (root </> "catalog.json") (Object KM.empty)
   posterCache <- readJsonObject (root </> "poster-cache.json")
   channels <- readJsonValue (root </> "channels.json") (Array V.empty)
+  detailCache <- readJsonObject (root </> "detail-cache.json")
   downloads <- loadDownloads root
   localMovies <- buildLocalMovies root posterCache
   localSeriesItems <- buildLocalSeries root posterCache
@@ -68,6 +70,7 @@ loadCatalogState root = do
     , csLocalSeries = localSeriesItems
     , csDownloads = downloads
     , csChannels = channels
+    , csDetailCache = detailCache
     }
 
 catalogResponseCached :: FilePath -> CatalogCache -> Request -> IO (Maybe Response)
@@ -99,6 +102,7 @@ nativeCatalogRoute req =
     , ["api", "channels"]
     ]
     || ["api", "section"] `isPrefixOf` pathInfo req
+    || ["api", "details"] `isPrefixOf` pathInfo req
 
 catalogResponse :: CatalogState -> Request -> Maybe Response
 catalogResponse state req
@@ -125,6 +129,9 @@ catalogResponse state req
         (key:_) -> Just $ jsonResponse [("Cache-Control", "public, max-age=60"), ("X-StreamVault-Haskell", "native-section")]
           (sectionResponse state req key)
         _ -> Nothing
+  | ["api", "details"] `isPrefixOf` pathInfo req =
+      fmap (jsonResponse [("Cache-Control", "public, max-age=900"), ("X-StreamVault-Haskell", "native-details-cache")])
+        (detailsResponse state req)
   | otherwise = Nothing
 
 jsonResponse :: ResponseHeaders -> Value -> Response
@@ -922,6 +929,298 @@ homeFeedResponse state req =
     , "rows" .= [row | (_, _, row) <- builtRows]
     ]
 
+detailsResponse :: CatalogState -> Request -> Maybe Value
+detailsResponse state req =
+  case pathInfo req of
+    ("api":"details":rawType:rest)
+      | not (null rest) -> do
+          let rawId = T.intercalate "/" rest
+              mediaType = detailMediaType rawType
+              rawTitle = fromMaybe rawId (firstQueryText ["title", "name"] req)
+              queryYear = fromMaybe "" (queryText "year" req)
+              (requestTitle, requestYear0) = normalizeDetailTitle rawTitle queryYear
+              item = localDetailItem state mediaType rawId requestTitle
+              itemYear = maybe "" (fieldText "year") item
+              requestYear = textFallback requestYear0 itemYear
+              keys = detailCacheCandidates state req mediaType rawId requestTitle requestYear item
+          cached <- lookupDetailCache state keys
+          pure $ mergeDetailValues (localDetailValue mediaType rawId requestTitle item) cached
+    _ -> Nothing
+
+detailMediaType :: T.Text -> T.Text
+detailMediaType raw =
+  if T.toLower raw `elem` ["tv", "series", "show"] then "tv" else "movie"
+
+firstQueryText :: [T.Text] -> Request -> Maybe T.Text
+firstQueryText keys req =
+  listToMaybe [value | key <- keys, Just value <- [queryText key req], not (T.null (trimText value))]
+
+detailCacheCandidates :: CatalogState -> Request -> T.Text -> T.Text -> T.Text -> T.Text -> Maybe Value -> [T.Text]
+detailCacheCandidates state req mediaType rawId title year item =
+  nub . filter (not . T.null) $
+    directKeys ++ exactKeys ++ looseKeys
+  where
+    cache = csDetailCache state
+    directKeys =
+      [ rawId
+      | ":" `T.isInfixOf` rawId
+      , KM.member (fromText rawId) cache
+      ]
+    queryTmdb = fromMaybe "" (queryText "tmdbId" req)
+    rawTmdb = tmdbIdFromRaw mediaType rawId
+    itemTmdb = maybe "" (fieldText "tmdbId") item
+    itemTitle = maybe "" (firstText ["name", "title"]) item
+    itemYear = maybe "" (fieldText "year") item
+    ids = nub $ filter (not . T.null) [queryTmdb, rawTmdb, itemTmdb, if T.all isDigit rawId then rawId else ""]
+    titles = nub $ filter (not . T.null) [title, rawId, itemTitle]
+    years = nub [year, itemYear, ""]
+    exactKeys =
+      [ media <> ":" <> ident <> ":" <> yr
+      | media <- mediaAliases mediaType
+      , ident <- ids ++ titles
+      , yr <- years
+      , not (T.null ident)
+      ]
+    looseKeys =
+      [ keyText
+      | (key, _) <- KM.toList cache
+      , let keyText = toText key
+      , detailCacheKeyMatches (mediaAliases mediaType) ids titles years keyText
+      ]
+
+mediaAliases :: T.Text -> [T.Text]
+mediaAliases "tv" = ["tv", "series"]
+mediaAliases other = [other]
+
+tmdbIdFromRaw :: T.Text -> T.Text -> T.Text
+tmdbIdFromRaw mediaType rawId
+  | mediaType == "tv"
+  , Just rest <- T.stripPrefix "tmdb_tv_" rawId
+  , T.all isDigit rest = rest
+  | mediaType == "movie"
+  , Just rest <- T.stripPrefix "tmdb_" rawId
+  , T.all isDigit rest = rest
+  | otherwise = ""
+
+detailCacheKeyMatches :: [T.Text] -> [T.Text] -> [T.Text] -> [T.Text] -> T.Text -> Bool
+detailCacheKeyMatches medias ids titles years keyText =
+  any matchMedia medias
+  where
+    matchMedia media =
+      case T.stripPrefix (media <> ":") keyText of
+        Nothing -> False
+        Just rest ->
+          let (ident, keyYear) = splitDetailCacheRest rest
+              identNorm = detailTitleKey ident
+              titleNorms = map detailTitleKey titles
+              idHit = ident `elem` ids
+              titleHit = identNorm `elem` titleNorms
+              wantedYears = filter (not . T.null) years
+              yearHit = null wantedYears || keyYear `elem` wantedYears || T.null keyYear
+          in (idHit || titleHit) && yearHit
+
+splitDetailCacheRest :: T.Text -> (T.Text, T.Text)
+splitDetailCacheRest rest =
+  let parts = T.splitOn ":" rest
+  in case reverse parts of
+       [] -> ("", "")
+       (yr:xs) -> (T.intercalate ":" (reverse xs), yr)
+
+lookupDetailCache :: CatalogState -> [T.Text] -> Maybe Value
+lookupDetailCache state keys =
+  listToMaybe (mapMaybe lookupOne keys)
+  where
+    lookupOne key = do
+      entry <- KM.lookup (fromText key) (csDetailCache state)
+      dataValue <- detailCacheEntryData entry
+      if hasExtendedDetail dataValue then Just dataValue else Nothing
+
+detailCacheEntryData :: Value -> Maybe Value
+detailCacheEntryData entry =
+  case field "data" entry of
+    Object _ -> Just (field "data" entry)
+    _ ->
+      case entry of
+        Object _ | field "ok" entry /= Null -> Just entry
+        _ -> Nothing
+
+hasExtendedDetail :: Value -> Bool
+hasExtendedDetail value =
+  any (`hasNonEmptyArray` value)
+    ["trailers", "cast", "crew", "productionCompanies", "similar", "moreByDirector"]
+
+hasNonEmptyArray :: T.Text -> Value -> Bool
+hasNonEmptyArray key value =
+  case field key value of
+    Array xs -> not (V.null xs)
+    _ -> False
+
+normalizeDetailTitle :: T.Text -> T.Text -> (T.Text, T.Text)
+normalizeDetailTitle raw fallbackYear =
+  let rawYear = firstYearText raw
+      year = textFallback (firstYearText fallbackYear) rawYear
+      noExt = stripKnownVideoExtension raw
+      spaced = T.unwords . T.words $ T.map detailTitleChar noExt
+      cut = cutAtAny detailCutTokens spaced
+      noYears = T.unwords [token | token <- T.words cut, not (isYearToken token)]
+      cleaned = trimText noYears
+  in (cleaned, year)
+
+detailTitleChar :: Char -> Char
+detailTitleChar c
+  | c == '.' || c == '_' = ' '
+  | c `elem` ("[](){}" :: String) = ' '
+  | isAlphaNum c || c `elem` (":'&!?, -" :: String) = c
+  | otherwise = ' '
+
+stripKnownVideoExtension :: T.Text -> T.Text
+stripKnownVideoExtension value =
+  fromMaybe value (listToMaybe (mapMaybe stripped videoExts))
+  where
+    lower = T.toLower value
+    stripped ext =
+      let suffix = T.pack ext
+      in if suffix `T.isSuffixOf` lower then Just (T.dropEnd (T.length suffix) value) else Nothing
+
+detailCutTokens :: [T.Text]
+detailCutTokens =
+  [ "2160p", "1080p", "720p", "540p", "480p", "4k", "uhd", "hdr"
+  , "webrip", "web-rip", "webdl", "web-dl", "bluray", "brrip", "hdrip"
+  , "hdtv", "dvdrip", "x264", "x265", "hevc", "aac", "dts", "mkv", "mp4"
+  , "msmod", "pahe", "rarbg", "yts", "esub", "msubs", "dual audio"
+  , "multi audio", "hindi", "english", "bengali", "bangla"
+  ]
+
+firstYearText :: T.Text -> T.Text
+firstYearText = T.pack . go . T.unpack
+  where
+    go [] = ""
+    go xs@(_:rest) =
+      case xs of
+        (a:b:c:d:_)
+          | isDigit a && isDigit b && isDigit c && isDigit d
+          , [a, b] `elem` ["19", "20"] -> [a, b, c, d]
+        _ -> go rest
+
+isYearToken :: T.Text -> Bool
+isYearToken token =
+  let digits = T.filter isDigit token
+  in T.length digits == 4 && ("19" `T.isPrefixOf` digits || "20" `T.isPrefixOf` digits)
+
+detailTitleKey :: T.Text -> T.Text
+detailTitleKey value =
+  T.toLower (fst (normalizeDetailTitle value ""))
+
+localDetailItem :: CatalogState -> T.Text -> T.Text -> T.Text -> Maybe Value
+localDetailItem state mediaType rawId title =
+  find (detailItemMatches rawId title) candidates
+  where
+    candidates =
+      if mediaType == "tv"
+        then csLocalSeries state ++ catalogSeriesDetailItems state
+        else moviesList state
+
+catalogSeriesDetailItems :: CatalogState -> [Value]
+catalogSeriesDetailItems state =
+  [ object
+    [ "id" .= T.pack ("ftp_series_" ++ show i)
+    , "name" .= fieldText "title" s
+    , "title" .= fieldText "title" s
+    , "poster" .= nullish (field "poster" s)
+    , "backdrop" .= fallbackValue (field "backdrop" s) (field "poster" s)
+    , "tmdbId" .= nullish (field "tmdbId" s)
+    , "imdbId" .= textOr "" (field "imdbId" s)
+    , "overview" .= textOr "" (field "overview" s)
+    , "year" .= textOr "" (field "year" s)
+    , "rating" .= nullish (field "rating" s)
+    , "genre" .= textOr "" (field "genre" s)
+    , "category" .= textOr "" (field "category" s)
+    , "language" .= textOr "" (field "language" s)
+    , "productionCompanies" .= arrayOrEmpty (field "productionCompanies" s)
+    , "isFtp" .= True
+    , "seasons" .= Object KM.empty
+    ]
+  | (i, s) <- zip [(0 :: Int)..] (csCatalogSeries state)
+  , not (isCartoonOrAnime s)
+  ]
+
+detailItemMatches :: T.Text -> T.Text -> Value -> Bool
+detailItemMatches rawId title item =
+  let itemName = firstText ["name", "title", "filename", "file"] item
+      itemTitleKey = detailTitleKey itemName
+      requestTitleKey = detailTitleKey title
+  in fieldText "id" item == rawId
+     || fieldText "tmdbId" item == rawId
+     || (not (T.null requestTitleKey) && itemTitleKey == requestTitleKey)
+
+localDetailValue :: T.Text -> T.Text -> T.Text -> Maybe Value -> Value
+localDetailValue mediaType rawId title item =
+  let itemValue = fromMaybe (object ["id" .= rawId, "name" .= title, "type" .= mediaType]) item
+      itemId = textFallback (firstText ["id", "name"] itemValue) rawId
+      itemTitle = textFallback (firstText ["name", "title"] itemValue) title
+      rating = fieldText "rating" itemValue
+  in object
+    [ "ok" .= True
+    , "localOnly" .= True
+    , "type" .= mediaType
+    , "id" .= itemId
+    , "tmdbId" .= nullish (field "tmdbId" itemValue)
+    , "imdbId" .= textOr "" (field "imdbId" itemValue)
+    , "title" .= itemTitle
+    , "overview" .= textOr "" (field "overview" itemValue)
+    , "poster" .= nullish (field "poster" itemValue)
+    , "backdrop" .= fallbackValue (field "backdrop" itemValue) (field "poster" itemValue)
+    , "year" .= textOr "" (field "year" itemValue)
+    , "rating" .= nullish (field "rating" itemValue)
+    , "runtime" .= textOr "" (field "runtime" itemValue)
+    , "genres" .= textOr "" (field "genre" itemValue)
+    , "language" .= textOr "" (field "language" itemValue)
+    , "ratings" .= localRatings rating
+    , "trailers" .= arrayOrEmpty (field "trailers" itemValue)
+    , "cast" .= arrayOrEmpty (field "cast" itemValue)
+    , "crew" .= arrayOrEmpty (field "crew" itemValue)
+    , "productionCompanies" .= productionCompanyObjects (field "productionCompanies" itemValue)
+    , "similar" .= arrayOrEmpty (field "similar" itemValue)
+    , "moreByDirector" .= arrayOrEmpty (field "moreByDirector" itemValue)
+    , "director" .= nullish (field "director" itemValue)
+    , "episodes" .= if mediaType == "tv" then objectOrEmpty (field "seasons" itemValue) else Array V.empty
+    , "about" .= Array V.empty
+    , "playbackInfo" .= Array V.empty
+    ]
+
+localRatings :: T.Text -> Value
+localRatings rating =
+  if T.null rating
+    then Array V.empty
+    else Array $ V.singleton $ object
+      [ "source" .= String "Catalog"
+      , "value" .= (rating <> "/10")
+      , "subvalue" .= String "Local cache"
+      , "available" .= True
+      ]
+
+productionCompanyObjects :: Value -> Value
+productionCompanyObjects (Array xs) =
+  Array . V.fromList $
+    [ case company of
+        String name -> object ["id" .= i, "name" .= name, "logo" .= Null]
+        Object _ -> company
+        _ -> Null
+    | (i, company) <- zip [(0 :: Int)..] (V.toList xs)
+    , company /= Null
+    ]
+productionCompanyObjects _ = Array V.empty
+
+objectOrEmpty :: Value -> Value
+objectOrEmpty (Object o) = Object o
+objectOrEmpty _ = Object KM.empty
+
+mergeDetailValues :: Value -> Value -> Value
+mergeDetailValues (Object local) (Object cached) =
+  Object $ KM.insert (fromText "localOnly") (Bool False) $
+    foldl' (\acc (key, value) -> KM.insert key value acc) local (KM.toList cached)
+mergeDetailValues _ cached = cached
+
 sectionResponse :: CatalogState -> Request -> T.Text -> Value
 sectionResponse state req key =
   let page = max 0 (queryInt "page" 0 req)
@@ -1177,4 +1476,3 @@ studioPhrases "warner" = map normalizeSearch ["warner", "harry potter", "fantast
 studioPhrases "hbo" = map normalizeSearch ["hbo", "house of the dragon", "game of thrones", "last of us", "true detective", "succession"]
 studioPhrases "apple" = map normalizeSearch ["apple tv", "ted lasso", "severance", "silo", "foundation", "morning show"]
 studioPhrases _ = []
-

@@ -105,6 +105,7 @@ nativeCatalogRoute req =
     ]
     || ["api", "section"] `isPrefixOf` pathInfo req
     || ["api", "details"] `isPrefixOf` pathInfo req
+    || ["download"] `isPrefixOf` pathInfo req
 
 catalogResponse :: CatalogState -> Request -> Maybe Response
 catalogResponse state req
@@ -114,6 +115,10 @@ catalogResponse state req
   | pathInfo req == ["api", "downloads"] =
       Just $ jsonResponse [("Cache-Control", "no-store"), ("X-StreamVault-Haskell", "native-downloads")]
         (downloadsResponse state req)
+  | ["download"] `isPrefixOf` pathInfo req =
+      case drop 1 (pathInfo req) of
+        (ident:_) -> fmap downloadRedirectResponse (downloadRedirectLocation state ident)
+        _ -> Nothing
   | pathInfo req == ["api", "movies"] =
       Just $ jsonResponse [("X-StreamVault-Haskell", "native-movies")]
         (moviesResponse state req)
@@ -139,6 +144,15 @@ catalogResponse state req
 jsonResponse :: ResponseHeaders -> Value -> Response
 jsonResponse extra body =
   responseWith status200 (("Content-Type", "application/json") : extra) (encode body)
+
+downloadRedirectResponse :: T.Text -> Response
+downloadRedirectResponse url =
+  responseWith status302
+    [ ("Content-Type", "text/plain; charset=utf-8")
+    , ("Location", TE.encodeUtf8 url)
+    , ("X-StreamVault-Haskell", "native-download-redirect")
+    ]
+    (BL.fromStrict (TE.encodeUtf8 ("Found. Redirecting to " <> url)))
 
 responseWith :: Status -> ResponseHeaders -> BL.ByteString -> Response
 responseWith st extra =
@@ -639,6 +653,12 @@ downloadsResponse state req =
     , "page" .= page
     , "pages" .= pages
     ]
+
+downloadRedirectLocation :: CatalogState -> T.Text -> Maybe T.Text
+downloadRedirectLocation state ident = do
+  item <- find (\entry -> fieldText "id" entry == ident) (csDownloads state)
+  let url = textFallback (fieldText "source" item) (fieldText "url" item)
+  if T.null url then Nothing else Just url
 
 downloadMatches :: [T.Text] -> Value -> Bool
 downloadMatches terms item =

@@ -11,6 +11,10 @@ const dashboardRoutes = require('./routes/dashboard');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
+const HASKELL_SHADOW_ENABLED = process.env.STREAMVAULT_HASKELL_SHADOW === '1';
+const HASKELL_SHADOW_BASE = (process.env.STREAMVAULT_HASKELL_BASE || 'http://127.0.0.1:3031').replace(/\/+$/, '');
+const HASKELL_SHADOW_TIMEOUT_MS = 1500;
+const HASKELL_SHADOW_BYPASS_HEADER = 'x-streamvault-shadow-bypass';
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
 const MEDIA_ROOT   = 'C:\\Users\\Mac Mini\\Desktop\\Website Host\\Streaming_Website\\streamvault';
@@ -1587,6 +1591,133 @@ app.use((_, res, next) => {
 });
 app.use('/api/dashboard', dashboardRoutes);
 app.use(express.static(path.join(__dirname, 'public')));
+
+app.use(async (req, res, next) => {
+  if (!HASKELL_SHADOW_ENABLED || req.headers[HASKELL_SHADOW_BYPASS_HEADER] === '1') return next();
+
+  const shadowRoute = svHaskellShadowRoute(req);
+  if (!shadowRoute) return next();
+
+  const result = await svTryHaskellShadow(req, res, shadowRoute);
+  if (result.forwarded) return;
+
+  console.warn(`[Haskell shadow] fallback ${req.method} ${req.originalUrl || req.url}: ${result.reason}`);
+  next();
+});
+
+function svHaskellShadowRoute(req) {
+  if (req.method !== 'GET') return null;
+
+  const pathname = req.path || String(req.url || '').split('?')[0] || '/';
+  const exactJsonRoutes = new Set([
+    '/api/downloads',
+    '/api/movies',
+    '/api/series',
+    '/api/home-feed',
+    '/api/channels',
+  ]);
+  if (exactJsonRoutes.has(pathname)) return { kind: 'json', expectedStatus: 200 };
+
+  const parts = pathname.split('/').filter(Boolean).map(svSafeUrlDecode);
+
+  if (parts.length === 3 && parts[0] === 'api' && parts[1] === 'section') {
+    const key = String(parts[2] || '').toLowerCase();
+    if (['marvel', 'dc', 'netflix'].includes(key)) return { kind: 'json', expectedStatus: 200 };
+    return null;
+  }
+
+  if (parts.length >= 4 && parts[0] === 'api' && parts[1] === 'details') {
+    const type = String(parts[2] || '').toLowerCase();
+    if (['movie', 'tv', 'series', 'show'].includes(type)) {
+      return { kind: 'details-cache-hit', expectedStatus: 200, requiredMarker: 'native-details-cache' };
+    }
+    return null;
+  }
+
+  if (parts.length === 2 && parts[0] === 'download' && parts[1]) {
+    return { kind: 'download-redirect', expectedStatus: 302, requiredMarker: 'native-download-redirect' };
+  }
+
+  return null;
+}
+
+function svSafeUrlDecode(value) {
+  try { return decodeURIComponent(String(value || '')); }
+  catch { return String(value || ''); }
+}
+
+async function svTryHaskellShadow(req, res, route) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), HASKELL_SHADOW_TIMEOUT_MS);
+  const target = HASKELL_SHADOW_BASE + (req.originalUrl || req.url || '/');
+
+  let upstream;
+  try {
+    upstream = await fetch(target, {
+      method: 'GET',
+      redirect: 'manual',
+      signal: controller.signal,
+      headers: svHaskellShadowHeaders(req),
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    const timedOut = err && err.name === 'AbortError';
+    return { forwarded: false, reason: timedOut ? `timeout after ${HASKELL_SHADOW_TIMEOUT_MS}ms` : `request failed: ${err.message || err}` };
+  }
+  clearTimeout(timer);
+
+  const marker = upstream.headers.get('x-streamvault-haskell') || '';
+  if (upstream.status !== route.expectedStatus) {
+    await svDiscardShadowBody(upstream);
+    return { forwarded: false, reason: `status ${upstream.status} != ${route.expectedStatus}` };
+  }
+  if (route.requiredMarker && marker !== route.requiredMarker) {
+    await svDiscardShadowBody(upstream);
+    return { forwarded: false, reason: `marker ${JSON.stringify(marker)} != ${JSON.stringify(route.requiredMarker)}` };
+  }
+
+  if (route.kind === 'download-redirect') {
+    const location = upstream.headers.get('location');
+    if (!location) {
+      await svDiscardShadowBody(upstream);
+      return { forwarded: false, reason: 'missing redirect location' };
+    }
+  }
+
+  const body = Buffer.from(await upstream.arrayBuffer());
+  svForwardShadowHeaders(res, upstream, route);
+  res.status(upstream.status).send(body);
+  return { forwarded: true };
+}
+
+function svHaskellShadowHeaders(req) {
+  const headers = {
+    [HASKELL_SHADOW_BYPASS_HEADER]: '1',
+    'x-streamvault-shadow-origin': 'node',
+  };
+  for (const name of ['accept', 'user-agent']) {
+    if (req.headers[name]) headers[name] = req.headers[name];
+  }
+  return headers;
+}
+
+async function svDiscardShadowBody(upstream) {
+  try {
+    if (upstream.body) await upstream.body.cancel();
+  } catch {}
+}
+
+function svForwardShadowHeaders(res, upstream, route) {
+  for (const name of ['content-type', 'cache-control', 'x-streamvault-haskell']) {
+    const value = upstream.headers.get(name);
+    if (value) res.setHeader(name, value);
+  }
+  if (route.kind === 'download-redirect') {
+    const location = upstream.headers.get('location');
+    if (location) res.setHeader('Location', location);
+  }
+  res.setHeader('X-StreamVault-Haskell-Shadow', 'forwarded');
+}
 
 // ── Poster proxy/cache route used by app.js svOptimizeImageUrl() ──────────────
 // Keeps poster loading working even when the frontend requests /poster-cache?url=...

@@ -37,6 +37,7 @@ data CatalogState = CatalogState
   , csLocalMovies   :: [Value]
   , csLocalSeries   :: [Value]
   , csDownloads     :: [Value]
+  , csChannels      :: Value
   }
 
 type CatalogCache = IORef (Maybe CatalogState)
@@ -53,6 +54,7 @@ loadCatalogState :: FilePath -> IO CatalogState
 loadCatalogState root = do
   catalog <- readJsonValue (root </> "catalog.json") (Object KM.empty)
   posterCache <- readJsonObject (root </> "poster-cache.json")
+  channels <- readJsonValue (root </> "channels.json") (Array V.empty)
   downloads <- loadDownloads root
   localMovies <- buildLocalMovies root posterCache
   localSeriesItems <- buildLocalSeries root posterCache
@@ -65,6 +67,7 @@ loadCatalogState root = do
     , csLocalMovies = localMovies
     , csLocalSeries = localSeriesItems
     , csDownloads = downloads
+    , csChannels = channels
     }
 
 catalogResponseCached :: FilePath -> CatalogCache -> Request -> IO (Maybe Response)
@@ -92,6 +95,8 @@ nativeCatalogRoute req =
     [ ["api", "downloads"]
     , ["api", "movies"]
     , ["api", "series"]
+    , ["api", "home-feed"]
+    , ["api", "channels"]
     ]
     || ["api", "section"] `isPrefixOf` pathInfo req
 
@@ -109,6 +114,12 @@ catalogResponse state req
   | pathInfo req == ["api", "series"] =
       Just $ jsonResponse [("X-StreamVault-Haskell", "native-series")]
         (seriesResponse state req)
+  | pathInfo req == ["api", "home-feed"] =
+      Just $ jsonResponse [("Cache-Control", "public, max-age=60"), ("X-StreamVault-Haskell", "native-home-feed")]
+        (homeFeedResponse state req)
+  | pathInfo req == ["api", "channels"] =
+      Just $ jsonResponse [("X-StreamVault-Haskell", "native-channels")]
+        (csChannels state)
   | ["api", "section"] `isPrefixOf` pathInfo req =
       case drop 2 (pathInfo req) of
         (key:_) -> Just $ jsonResponse [("Cache-Control", "public, max-age=60"), ("X-StreamVault-Haskell", "native-section")]
@@ -839,6 +850,78 @@ canonicalTitle raw year =
       let k = T.toLower t
       in k `notElem` junk && not (T.length t == 4 && T.all isDigit t)
 
+homeSections :: [(T.Text, T.Text, T.Text)]
+homeSections =
+  [ ("netflixRow", "netflix", "Netflix Originals")
+  , ("marvelRow", "marvel", "Marvel Studios")
+  , ("dcRow", "dc", "DC")
+  , ("universalRow", "universal", "Universal Pictures")
+  , ("disneyRow", "disney", "Disney")
+  , ("warnerRow", "warner", "Warner Bros")
+  , ("hboRow", "hbo", "HBO")
+  , ("appleTvRow", "apple", "Apple TV+")
+  , ("trendingRow", "trending", "\x1F525 Trending Now")
+  , ("seriesRow", "series", "Series")
+  , ("newRow", "new", "New to StreamVault")
+  , ("indianRow", "indian", "Indian Movies & Drama")
+  , ("animeRow", "anime", "Anime")
+  , ("koreanRow", "koreanDrama", "Korean Drama")
+  , ("horrorRow", "horrorNights", "Horror Nights")
+  , ("scifiRow", "cyberpunkScifi", "Cyberpunk & Sci-Fi")
+  , ("mindfuckRow", "mindfuck", "Mindfuck Movies")
+  , ("cultClassicsRow", "cultClassics", "Cult Classics")
+  , ("a24Row", "a24", "A24 Collection")
+  , ("nostalgia90sRow", "nostalgia90s", "90s Nostalgia")
+  , ("midnightCinemaRow", "midnightCinema", "Midnight Cinema")
+  , ("trueCrimeRow", "trueCrime", "True Crime")
+  , ("thrillerRow", "psychThriller", "Psychological Thriller")
+  , ("adultAnimationRow", "adultAnimation", "Adult Animation")
+  , ("postApocalypticRow", "postApocalyptic", "Post-Apocalyptic")
+  , ("feelGoodRow", "feelGood", "Feel Good Movies")
+  , ("darkComedyRow", "darkComedy", "Dark Comedy")
+  , ("timeTravelRow", "timeTravel", "Time Travel")
+  , ("spaceAiRow", "spaceAi", "Space & AI")
+  , ("crimeRow", "crimeSyndicates", "Crime Syndicates")
+  , ("zombieRow", "zombie", "Zombie Universe")
+  , ("indieGemsRow", "indieGems", "Indie Gems")
+  , ("hiddenMasterpiecesRow", "hiddenMasterpieces", "Hidden Masterpieces")
+  , ("liveConcertsRow", "liveConcerts", "Live Concerts")
+  , ("documentaryRow", "documentaryVault", "Documentary Vault")
+  , ("ghibliRow", "ghibli", "Studio Ghibli")
+  , ("romanticRow", "romanceMidnight", "Romance After Midnight")
+  , ("comingSoonRow", "comingSoon", "Coming Soon")
+  , ("dramaRow", "drama", "Drama & Emotion")
+  , ("spanishRow", "spanish", "Spanish & Latino")
+  , ("highRatedRow", "topRated", "\x2B50 Top Rated (8+)")
+  , ("allRow", "allMovies", "All Movies")
+  , ("recentlyAddedRow", "recentlyAdded", "Recently Added")
+  , ("mostWatchedTodayRow", "mostWatchedToday", "Most Watched Today")
+  ]
+
+homeFeedResponse :: CatalogState -> Request -> Value
+homeFeedResponse state req =
+  let limit = min 50 (max 6 (queryInt "limit" 18 req))
+      pools = sectionPools state
+      builtRows =
+        [ (rowId, items, object ["rowId" .= rowId, "sectionKey" .= sectionKey, "title" .= title, "items" .= items])
+        | (rowId, sectionKey, title) <- homeSections
+        , let items = take limit (sectionListFrom pools sectionKey)
+        , not (null items)
+        ]
+      heroSource =
+        case find (\(rowId, _, _) -> rowId == "newRow") builtRows of
+          Just (_, items, _) -> items
+          Nothing ->
+            case builtRows of
+              ((_, items, _):_) -> items
+              [] -> []
+      hero = take 10 [item | item <- heroSource, hasArt item]
+  in object
+    [ "ok" .= True
+    , "hero" .= hero
+    , "rows" .= [row | (_, _, row) <- builtRows]
+    ]
+
 sectionResponse :: CatalogState -> Request -> T.Text -> Value
 sectionResponse state req key =
   let page = max 0 (queryInt "page" 0 req)
@@ -855,11 +938,31 @@ sectionResponse state req key =
     , "pages" .= pages
     ]
 
-sectionList :: CatalogState -> T.Text -> [Value]
-sectionList state key =
+data SectionPools = SectionPools
+  { spMoviesOnly :: [Value]
+  , spSeriesOnly :: [Value]
+  , spAllItems   :: [Value]
+  }
+
+sectionPools :: CatalogState -> SectionPools
+sectionPools state =
   let moviesOnly = normalMovieItems state
       seriesOnly = normalSeriesItems state
-      allItems = moviesOnly ++ seriesOnly
+  in SectionPools
+    { spMoviesOnly = moviesOnly
+    , spSeriesOnly = seriesOnly
+    , spAllItems = moviesOnly ++ seriesOnly
+    }
+
+sectionList :: CatalogState -> T.Text -> [Value]
+sectionList state =
+  sectionListFrom (sectionPools state)
+
+sectionListFrom :: SectionPools -> T.Text -> [Value]
+sectionListFrom pools key =
+  let moviesOnly = spMoviesOnly pools
+      seriesOnly = spSeriesOnly pools
+      allItems = spAllItems pools
       pick wordsToFind = homeSort [item | item <- allItems, hasAny (homeText item) wordsToFind]
       byYearDesc xs = sortBy (\a b -> compare (yearNum b) (yearNum a)) xs
       result = case key of
@@ -870,7 +973,7 @@ sectionList state key =
         "recentlyAdded" -> byYearDesc (homeSort allItems)
         "trending" -> take 300 (homeSort allItems)
         "mostWatchedToday" -> take 300 (homeSort allItems)
-        "netflix" -> take 500 (featuredSection allItems "netflix")
+        "netflix" -> take 500 (drop 5 (featuredSection allItems "netflix"))
         "marvel" -> take 500 (featuredSection allItems "marvel")
         "dc" -> take 500 (featuredSection allItems "dc")
         "universal" -> studioSection allItems "universal"
@@ -908,7 +1011,7 @@ sectionList state key =
         "drama" -> pick ["drama", "emotion", "life", "family"]
         "spanish" -> pick ["spanish", "latino", "latin", "mexico", "argentina", "colombia"]
         _ -> homeSort allItems
-  in if null result then take 300 (homeSort allItems) else result
+  in result
 
 normalMovieItems :: CatalogState -> [Value]
 normalMovieItems state =
@@ -943,7 +1046,14 @@ normalSeriesItems :: CatalogState -> [Value]
 normalSeriesItems state =
   let local = map (insertFields [("type", String "series"), ("_sourceRank", Number 0)]) (csLocalSeries state)
       ftp =
-        [ insertFields [("_sourceRank", Number 1), ("id", String (T.pack ("ftp_series_home_" ++ show i))), ("category", textOr "" (field "category" s)), ("language", textOr "" (field "language" s))] (seriesRouteValue s)
+        [ insertFields
+            [ ("_sourceRank", Number 1)
+            , ("id", String (T.pack ("ftp_series_home_" ++ show i)))
+            , ("overview", textOr "" (field "overview" s))
+            , ("category", textOr "" (field "category" s))
+            , ("language", textOr "" (field "language" s))
+            ]
+            (seriesRouteValue s)
         | (i, s) <- zip [(0 :: Int)..] (csCatalogSeries state)
         , not (isCartoonOrAnime s)
         ]
@@ -1008,7 +1118,11 @@ featuredSection allItems key =
         , hasArt item
         , featuredScore phrases item > 0
         ]
-  in map snd (sortBy (\(a, _) (b, _) -> compare b a) scored)
+      markWide item =
+        if key == "marvel" || key == "dc"
+          then insertFields [("_wideStudio", Bool True)] item
+          else item
+  in map (markWide . snd) (sortBy (\(a, _) (b, _) -> compare b a) scored)
 
 featuredScore :: [T.Text] -> Value -> Int
 featuredScore phrases item =
@@ -1044,14 +1158,23 @@ studioSection allItems key =
 studioScore :: [T.Text] -> Value -> Int
 studioScore phrases item =
   let titleText = normalizeSearch (T.unwords [firstText ["name", "title", "file", "filename"] item, fieldText "category" item])
-      phraseScore = maximum (0 : [if p `T.isInfixOf` titleText then 260 else 0 | p <- phrases])
+      phraseScore = maximum (0 : map (studioPhraseScore titleText) phrases)
       art = if hasArt item then 60 else 0
   in phraseScore + art + round (ratingNum item * 10) + max 0 (min 40 (yearNum item - 1985))
+
+studioPhraseScore :: T.Text -> T.Text -> Int
+studioPhraseScore titleText phrase
+  | titleText == phrase = 450
+  | (phrase <> " ") `T.isPrefixOf` titleText = 360
+  | (" " <> phrase <> " ") `T.isInfixOf` titleText = 260
+  | phrase `T.isInfixOf` titleText = 260
+  | otherwise = 0
 
 studioPhrases :: T.Text -> [T.Text]
 studioPhrases "universal" = map normalizeSearch ["universal", "jurassic", "fast and furious", "jaws", "bourne", "mummy", "oppenheimer"]
 studioPhrases "disney" = map normalizeSearch ["disney", "pixar", "toy story", "frozen", "moana", "star wars", "pirates of the caribbean"]
-studioPhrases "warner" = map normalizeSearch ["warner", "harry potter", "lord of the rings", "matrix", "dune", "mad max", "inception", "barbie"]
+studioPhrases "warner" = map normalizeSearch ["warner", "harry potter", "fantastic beasts", "lord of the rings", "the hobbit", "matrix", "dune", "godzilla", "kong", "mad max", "blade runner", "inception", "interstellar", "tenet", "conjuring", "annabelle", "it chapter", "it ", "sherlock holmes", "ocean", "creed", "rocky", "space jam", "barbie", "wonka"]
 studioPhrases "hbo" = map normalizeSearch ["hbo", "house of the dragon", "game of thrones", "last of us", "true detective", "succession"]
 studioPhrases "apple" = map normalizeSearch ["apple tv", "ted lasso", "severance", "silo", "foundation", "morning show"]
 studioPhrases _ = []
+

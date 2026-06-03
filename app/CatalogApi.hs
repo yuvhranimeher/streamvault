@@ -964,8 +964,7 @@ detailCacheCandidates state req mediaType rawId title year item =
     cache = csDetailCache state
     directKeys =
       [ rawId
-      | ":" `T.isInfixOf` rawId
-      , KM.member (fromText rawId) cache
+      | KM.member (fromText rawId) cache
       ]
     queryTmdb = fromMaybe "" (queryText "tmdbId" req)
     rawTmdb = tmdbIdFromRaw mediaType rawId
@@ -973,7 +972,7 @@ detailCacheCandidates state req mediaType rawId title year item =
     itemTitle = maybe "" (firstText ["name", "title"]) item
     itemYear = maybe "" (fieldText "year") item
     ids = nub $ filter (not . T.null) [queryTmdb, rawTmdb, itemTmdb, if T.all isDigit rawId then rawId else ""]
-    titles = nub $ filter (not . T.null) [title, rawId, itemTitle]
+    titles = nub $ filter (not . T.null) [title, rawId, prefixedDetailTitle rawId, itemTitle]
     years = nub [year, itemYear, ""]
     exactKeys =
       [ media <> ":" <> ident <> ":" <> yr
@@ -992,6 +991,10 @@ detailCacheCandidates state req mediaType rawId title year item =
 mediaAliases :: T.Text -> [T.Text]
 mediaAliases "tv" = ["tv", "series"]
 mediaAliases other = [other]
+
+prefixedDetailTitle :: T.Text -> T.Text
+prefixedDetailTitle raw =
+  fromMaybe "" (listToMaybe (mapMaybe (`T.stripPrefix` raw) ["__series__", "__tmdb_id__"]))
 
 tmdbIdFromRaw :: T.Text -> T.Text -> T.Text
 tmdbIdFromRaw mediaType rawId
@@ -1110,7 +1113,11 @@ isYearToken token =
 
 detailTitleKey :: T.Text -> T.Text
 detailTitleKey value =
-  T.toLower (fst (normalizeDetailTitle value ""))
+  T.unwords . T.words . T.map repl . T.toLower $ fst (normalizeDetailTitle value "")
+  where
+    repl c
+      | isAlphaNum c = c
+      | otherwise = ' '
 
 localDetailItem :: CatalogState -> T.Text -> T.Text -> T.Text -> Maybe Value
 localDetailItem state mediaType rawId title =

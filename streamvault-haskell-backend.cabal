@@ -6,7 +6,9 @@ build-type:         Simple
 executable streamvault-haskell-backend
   main-is:          Main.hs
   hs-source-dirs:   app
-  other-modules:     CryptoHashCompat
+  other-modules:
+      CatalogApi
+    , CryptoHashCompat
   default-language: Haskell2010
   ghc-options:      -Wall -O2 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
@@ -21,6 +23,7 @@ executable streamvault-haskell-backend
     , http-client
     , http-client-tls
     , http-types
+    , network
     , process
     , scotty >=0.22 && <0.23
     , text
@@ -31,4 +34,17 @@ executable streamvault-haskell-backend
     , wai-app-static
     , wai-cors
     , wai-extra
+
+executable streamvault-warp-health
+  main-is:          HealthOnly.hs
+  hs-source-dirs:   tools/haskell-warp-health
+  default-language: Haskell2010
+  ghc-options:      -Wall -O2 -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >=4.14 && <5
+    , bytestring
+    , http-types
+    , network
+    , warp
+    , wai
 

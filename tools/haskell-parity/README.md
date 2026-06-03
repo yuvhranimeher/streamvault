@@ -7,6 +7,7 @@ It is read-only:
 - Does not edit `server.js`
 - Does not edit frontend files
 - Does not touch playback, FFmpeg, HLS, poster cache, service worker, or live playback routes
+- Does not call details/TMDB routes; details cache hits are smoke-checked separately against Haskell
 
 Run from the StreamVault project root:
 

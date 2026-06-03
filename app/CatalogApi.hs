@@ -16,13 +16,15 @@ import qualified Data.Aeson.KeyMap as KM
 import qualified Data.ByteString.Lazy as BL
 import Data.Char (isAlphaNum, isDigit, isSpace, toLower)
 import Data.List (find, foldl', isInfixOf, isPrefixOf, nub, sortBy)
+import qualified Data.Map.Strict as M
 import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
+import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Encoding.Error as TEE
 import qualified Data.Vector as V
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
-import Network.HTTP.Types (Status, status200)
+import Network.HTTP.Types (Status, status200, status302)
 import Network.HTTP.Types.Header (ResponseHeaders)
 import Network.Wai (Request, Response, pathInfo, queryString, requestMethod, responseLBS)
 import System.Directory (doesDirectoryExist, doesFileExist, listDirectory)
@@ -221,11 +223,11 @@ titleYearKey item =
   textLower (firstText ["title", "name"] item) <> "|" <> fieldText "year" item
 
 dedupeBy :: (Value -> T.Text) -> [Value] -> [Value]
-dedupeBy keyOf = reverse . snd . foldl' step ([], [])
+dedupeBy keyOf = reverse . snd . foldl' step (Set.empty, [])
   where
     step (seen, out) item =
       let key = keyOf item
-      in if key `elem` seen then (seen, out) else (key : seen, item : out)
+      in if key `Set.member` seen then (seen, out) else (Set.insert key seen, item : out)
 
 isCartoonOrAnime :: Value -> Bool
 isCartoonOrAnime item =
@@ -661,8 +663,7 @@ ftpMovieRouteItems state =
     , "streamUrl" .= fieldText "streamUrl" m
     , "isFtp" .= True
     ]
-  | (i, m) <- zip [(0 :: Int)..] (csCatalogMovies state)
-  , not (isCartoonOrAnime m)
+  | (i, m) <- zip [(0 :: Int)..] (filter (not . isCartoonOrAnime) (csCatalogMovies state))
   ]
 
 fallbackValue :: Value -> Value -> Value
@@ -694,7 +695,7 @@ ftpSeriesRouteItems requestedLimit state =
   let raw = if requestedLimit > 0
         then take (max 0 (requestedLimit - length (csLocalSeries state))) (csCatalogSeries state)
         else csCatalogSeries state
-  in [seriesRouteValue s | s <- raw, not (isCartoonOrAnime s)]
+  in [seriesRouteValue s | s <- filter (not . isCartoonOrAnime) raw]
 
 seriesRouteValue :: Value -> Value
 seriesRouteValue s =
@@ -1140,8 +1141,7 @@ catalogSeriesDetailItems state =
     , "isFtp" .= True
     , "seasons" .= Object KM.empty
     ]
-  | (i, s) <- zip [(0 :: Int)..] (csCatalogSeries state)
-  , not (isCartoonOrAnime s)
+  | (i, s) <- zip [(0 :: Int)..] (filter (not . isCartoonOrAnime) (csCatalogSeries state))
   ]
 
 detailItemMatches :: T.Text -> T.Text -> Value -> Bool
@@ -1336,8 +1336,7 @@ normalMovieItems state =
           , "isFtp" .= True
           , "_sourceRank" .= (1 :: Int)
           ]
-        | (i, m) <- zip [(0 :: Int)..] (csCatalogMovies state)
-        , not (isCartoonOrAnime m)
+        | (i, m) <- zip [(0 :: Int)..] (filter (not . isCartoonOrAnime) (csCatalogMovies state))
         ]
   in dedupeBy homeMovieKey (local ++ ftp)
 
@@ -1353,8 +1352,7 @@ normalSeriesItems state =
             , ("language", textOr "" (field "language" s))
             ]
             (seriesRouteValue s)
-        | (i, s) <- zip [(0 :: Int)..] (csCatalogSeries state)
-        , not (isCartoonOrAnime s)
+        | (i, s) <- zip [(0 :: Int)..] (filter (not . isCartoonOrAnime) (csCatalogSeries state))
         ]
   in dedupeBy (\i -> T.toLower (firstText ["name", "title"] i) <> "|" <> fieldText "year" i) (local ++ ftp)
 
@@ -1410,56 +1408,200 @@ homeSort =
 
 featuredSection :: [Value] -> T.Text -> [Value]
 featuredSection allItems key =
-  let phrases = featuredPhrases key
-      scored =
-        [ (featuredScore phrases item, item)
+  let candidates =
+        [ (dedupeKey, score, phrase, item)
         | item <- allItems
         , hasArt item
-        , featuredScore phrases item > 0
+        , let (score, phrase) = featuredMediaScore item key
+        , score > 0
+        , let dedupeKey = featuredDedupeKey item key phrase
         ]
-      markWide item =
-        if key == "marvel" || key == "dc"
-          then insertFields [("_wideStudio", Bool True)] item
-          else item
-  in map (markWide . snd) (sortBy (\(a, _) (b, _) -> compare b a) scored)
+      best = M.elems (foldl' insertFeaturedCandidate M.empty (zip [(0 :: Int)..] candidates))
+      sorted = sortBy (\(orderA, scoreA, _, _) (orderB, scoreB, _, _) -> compare scoreB scoreA <> compare orderA orderB) best
+      hdItem item = if key == "marvel" || key == "dc" then featuredHdStudioItem item else item
+  in take 500 [hdItem item | (_, _, _, item) <- sorted]
 
-featuredScore :: [T.Text] -> Value -> Int
-featuredScore phrases item =
-  let titleText = normalizeSearch (T.unwords [firstText ["name", "title", "file", "filename"] item, fieldText "category" item])
-      hitScores =
-        [ if titleText == p then 320000 - i * 1000
-          else if p `T.isPrefixOf` titleText then 230000 - i * 1000
-          else if p `T.isInfixOf` titleText then 170000 - i * 1000
-          else 0
-        | (i, p) <- zip [(0 :: Int)..] phrases
-        ]
-  in maximum (0 : hitScores) + if hasArt item then 9000 else 0
+insertFeaturedCandidate :: M.Map T.Text (Int, Int, T.Text, Value) -> (Int, (T.Text, Int, T.Text, Value)) -> M.Map T.Text (Int, Int, T.Text, Value)
+insertFeaturedCandidate best (order, (dedupeKey, score, phrase, item)) =
+  M.alter update dedupeKey best
+  where
+    update Nothing = Just (order, score, phrase, item)
+    update (Just current@(firstOrder, currentScore, _, currentItem)) =
+      if betterFeaturedCandidate currentScore currentItem score item
+        then Just (firstOrder, score, phrase, item)
+        else Just current
+
+betterFeaturedCandidate :: Int -> Value -> Int -> Value -> Bool
+betterFeaturedCandidate currentScore currentItem nextScore nextItem =
+  case compare (featuredArtRank nextItem) (featuredArtRank currentItem) of
+    GT -> True
+    LT -> False
+    EQ ->
+      case compare nextScore currentScore of
+        GT -> True
+        LT -> False
+        EQ -> ratingNum nextItem > ratingNum currentItem
+
+featuredArtRank :: Value -> Int
+featuredArtRank item =
+  (if field "backdrop" item /= Null then 3 else 0)
+    + (if field "poster" item /= Null then 2 else 0)
+
+featuredMediaScore :: Value -> T.Text -> (Int, T.Text)
+featuredMediaScore item key =
+  let (hitScore, phrase) = featuredPriorityHit item key
+      studioBoost =
+        if key == "netflix"
+          then max hitScore (featuredNetflixIndicatorScore item)
+          else hitScore + if hasStudioCompany item key then 55000 else 0
+  in if studioBoost <= 0
+       then (0, phrase)
+       else
+         let art = if field "backdrop" item /= Null then 9000 else if field "poster" item /= Null then 6500 else 0
+             rating = round (max 0 (min 10 (ratingNum item)) * 500)
+             year = max 0 (min 2500 (yearNum item - 1980))
+             playable = if fieldText "streamUrl" item /= "" || fieldText "file" item /= "" then 1200 else 0
+         in (studioBoost + art + rating + year + playable, phrase)
+
+featuredPriorityHit :: Value -> T.Text -> (Int, T.Text)
+featuredPriorityHit item key =
+  foldl' step (0, "") (zip [(0 :: Int)..] (featuredPhrases key))
+  where
+    base = featuredTitleBase item
+    hay = " " <> base <> " "
+    step best@(bestScore, _) (i, phrase) =
+      let wrapped = " " <> phrase <> " "
+          score
+            | base == phrase = 320000 - i * 1000
+            | (phrase <> " ") `T.isPrefixOf` base = 230000 - i * 1000
+            | wrapped `T.isInfixOf` hay = 200000 - i * 1000
+            | phrase `T.isInfixOf` base = 170000 - i * 1000
+            | otherwise = 0
+      in if score > bestScore then (score, phrase) else best
+
+featuredNetflixIndicatorScore :: Value -> Int
+featuredNetflixIndicatorScore item
+  | hasStudioCompany item "netflix" = 70000
+  | "netflix" `T.isInfixOf` raw = 52000
+  | "netflix original" `T.isInfixOf` raw = 52000
+  | "nf-web" `T.isInfixOf` raw = 52000
+  | "nf web" `T.isInfixOf` raw = 52000
+  | " nf " `T.isInfixOf` separated = 52000
+  | otherwise = 0
+  where
+    raw = T.toLower (T.unwords ([fieldText k item | k <- ["name", "title", "file", "filename", "category"]] ++ valueListText "productionCompanies" item))
+    separated = " " <> T.map sep raw <> " "
+    sep c = if isAlphaNum c then c else ' '
+
+featuredDedupeKey :: Value -> T.Text -> T.Text -> T.Text
+featuredDedupeKey item key phrase =
+  key <> "|" <> mediaType <> "|" <> textFallback phrase (featuredTitleBase item) <> "|" <> year
+  where
+    mediaType = textFallback (fieldText "type" item) (if field "seasons" item /= Null then "series" else "movie")
+    year = if yearNum item > 0 then T.pack (show (yearNum item)) else ""
+
+featuredTitleBase :: Value -> T.Text
+featuredTitleBase item =
+  T.unwords
+    [ token
+    | token <- T.words (normalizeHomeSearchText (firstText ["name", "title", "file", "filename"] item))
+    , not (isYearToken token)
+    , token `notElem` featuredNoiseTokens
+    ]
+
+featuredNoiseTokens :: [T.Text]
+featuredNoiseTokens =
+  [ "2160p", "1080p", "720p", "480p", "4k", "uhd", "hdr", "sdr", "web", "webrip"
+  , "webdl", "bluray", "brrip", "dvdrip", "hdtc", "hdts", "x264", "x265", "h264"
+  , "hevc", "aac", "ddp", "dd5", "dts", "remux", "repack", "yify", "rarbg", "tigole"
+  , "psa", "mkv", "mp4", "reencoded", "dual", "audio", "hindi", "english", "esub"
+  , "msub", "season", "episode", "vol", "volume"
+  ]
+
+featuredHdStudioItem :: Value -> Value
+featuredHdStudioItem item =
+  insertFields fields item
+  where
+    posterText = fieldText "poster" item
+    backdropText = fieldText "backdrop" item
+    posterNew = if T.null posterText then "" else upgradeTmdbImage False posterText
+    backdropNew
+      | not (T.null backdropText) = upgradeTmdbImage True backdropText
+      | not (T.null posterNew) = posterNew
+      | otherwise = ""
+    fields =
+      [("_wideStudio", Bool True)]
+        ++ [("poster", String posterNew) | not (T.null posterNew)]
+        ++ [("backdrop", String backdropNew) | not (T.null backdropNew)]
+
+upgradeTmdbImage :: Bool -> T.Text -> T.Text
+upgradeTmdbImage wide value
+  | marker `T.isInfixOf` value =
+      let (before, rest0) = T.breakOn marker value
+          rest = T.drop (T.length marker) rest0
+          afterSize =
+            case T.breakOn "/" rest of
+              (_, slash) | not (T.null slash) -> T.drop 1 slash
+              _ -> rest
+      in before <> marker <> (if wide then "w1280" else "w780") <> "/" <> afterSize
+  | otherwise = value
+  where
+    marker = "/t/p/"
 
 featuredPhrases :: T.Text -> [T.Text]
 featuredPhrases "netflix" =
-  map normalizeSearch ["stranger things", "wednesday", "squid game", "money heist", "dark", "black mirror", "the witcher", "narcos", "ozark", "extraction", "extraction 2", "gray man"]
+  map normalizeHomeSearchText
+    [ "stranger things", "wednesday", "squid game", "money heist", "dark", "black mirror", "the witcher", "narcos", "ozark", "the crown"
+    , "bridgerton", "house of cards", "mindhunter", "the queens gambit", "sex education", "you", "lupin", "cobra kai", "one piece", "avatar the last airbender"
+    , "3 body problem", "the night agent", "arcane", "the sandman", "all of us are dead", "alice in borderland", "kingdom", "the gentleman", "the gentlemen"
+    , "dahmer", "beef", "maid", "bodyguard", "the umbrella academy", "lost in space", "the haunting of hill house", "the fall of the house of usher"
+    , "love death robots", "our planet", "extraction", "extraction 2", "the gray man", "red notice", "bird box", "enola holmes", "the irishman", "marriage story"
+    , "glass onion", "dont look up", "the adam project", "army of the dead", "leave the world behind", "the old guard", "society of the snow", "the platform"
+    ]
 featuredPhrases "marvel" =
-  map normalizeSearch ["avengers endgame", "avengers infinity war", "the avengers", "iron man", "captain america", "thor", "guardians of the galaxy", "spider man", "black panther", "doctor strange", "deadpool", "x men"]
+  map normalizeHomeSearchText
+    [ "avengers endgame", "avengers infinity war", "the avengers", "avengers age of ultron"
+    , "iron man", "iron man 2", "iron man 3", "captain america the first avenger", "captain america the winter soldier", "captain america civil war"
+    , "thor", "thor the dark world", "thor ragnarok", "thor love and thunder", "guardians of the galaxy", "guardians of the galaxy vol 2", "guardians of the galaxy vol 3"
+    , "spider man homecoming", "spider man far from home", "spider man no way home", "spider man into the spider verse", "spider man across the spider verse"
+    , "black panther", "black panther wakanda forever", "doctor strange", "doctor strange in the multiverse of madness", "ant man", "ant man and the wasp", "ant man and the wasp quantumania"
+    , "captain marvel", "the marvels", "shang chi", "eternals", "black widow", "deadpool", "deadpool 2", "deadpool wolverine", "logan", "the wolverine", "x men days of future past"
+    , "x men first class", "x men", "x2", "x men apocalypse", "fantastic four", "daredevil", "loki", "wandavision", "moon knight", "the punisher", "jessica jones"
+    , "luke cage", "iron fist", "hawkeye", "ms marvel", "she hulk", "the falcon and the winter soldier", "agents of shield", "agent carter", "what if", "x men 97"
+    ]
 featuredPhrases "dc" =
-  map normalizeSearch ["the dark knight", "batman", "joker", "superman", "man of steel", "justice league", "wonder woman", "aquaman", "the flash", "suicide squad", "watchmen"]
+  map normalizeHomeSearchText
+    [ "the dark knight", "the dark knight rises", "batman begins", "the batman", "batman", "batman returns", "batman forever", "batman mask of the phantasm"
+    , "joker", "joker folie a deux", "superman", "superman ii", "superman returns", "man of steel", "batman v superman", "zack snyders justice league", "justice league"
+    , "wonder woman", "wonder woman 1984", "aquaman", "aquaman and the lost kingdom", "the flash", "shazam", "shazam fury of the gods", "black adam", "blue beetle"
+    , "suicide squad", "the suicide squad", "birds of prey", "watchmen", "constantine", "green lantern", "v for vendetta", "peacemaker", "the penguin", "gotham"
+    , "superman and lois", "arrow", "the flash tv", "titans", "doom patrol", "stargirl", "swamp thing", "pennyworth", "batwoman", "smallville", "lucifer", "young justice", "harley quinn"
+    ]
 featuredPhrases _ = []
 
 studioSection :: [Value] -> T.Text -> [Value]
 studioSection allItems key =
-  let phrases = studioPhrases key
-      scored =
-        [ (studioScore phrases item, item)
+  let scored =
+        [ (score, item)
         | item <- allItems
-        , studioScore phrases item > 0
+        , let score = studioScore item key
+        , score > 0
         ]
-  in map snd (sortBy (\(a, _) (b, _) -> compare b a) scored)
+      sorted = map snd (sortBy (\(a, _) (b, _) -> compare b a) scored)
+  in take 500 (dedupeBy studioDedupeKey sorted)
 
-studioScore :: [T.Text] -> Value -> Int
-studioScore phrases item =
-  let titleText = normalizeSearch (T.unwords [firstText ["name", "title", "file", "filename"] item, fieldText "category" item])
-      phraseScore = maximum (0 : map (studioPhraseScore titleText) phrases)
-      art = if hasArt item then 60 else 0
-  in phraseScore + art + round (ratingNum item * 10) + max 0 (min 40 (yearNum item - 1985))
+studioScore :: Value -> T.Text -> Int
+studioScore item key =
+  let titleText = homeTitleText item
+      companies = if hasStudioCompany item key then 500 else 0
+      keywordScore = maximum (0 : map (studioPhraseScore titleText) (studioKeywords key))
+  in if companies == 0 && keywordScore == 0
+       then 0
+       else
+         let art = if hasArt item then 60 else 0
+             rating = min 100 (round (ratingNum item * 10))
+             year = max 0 (min 40 (yearNum item - 1985))
+         in companies + keywordScore + art + rating + year
 
 studioPhraseScore :: T.Text -> T.Text -> Int
 studioPhraseScore titleText phrase
@@ -1469,10 +1611,81 @@ studioPhraseScore titleText phrase
   | phrase `T.isInfixOf` titleText = 260
   | otherwise = 0
 
-studioPhrases :: T.Text -> [T.Text]
-studioPhrases "universal" = map normalizeSearch ["universal", "jurassic", "fast and furious", "jaws", "bourne", "mummy", "oppenheimer"]
-studioPhrases "disney" = map normalizeSearch ["disney", "pixar", "toy story", "frozen", "moana", "star wars", "pirates of the caribbean"]
-studioPhrases "warner" = map normalizeSearch ["warner", "harry potter", "fantastic beasts", "lord of the rings", "the hobbit", "matrix", "dune", "godzilla", "kong", "mad max", "blade runner", "inception", "interstellar", "tenet", "conjuring", "annabelle", "it chapter", "it ", "sherlock holmes", "ocean", "creed", "rocky", "space jam", "barbie", "wonka"]
-studioPhrases "hbo" = map normalizeSearch ["hbo", "house of the dragon", "game of thrones", "last of us", "true detective", "succession"]
-studioPhrases "apple" = map normalizeSearch ["apple tv", "ted lasso", "severance", "silo", "foundation", "morning show"]
-studioPhrases _ = []
+studioDedupeKey :: Value -> T.Text
+studioDedupeKey item =
+  normalizeHomeSearchText (firstText ["name", "title"] item)
+    <> "|" <> fieldText "year" item
+    <> "|" <> fieldText "type" item
+
+homeTitleText :: Value -> T.Text
+homeTitleText item =
+  normalizeHomeSearchText (T.unwords ([fieldText k item | k <- ["name", "title", "file", "filename", "category", "year"]] ++ valueListText "productionCompanies" item))
+
+companyText :: Value -> T.Text
+companyText item =
+  normalizeHomeSearchText (T.unwords (valueListText "productionCompanies" item ++ [fieldText k item | k <- ["studio", "network", "category"]]))
+
+hasStudioCompany :: Value -> T.Text -> Bool
+hasStudioCompany item key =
+  any (`T.isInfixOf` companyText item) (studioCompanies key)
+
+normalizeHomeSearchText :: T.Text -> T.Text
+normalizeHomeSearchText =
+  T.unwords . T.words . T.map repl . T.replace "`" "" . T.replace "'" "" . T.replace "&" " and " . T.toLower
+  where
+    repl c
+      | isAlphaNum c = c
+      | otherwise = ' '
+
+studioCompanies :: T.Text -> [T.Text]
+studioCompanies "netflix" = map normalizeHomeSearchText ["netflix"]
+studioCompanies "marvel" = map normalizeHomeSearchText ["marvel studios", "marvel entertainment", "marvel enterprises"]
+studioCompanies "dc" = map normalizeHomeSearchText ["dc entertainment", "dc films", "dc studios", "dc comics"]
+studioCompanies "universal" = map normalizeHomeSearchText ["universal pictures", "universal studios", "illumination", "dreamworks animation", "focus features"]
+studioCompanies "disney" = map normalizeHomeSearchText ["walt disney", "disney", "pixar", "lucasfilm", "marvel studios", "20th century studios"]
+studioCompanies "warner" = map normalizeHomeSearchText ["warner bros", "warner brothers", "new line cinema", "legendary pictures", "dc entertainment", "castle rock"]
+studioCompanies "hbo" = map normalizeHomeSearchText ["hbo", "home box office", "warner media", "max"]
+studioCompanies "apple" = map normalizeHomeSearchText ["apple tv", "apple studios", "apple original films"]
+studioCompanies _ = []
+
+studioKeywords :: T.Text -> [T.Text]
+studioKeywords "marvel" =
+  map normalizeHomeSearchText
+    [ "iron man", "iron man 2", "iron man 3", "the incredible hulk", "thor", "thor the dark world", "thor ragnarok", "thor love and thunder"
+    , "captain america", "the first avenger", "winter soldier", "civil war", "the avengers", "avengers", "age of ultron", "infinity war", "endgame"
+    , "guardians of the galaxy", "ant man", "ant-man", "doctor strange", "black panther", "captain marvel", "shang chi", "eternals"
+    , "black widow", "spider man", "spider-man", "no way home", "homecoming", "far from home", "venom", "deadpool", "wolverine", "x men", "x-men", "fantastic four"
+    ]
+studioKeywords "dc" =
+  map normalizeHomeSearchText
+    [ "batman", "the batman", "dark knight", "superman", "man of steel", "wonder woman", "aquaman", "justice league", "zack snyder", "joker", "suicide squad"
+    , "the suicide squad", "birds of prey", "black adam", "shazam", "the flash", "blue beetle", "watchmen", "constantine", "green lantern", "gotham", "peacemaker", "v for vendetta"
+    ]
+studioKeywords "universal" =
+  map normalizeHomeSearchText
+    [ "jurassic park", "jurassic world", "fast and furious", "fast & furious", "the fast and the furious", "furious 7", "fast five", "hobbs and shaw"
+    , "jaws", "e t", "et the extra terrestrial", "back to the future", "bourne", "jason bourne", "the mummy", "mummy returns", "despicable me", "minions"
+    , "sing", "secret life of pets", "kung fu panda", "how to train your dragon", "shrek", "puss in boots", "trolls", "oppenheimer", "nope", "get out", "us", "halloween", "the purge"
+    ]
+studioKeywords "disney" =
+  map normalizeHomeSearchText
+    [ "disney", "pixar", "toy story", "finding nemo", "finding dory", "incredibles", "cars", "monsters inc", "inside out", "coco", "up", "wall e", "ratatouille"
+    , "frozen", "moana", "encanto", "zootopia", "lion king", "aladdin", "beauty and the beast", "mulan", "little mermaid", "lilo stitch", "pirates of the caribbean"
+    , "star wars", "mandalorian", "ahsoka", "obi wan", "andor", "loki", "wandavision", "moon knight", "ms marvel", "hawkeye", "she hulk"
+    ]
+studioKeywords "warner" =
+  map normalizeHomeSearchText
+    [ "warner", "harry potter", "fantastic beasts", "lord of the rings", "the hobbit", "matrix", "dune", "godzilla", "kong", "mad max", "blade runner", "inception"
+    , "interstellar", "tenet", "conjuring", "annabelle", "it chapter", "it ", "sherlock holmes", "ocean", "creed", "rocky", "space jam", "barbie", "wonka"
+    ]
+studioKeywords "hbo" =
+  map normalizeHomeSearchText
+    [ "hbo", "max original", "house of the dragon", "game of thrones", "the last of us", "true detective", "succession", "euphoria", "westworld", "the wire"
+    , "sopranos", "chernobyl", "boardwalk empire", "watchmen", "mare of easttown", "big little lies", "white lotus", "silicon valley", "barry", "peacemaker"
+    ]
+studioKeywords "apple" =
+  map normalizeHomeSearchText
+    [ "apple tv", "appletv", "apple original", "ted lasso", "severance", "silo", "foundation", "for all mankind", "the morning show", "slow horses", "see", "invasion"
+    , "servant", "defending jacob", "black bird", "shrinking", "mythic quest", "monarch legacy of monsters", "lessons in chemistry", "pachinko", "masters of the air"
+    ]
+studioKeywords _ = []

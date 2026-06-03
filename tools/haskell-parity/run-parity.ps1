@@ -1,7 +1,7 @@
 param(
   [string]$NodeBase = "http://127.0.0.1:3000",
   [string]$HaskellBase = "http://127.0.0.1:3031",
-  [int]$TimeoutMs = 180000
+  [int]$TimeoutMs = 60000
 )
 
 $ErrorActionPreference = "Stop"

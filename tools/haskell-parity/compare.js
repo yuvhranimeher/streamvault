@@ -23,7 +23,23 @@ const endpoints = [
   { name: 'home-feed', path: '/api/home-feed', kind: 'home-feed' },
   { name: 'search-iron-man', path: '/api/search?q=iron%20man', kind: 'search' },
   { name: 'search-oblivion', path: '/api/search?q=oblivion', kind: 'search' },
+  { name: 'search-oblibion', path: '/api/search?q=oblibion', kind: 'search' },
   { name: 'channels', path: '/api/channels', kind: 'channels' },
+  { name: 'section-marvel', path: '/api/section/marvel?page=1&limit=20', kind: 'section' },
+  { name: 'section-dc', path: '/api/section/dc?page=1&limit=20', kind: 'section' },
+  { name: 'section-netflix', path: '/api/section/netflix?page=1&limit=20', kind: 'section' },
+  {
+    name: 'details-movie-cache-hit',
+    path: '/api/details/movie/Man%20of%20Steel?title=Man%20of%20Steel&year=2013',
+    kind: 'details-cache-hit',
+    haskellOnly: true,
+  },
+  {
+    name: 'details-series-cache-hit',
+    path: '/api/details/tv/76479?title=The%20Boys&year=2019&tmdbId=76479',
+    kind: 'details-cache-hit',
+    haskellOnly: true,
+  },
 ];
 
 main().catch(err => {
@@ -38,9 +54,13 @@ async function main() {
 
   const rows = [];
   for (const ep of endpoints) {
-    const nodeResult = await fetchEndpoint(nodeBase, ep, nodeDir);
     const haskellResult = await fetchEndpoint(haskellBase, ep, haskellDir);
-    rows.push(compareEndpoint(ep, nodeResult, haskellResult));
+    if (ep.haskellOnly) {
+      rows.push(compareHaskellOnlyEndpoint(ep, haskellResult));
+    } else {
+      const nodeResult = await fetchEndpoint(nodeBase, ep, nodeDir);
+      rows.push(compareEndpoint(ep, nodeResult, haskellResult));
+    }
   }
 
   const summary = {
@@ -93,6 +113,7 @@ async function fetchEndpoint(base, ep, targetDir) {
       status: res.status,
       ms: Date.now() - started,
       bytes: Buffer.byteLength(text),
+      streamvault: res.headers.get('x-streamvault-haskell') || null,
       json,
       text: json ? undefined : text.slice(0, 400),
     };
@@ -146,6 +167,37 @@ function compareEndpoint(ep, nodeResult, haskellResult) {
   };
 }
 
+function compareHaskellOnlyEndpoint(ep, haskellResult) {
+  const haskellShape = shape(ep.kind, haskellResult);
+  const diffs = [];
+  if (!haskellResult.ok) diffs.push(`Haskell fetch failed: ${haskellResult.error}`);
+  if (haskellResult.ok && haskellResult.status !== 200) diffs.push(`Haskell status ${haskellResult.status} != 200`);
+  if (haskellResult.ok && haskellResult.streamvault !== 'native-details-cache') {
+    diffs.push(`Haskell route marker ${JSON.stringify(haskellResult.streamvault)} != "native-details-cache"`);
+  }
+  if (haskellResult.ok) {
+    const json = haskellResult.json || {};
+    if (json.ok !== true) diffs.push('details ok != true');
+    if (json.localOnly !== false) diffs.push('details localOnly != false');
+    for (const key of ['trailers', 'cast', 'crew', 'productionCompanies', 'similar']) {
+      if (!Array.isArray(json[key]) || json[key].length === 0) diffs.push(`details ${key} is empty or missing`);
+    }
+  }
+  return {
+    name: ep.name,
+    path: ep.path,
+    kind: ep.kind,
+    mode: 'haskell-only-cache-hit',
+    pass: diffs.length === 0,
+    diffs,
+    node: {
+      skipped: true,
+      reason: 'Node details route bypasses disk detail-cache.json and may call TMDB; this row verifies the native Haskell cache-hit path only.',
+    },
+    haskell: stripForReport(haskellResult, haskellShape),
+  };
+}
+
 function compareHaskellHealth(ep, nodeResult, haskellResult) {
   const haskellShape = shape(ep.kind, haskellResult);
   const nodeShape = shape(ep.kind, nodeResult);
@@ -175,6 +227,7 @@ function stripForReport(result, summary) {
     status: result.status,
     ms: result.ms,
     bytes: result.bytes,
+    streamvault: result.streamvault || null,
     error: result.error || null,
     summary,
   };
@@ -255,6 +308,28 @@ function shape(kind, result) {
         itemKeys: keysOf(Array.isArray(json) ? json[0] : null),
         sample: Array.isArray(json) ? json.slice(0, 5).map(identityOf) : [],
       };
+    case 'section':
+      return envelopeShape(json, 'items');
+    case 'details-cache-hit':
+      return {
+        keys: Object.keys(json).sort(),
+        ok: json.ok,
+        localOnly: json.localOnly,
+        type: json.type,
+        id: json.id ?? null,
+        tmdbId: json.tmdbId ?? null,
+        title: json.title ?? json.name ?? null,
+        year: json.year ?? null,
+        poster: !!json.poster,
+        backdrop: !!json.backdrop,
+        trailers: Array.isArray(json.trailers) ? json.trailers.length : null,
+        cast: Array.isArray(json.cast) ? json.cast.length : null,
+        crew: Array.isArray(json.crew) ? json.crew.length : null,
+        productionCompanies: Array.isArray(json.productionCompanies) ? json.productionCompanies.length : null,
+        similar: Array.isArray(json.similar) ? json.similar.length : null,
+        moreByDirector: Array.isArray(json.moreByDirector) ? json.moreByDirector.length : null,
+        episodesKind: Array.isArray(json.episodes) ? 'array' : (json.episodes && typeof json.episodes === 'object' ? 'object' : typeof json.episodes),
+      };
     case 'haskell-health':
       return {
         keys: Object.keys(json).sort(),
@@ -314,7 +389,11 @@ function renderText(summary) {
   ];
   for (const row of summary.rows) {
     lines.push(`${row.pass ? 'PASS' : 'FAIL'} ${row.path}`);
-    lines.push(`  node:    status=${row.node.status} bytes=${row.node.bytes} ms=${row.node.ms}`);
+    if (row.node && row.node.skipped) {
+      lines.push(`  node:    skipped (${row.node.reason})`);
+    } else {
+      lines.push(`  node:    status=${row.node.status} bytes=${row.node.bytes} ms=${row.node.ms}`);
+    }
     lines.push(`  haskell: status=${row.haskell.status} bytes=${row.haskell.bytes} ms=${row.haskell.ms}`);
     if (row.diffs.length) {
       for (const diff of row.diffs) lines.push(`  - ${diff}`);

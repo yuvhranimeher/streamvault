@@ -16,6 +16,7 @@ These routes are safe, read-only, and backed by existing catalog/cache files:
 - `GET /__haskell-health`
 - `GET /api/health`
 - `GET /api/downloads?page=&limit=&q=`
+- `GET /download/:id` as a 302 redirect only for known software catalog entries
 - `GET /api/movies?page=&limit=&q=`
 - `GET /api/series?page=&limit=&q=`
 - `GET /api/section/:key?page=&limit=`
@@ -36,7 +37,7 @@ Everything not listed as native is proxied to Node, including:
 - Details cache misses and TMDB lookup routes
 - History/progress routes
 - Media info, duration, qualities, subtitles
-- Download redirect route `GET /download/:id`
+- Unknown `GET /download/:id` ids
 - Poster cache routes
 - Trending/catalog stats/keyword helpers
 
@@ -53,9 +54,16 @@ The Haskell shadow migration must not change these Node routes or frontend behav
 - Service worker behavior
 - Frontend UI/design files
 
+## Known Parity Gaps And Decisions
+
+- `/api/search` remains proxied because Node search builds a large index from local, FTP, and `scan-output/clean-catalog.json` sources, hydrates massive-catalog poster metadata, applies fuzzy token matching, caps no-poster massive results, and caches scored results. A simpler native search would reduce or reorder results.
+- Details cache misses remain proxied because Node may call TMDB, build extended details, and update `detail-cache.json`. Haskell only serves known extended cache hits and never calls TMDB.
+- Playback, FFmpeg, HLS, poster-cache, live playback, service worker, and frontend/static routes remain untouched because they involve streaming side effects, cache mutation, browser behavior, or file/process lifecycles outside this safe read-only catalog slice.
+- `GET /api/live/test/:id` is not implemented in the current Node server. Live playlist and segment routes are playback routes and remain proxied.
+
 ## Parity Endpoint Set
 
-The parity harness compares these safe endpoints:
+The parity harness compares these safe Node-vs-Haskell endpoints:
 
 - `/__haskell-health`
 - `/api/health`
@@ -65,10 +73,15 @@ The parity harness compares these safe endpoints:
 - `/api/home-feed`
 - `/api/search?q=iron%20man`
 - `/api/search?q=oblivion`
+- `/api/search?q=oblibion`
 - `/api/channels`
+- `/api/section/marvel?page=1&limit=20`
+- `/api/section/dc?page=1&limit=20`
+- `/api/section/netflix?page=1&limit=20`
 
-Playback, FFmpeg, HLS, stream URLs, poster cache mutation, and heavy/random TMDB routes are not tested automatically.
+The harness also performs Haskell-only native cache-hit checks for:
 
-Details cache hits are validated with direct Haskell smoke checks. They are not included in Node-vs-Haskell parity because the current Node `/api/details/:type/:id` handler bypasses `detail-cache.json` and may call TMDB.
+- `/api/details/movie/Man%20of%20Steel?title=Man%20of%20Steel&year=2013`
+- `/api/details/tv/76479?title=The%20Boys&year=2019&tmdbId=76479`
 
-Optional section checks for `marvel`, `dc`, and `netflix` are deferred: the current Haskell section totals/order differ from Node, so adding them would expose pre-existing section parity gaps outside this migration slice.
+The details rows are Haskell-only because the current Node `/api/details/:type/:id` handler bypasses disk `detail-cache.json` and may call TMDB. Playback, FFmpeg, HLS, stream URLs, poster cache mutation, and heavy/random TMDB routes are not tested automatically.

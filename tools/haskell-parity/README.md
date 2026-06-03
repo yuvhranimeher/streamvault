@@ -7,18 +7,19 @@ It is read-only:
 - Does not edit `server.js`
 - Does not edit frontend files
 - Does not touch playback, FFmpeg, HLS, poster cache, service worker, or live playback routes
-- Does not call details/TMDB routes; details cache hits are smoke-checked separately against Haskell
+- Does not call random/details-cache-miss TMDB routes
+- Details rows are limited to known Haskell `detail-cache.json` hits and are skipped on Node because Node may call TMDB
 
 Run from the StreamVault project root:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\haskell-parity\run-parity.ps1
+powershell -ExecutionPolicy Bypass -File .\tools\haskell-parity\run-parity.ps1 -TimeoutMs 60000
 ```
 
 Custom bases:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\haskell-parity\run-parity.ps1 -NodeBase http://127.0.0.1:3000 -HaskellBase http://127.0.0.1:3031
+powershell -ExecutionPolicy Bypass -File .\tools\haskell-parity\run-parity.ps1 -NodeBase http://127.0.0.1:3000 -HaskellBase http://127.0.0.1:3031 -TimeoutMs 60000
 ```
 
 Outputs:

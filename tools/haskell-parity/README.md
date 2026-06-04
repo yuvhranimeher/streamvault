@@ -8,7 +8,8 @@ It is read-only:
 - Does not edit frontend files
 - Does not touch playback, FFmpeg, HLS, poster cache, service worker, or live playback routes
 - Does not call random/details-cache-miss TMDB routes
-- Details rows are limited to known Haskell `detail-cache.json` hits and are skipped on Node because Node may call TMDB
+- Details cache-hit rows are limited to known Haskell `detail-cache.json` hits and are skipped on Node because Node may call TMDB
+- Details cache-miss rows use a small catalog-derived fixture set, proxy Haskell to Node, and send read-only shadow headers so Node does not mutate `detail-cache.json`
 - Search rows compare Node `/api/search` against Haskell `/__haskell-search-debug`, then check response shape, top result identities, movie/series markers, IDs, and poster/backdrop presence
 - Read-only rows cover only native shadow-safe status/history endpoints: `/api/dashboard/ping`, `/api/version`, and `GET /api/history`
 
@@ -36,6 +37,12 @@ Full parity is opt-in:
 powershell -ExecutionPolicy Bypass -File .\tools\haskell-parity\run-parity.ps1 -Full -TimeoutMs 60000
 ```
 
+Fast details shadow parity can also be run directly:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\haskell-parity\run-details-shadow-fast.ps1 -TimeoutMs 20000
+```
+
 Outputs:
 
 - `tools/haskell-parity/out/reports/parity-report.txt`
@@ -47,11 +54,13 @@ Compatibility copies are also written to:
 
 - `tools/haskell-parity/out/parity-report.txt`
 - `tools/haskell-parity/out/parity-report.json`
+- `tools/haskell-parity/out/details-shadow-fast-report.txt`
 
 Audit notes:
 
 - `tools/haskell-parity/SEARCH_MIGRATION_NOTES.md`
 - `tools/haskell-parity/DETAILS_MIGRATION_NOTES.md`
+- `tools/haskell-parity/DETAILS_CACHE_MISS_SHADOW_NOTES.md`
 - `tools/haskell-parity/READONLY_API_MIGRATION_NOTES.md`
 
 Native Haskell search can be tested directly with:
@@ -67,3 +76,10 @@ To deliberately start the shadow with the guarded search route enabled:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\haskell-parity\start-shadow.ps1 -NativeSearch
 ```
+
+Details cache misses now use a shadow-safe adapter on Haskell:
+
+- cache hits remain native and return `X-StreamVault-Haskell: native-details-cache`
+- cache misses proxy to `STREAMVAULT_NODE` and return `X-StreamVault-Haskell-Details: proxy-cache-miss`
+- the proxy request sends `x-streamvault-details-shadow: 1`, which keeps Node's normal primary behavior unchanged while preventing shadow-triggered detail-cache writes
+- `GET /__haskell-details-shadow-debug?type=movie&id=...&title=...&year=...` shows the selected cache-hit/proxy-miss path and compact shape summary

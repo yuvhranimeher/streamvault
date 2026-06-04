@@ -25,7 +25,8 @@ These routes are safe, read-only, and backed by existing catalog/cache files:
 - `GET /api/section/:key?page=&limit=`
 - `GET /api/home-feed?limit=`
 - `GET /api/channels`
-- `GET /api/details/:type/:id` for `detail-cache.json` hits only
+- `GET /api/details/:type/:id` for `detail-cache.json` hits, with safe Node proxy on cache miss
+- `GET /__haskell-details-shadow-debug?type=&id=&title=&year=` details shadow diagnostic
 - `GET /__haskell-search-debug?q=` diagnostic native search
 - `GET /api/search?q=` only when `STREAMVAULT_HASKELL_SEARCH_NATIVE=1`, with a 1500 ms fallback to Node
 
@@ -39,7 +40,7 @@ Everything not listed as native is proxied to Node, including:
 - Service worker
 - Dashboard stats and any future non-ping dashboard routes
 - `GET /api/search` by default
-- Details cache misses and TMDB lookup routes
+- TMDB lookup/helper routes such as `/api/title-details` and `/api/episode-titles`
 - History/progress write routes
 - Media info, duration, qualities, subtitles
 - Unknown `GET /download/:id` ids
@@ -62,7 +63,7 @@ The Haskell shadow migration must not change these Node routes or frontend behav
 ## Known Parity Gaps And Decisions
 
 - `/api/search` remains proxied by default. Native Haskell search is exposed at `/__haskell-search-debug?q=` and can be attempted on `/api/search` only with `STREAMVAULT_HASKELL_SEARCH_NATIVE=1`, because expanded parity still shows serious count/poster-presence drift on several target queries.
-- Details cache misses remain proxied because Node may call TMDB, build extended details, and update `detail-cache.json`. Haskell only serves known extended cache hits and never calls TMDB.
+- Details cache misses now use the Haskell shadow adapter: Haskell first attempts a native `detail-cache.json` hit, then proxies misses to Node with `x-streamvault-shadow-bypass: 1` and `x-streamvault-details-shadow: 1`. Haskell never calls TMDB and does not mutate detail caches. Node skips detail-cache writes only for those tagged shadow read-only requests; normal Node primary details requests keep their existing behavior.
 - `/api/dashboard/ping`, `GET /api/history`, and `/api/version` are native in the shadow path only. Node remains primary and falls back to its original handlers when the shadow request fails, times out, returns the wrong status, or lacks the expected native marker.
 - `/api/dashboard/stats` remains proxied because `tracker.getStats()` purges stale sessions during the read and depends on Node-only in-memory sessions, stream state, perf samples, and error logs.
 - History writes remain proxied. No dedicated server-side read-only `/api/progress` endpoint was found; frontend progress is primarily stored in browser `localStorage`.
@@ -97,6 +98,10 @@ The parity harness compares these safe Node-vs-Haskell endpoints. Search rows us
 - `/api/section/marvel?page=1&limit=20`
 - `/api/section/dc?page=1&limit=20`
 - `/api/section/netflix?page=1&limit=20`
+- `/api/details/movie/Greenland%202-Migration?title=Greenland%202-Migration&year=2026`
+- `/api/details/movie/The%20Strangers-Chapter%203?title=The%20Strangers-Chapter%203&year=2026`
+- `/api/details/tv/A%20Knight%20of%20the%20Seven%20Kingdoms?title=A%20Knight%20of%20the%20Seven%20Kingdoms&year=2026`
+- `/__haskell-details-shadow-debug?type=movie&id=Greenland%202-Migration&title=Greenland%202-Migration&year=2026`
 
 The harness also performs Haskell-only native cache-hit checks for:
 
@@ -111,4 +116,6 @@ The harness also performs Haskell-only native cache-hit checks for:
 
 `Game of Thrones` is not currently present as an extended `detail-cache.json` hit, so it is documented but not added as a failing fixture.
 
-The details rows are Haskell-only because the current Node `/api/details/:type/:id` handler bypasses disk `detail-cache.json` and may call TMDB. They cover title-only, title-plus-year, `tmdbId`, full cache-key-as-id, and punctuation-normalized title lookups. Playback, FFmpeg, HLS, stream URLs, poster cache mutation, and heavy/random TMDB routes are not tested automatically.
+The details cache-hit rows are Haskell-only because the current Node `/api/details/:type/:id` handler bypasses disk `detail-cache.json` and may call TMDB. They cover title-only, title-plus-year, `tmdbId`, full cache-key-as-id, and punctuation-normalized title lookups. Playback, FFmpeg, HLS, stream URLs, poster cache mutation, and heavy/random TMDB routes are not tested automatically.
+
+Details cache-miss rows compare Node as source of truth against Haskell's proxied response. Both Node and Haskell requests carry the read-only details shadow header so the test does not mutate `detail-cache.json`. Haskell must return `X-StreamVault-Haskell-Details: proxy-cache-miss` for these rows.

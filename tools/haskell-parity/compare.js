@@ -13,10 +13,14 @@ const haskellDir = path.join(snapshotsDir, 'haskell');
 const nodeBase = (process.env.NODE_BASE || process.argv.find(a => a.startsWith('--node='))?.slice(7) || 'http://127.0.0.1:3000').replace(/\/+$/, '');
 const haskellBase = (process.env.HASKELL_BASE || process.argv.find(a => a.startsWith('--haskell='))?.slice(10) || 'http://127.0.0.1:3031').replace(/\/+$/, '');
 const timeoutMs = Number(process.env.PARITY_TIMEOUT_MS || process.argv.find(a => a.startsWith('--timeout='))?.slice(10) || 180000);
+const endpointFilter = process.env.PARITY_ONLY || process.argv.find(a => a.startsWith('--only='))?.slice(7) || '';
 
 const endpoints = [
   { name: 'haskell-health', path: '/__haskell-health', kind: 'haskell-health' },
   { name: 'api-health', path: '/api/health', kind: 'haskell-health' },
+  { name: 'dashboard-ping', path: '/api/dashboard/ping', kind: 'dashboard-ping', requiredMarker: 'native-dashboard-ping' },
+  { name: 'api-version', path: '/api/version', kind: 'version', requiredMarker: 'native-version' },
+  { name: 'history-read', path: '/api/history', kind: 'history', requiredMarker: 'native-history' },
   { name: 'downloads-page1-limit40', path: '/api/downloads?page=1&limit=40', kind: 'downloads' },
   { name: 'movies-page1-limit40', path: '/api/movies?page=1&limit=40', kind: 'movies' },
   { name: 'series-page1-limit40', path: '/api/series?page=1&limit=40', kind: 'series' },
@@ -83,7 +87,7 @@ const endpoints = [
     kind: 'details-cache-hit',
     haskellOnly: true,
   },
-];
+].filter(ep => endpointMatchesFilter(ep, endpointFilter));
 
 function searchEndpoint(name, encodedQuery) {
   return {
@@ -92,6 +96,13 @@ function searchEndpoint(name, encodedQuery) {
     haskellPath: `/__haskell-search-debug?q=${encodedQuery}`,
     kind: 'search',
   };
+}
+
+function endpointMatchesFilter(ep, filter) {
+  if (!filter) return true;
+  const terms = filter.split(',').map(s => s.trim()).filter(Boolean);
+  if (!terms.length) return true;
+  return terms.some(term => ep.name === term || ep.kind === term || ep.path.includes(term));
 }
 
 main().catch(err => {
@@ -120,6 +131,7 @@ async function main() {
     nodeBase,
     haskellBase,
     timeoutMs,
+    endpointFilter,
     passed: rows.filter(r => r.pass).length,
     failed: rows.filter(r => !r.pass).length,
     rows,
@@ -210,6 +222,9 @@ function compareEndpoint(ep, nodeResult, haskellResult) {
   if (!haskellResult.ok) diffs.push(`Haskell fetch failed: ${haskellResult.error}`);
   if (nodeResult.ok && haskellResult.ok && nodeResult.status !== haskellResult.status) {
     diffs.push(`status ${nodeResult.status} != ${haskellResult.status}`);
+  }
+  if (ep.requiredMarker && haskellResult.ok && haskellResult.streamvault !== ep.requiredMarker) {
+    diffs.push(`Haskell route marker ${JSON.stringify(haskellResult.streamvault)} != ${JSON.stringify(ep.requiredMarker)}`);
   }
 
   compareShape('', nodeShape, haskellShape, diffs);
@@ -464,6 +479,41 @@ function shape(kind, result) {
         shadow: Object.prototype.hasOwnProperty.call(json, 'shadow') ? json.shadow : undefined,
         server: json.server || null,
       };
+    case 'dashboard-ping':
+      return {
+        keys: Object.keys(json).sort(),
+        ok: json.ok,
+        tsType: typeof json.ts,
+        uptimeType: typeof json.uptime,
+        nodeVersionType: typeof json.nodeVersion,
+        memoryKeys: keysOf(json.memory),
+        memoryValueTypes: Object.fromEntries(Object.entries(json.memory || {}).map(([key, value]) => [key, typeof value])),
+        loadAvgLength: Array.isArray(json.loadAvg) ? json.loadAvg.length : null,
+        freememType: typeof json.freemem,
+        totalmemType: typeof json.totalmem,
+      };
+    case 'version':
+      return {
+        keys: Object.keys(json).sort(),
+        ok: json.ok,
+        version: json.version,
+        timeType: typeof json.time,
+      };
+    case 'history':
+      if (Array.isArray(json)) {
+        return {
+          root: 'array',
+          length: json.length,
+          itemKeys: keysOf(json[0]),
+          sample: json.slice(0, 5).map(historyIdentityOf),
+        };
+      }
+      return {
+        root: 'object',
+        keys: Object.keys(json).sort(),
+        entryCount: Object.keys(json).length,
+        sample: Object.keys(json).sort().slice(0, 5).map(key => ({ key, ...historyIdentityOf(json[key]) })),
+      };
     default:
       return {
         keys: Object.keys(json).sort(),
@@ -516,6 +566,17 @@ function searchIdentityOf(item) {
   };
 }
 
+function historyIdentityOf(item) {
+  if (!item || typeof item !== 'object') return item;
+  return {
+    progressType: typeof item.progress,
+    nameType: typeof item.name,
+    posterKind: item.poster === null ? 'null' : typeof item.poster,
+    durationType: typeof item.duration,
+    updatedAtType: typeof item.updatedAt,
+  };
+}
+
 function searchCompareKey(item) {
   if (!item || typeof item !== 'object') return String(item);
   const type = String(item.type || '').toLowerCase();
@@ -537,6 +598,7 @@ function renderText(summary) {
     `Node:      ${summary.nodeBase}`,
     `Haskell:   ${summary.haskellBase}`,
     `Timeout:   ${summary.timeoutMs}ms`,
+    `Filter:    ${summary.endpointFilter || 'all'}`,
     `Result:    ${summary.passed} passed, ${summary.failed} failed`,
     '',
   ];

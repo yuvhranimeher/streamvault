@@ -2,6 +2,7 @@ param(
   [string]$NodeBase = "http://127.0.0.1:3000",
   [string]$HaskellBase = "http://127.0.0.1:3031",
   [int]$TimeoutMs = 60000,
+  [switch]$ReadOnly,
   [switch]$Full
 )
 
@@ -32,6 +33,19 @@ function Invoke-FastSearchParity {
   }
 }
 
+function Invoke-ReadOnlyParity {
+  Write-Host "Running focused read-only parity: dashboard ping, API version, and history read."
+  node .\tools\haskell-parity\compare.js --only=dashboard-ping,api-version,history-read
+  if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+  }
+}
+
+if ($ReadOnly.IsPresent) {
+  Invoke-ReadOnlyParity
+  exit 0
+}
+
 if (-not $Full.IsPresent) {
   Write-Host "Full parity is slow and currently opt-in. Running fast search parity only."
   Invoke-FastSearchParity
@@ -41,6 +55,7 @@ if (-not $Full.IsPresent) {
 Write-Host "Full parity was requested explicitly with -Full; running fast search parity first."
 Invoke-FastSearchParity
 Write-Host "Fast search parity finished; continuing full parity."
+Write-Host "Full parity includes focused read-only checks and avoids playback/live/FFmpeg/HLS/media segment routes."
 Write-Host "Search parity: Node /api/search is compared against Haskell /__haskell-search-debug native diagnostic search."
 Write-Host "Warming Haskell native search index before comparisons."
 

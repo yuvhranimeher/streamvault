@@ -14,6 +14,10 @@ const nodeBase = (process.env.NODE_BASE || process.argv.find(a => a.startsWith('
 const haskellBase = (process.env.HASKELL_BASE || process.argv.find(a => a.startsWith('--haskell='))?.slice(10) || 'http://127.0.0.1:3031').replace(/\/+$/, '');
 const timeoutMs = Number(process.env.PARITY_TIMEOUT_MS || process.argv.find(a => a.startsWith('--timeout='))?.slice(10) || 180000);
 const endpointFilter = process.env.PARITY_ONLY || process.argv.find(a => a.startsWith('--only='))?.slice(7) || '';
+const detailsReadOnlyHeaders = {
+  'x-streamvault-shadow-bypass': '1',
+  'x-streamvault-details-shadow': '1',
+};
 
 const endpoints = [
   { name: 'haskell-health', path: '/__haskell-health', kind: 'haskell-health' },
@@ -86,6 +90,24 @@ const endpoints = [
     path: '/api/details/movie/The%20Dark%20Knight?title=The%20Dark%20Knight&year=2008',
     kind: 'details-cache-hit',
     haskellOnly: true,
+  },
+  {
+    name: 'details-miss-greenland-migration',
+    path: '/api/details/movie/Greenland%202-Migration?title=Greenland%202-Migration&year=2026',
+    kind: 'details-cache-miss',
+    headers: detailsReadOnlyHeaders,
+  },
+  {
+    name: 'details-miss-strangers-chapter-3',
+    path: '/api/details/movie/The%20Strangers-Chapter%203?title=The%20Strangers-Chapter%203&year=2026',
+    kind: 'details-cache-miss',
+    headers: detailsReadOnlyHeaders,
+  },
+  {
+    name: 'details-miss-a-knight-seven-kingdoms',
+    path: '/api/details/tv/A%20Knight%20of%20the%20Seven%20Kingdoms?title=A%20Knight%20of%20the%20Seven%20Kingdoms&year=2026',
+    kind: 'details-cache-miss',
+    headers: detailsReadOnlyHeaders,
   },
 ].filter(ep => endpointMatchesFilter(ep, endpointFilter));
 
@@ -166,7 +188,7 @@ async function fetchEndpoint(base, ep, targetDir, side) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, { signal: controller.signal, headers: ep.headers || undefined });
     const text = await res.text();
     clearTimeout(timer);
     let json = null;
@@ -180,6 +202,7 @@ async function fetchEndpoint(base, ep, targetDir, side) {
       ms: Date.now() - started,
       bytes: Buffer.byteLength(text),
       streamvault: res.headers.get('x-streamvault-haskell') || null,
+      streamvaultDetails: res.headers.get('x-streamvault-haskell-details') || null,
       json,
       text: json ? undefined : text.slice(0, 400),
     };
@@ -212,6 +235,9 @@ function compareEndpoint(ep, nodeResult, haskellResult) {
   }
   if (ep.kind === 'search') {
     return compareSearchEndpoint(ep, nodeResult, haskellResult);
+  }
+  if (ep.kind === 'details-cache-miss') {
+    return compareDetailsCacheMissEndpoint(ep, nodeResult, haskellResult);
   }
 
   const nodeShape = shape(ep.kind, nodeResult);
@@ -338,6 +364,37 @@ function compareHaskellOnlyEndpoint(ep, haskellResult) {
   };
 }
 
+function compareDetailsCacheMissEndpoint(ep, nodeResult, haskellResult) {
+  const nodeShape = shape(ep.kind, nodeResult);
+  const haskellShape = shape(ep.kind, haskellResult);
+  const diffs = [];
+
+  if (!nodeResult.ok) diffs.push(`Node fetch failed: ${nodeResult.error}`);
+  if (!haskellResult.ok) diffs.push(`Haskell fetch failed: ${haskellResult.error}`);
+  if (nodeResult.ok && haskellResult.ok && nodeResult.status !== haskellResult.status) {
+    diffs.push(`status ${nodeResult.status} != ${haskellResult.status}`);
+  }
+  if (haskellResult.ok) {
+    const marker = haskellResult.streamvaultDetails || haskellResult.streamvault || '';
+    if (marker !== 'proxy-cache-miss') {
+      diffs.push(`Haskell details marker ${JSON.stringify(marker)} != "proxy-cache-miss"`);
+    }
+  }
+  compareShape('', nodeShape, haskellShape, diffs);
+
+  return {
+    name: ep.name,
+    path: ep.path,
+    haskellPath: ep.haskellPath || ep.path,
+    kind: ep.kind,
+    mode: 'node-source-proxied-cache-miss',
+    pass: diffs.length === 0,
+    diffs,
+    node: stripForReport(nodeResult, nodeShape),
+    haskell: stripForReport(haskellResult, haskellShape),
+  };
+}
+
 function compareHaskellHealth(ep, nodeResult, haskellResult) {
   const haskellShape = shape(ep.kind, haskellResult);
   const nodeShape = shape(ep.kind, nodeResult);
@@ -369,6 +426,7 @@ function stripForReport(result, summary) {
     ms: result.ms,
     bytes: result.bytes,
     streamvault: result.streamvault || null,
+    streamvaultDetails: result.streamvaultDetails || null,
     error: result.error || null,
     summary,
   };
@@ -452,6 +510,7 @@ function shape(kind, result) {
     case 'section':
       return envelopeShape(json, 'items');
     case 'details-cache-hit':
+    case 'details-cache-miss':
       return {
         keys: Object.keys(json).sort(),
         ok: json.ok,
@@ -613,6 +672,9 @@ function renderText(summary) {
       lines.push(`  node:    status=${row.node.status} bytes=${row.node.bytes} ms=${row.node.ms}`);
     }
     lines.push(`  haskell: status=${row.haskell.status} bytes=${row.haskell.bytes} ms=${row.haskell.ms}`);
+    if (row.haskell.streamvaultDetails) {
+      lines.push(`  haskell details marker: ${row.haskell.streamvaultDetails}`);
+    }
     if (row.diffs.length) {
       for (const diff of row.diffs) lines.push(`  - ${diff}`);
     }

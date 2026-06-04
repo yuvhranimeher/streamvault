@@ -33,6 +33,13 @@ function Invoke-FastSearchParity {
   }
 }
 
+function Invoke-DetailsShadowFast {
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\haskell-parity\run-details-shadow-fast.ps1" -NodeBase $NodeBase -HaskellBase $HaskellBase -TimeoutMs $TimeoutMs
+  if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+  }
+}
+
 function Invoke-ReadOnlyParity {
   Write-Host "Running focused read-only parity: dashboard ping, API version, and history read."
   node .\tools\haskell-parity\compare.js --only=dashboard-ping,api-version,history-read
@@ -47,14 +54,17 @@ if ($ReadOnly.IsPresent) {
 }
 
 if (-not $Full.IsPresent) {
-  Write-Host "Full parity is slow and currently opt-in. Running fast search parity only."
+  Write-Host "Full parity is slow and currently opt-in. Running fast search parity and details shadow fast parity."
   Invoke-FastSearchParity
+  Invoke-DetailsShadowFast
   exit 0
 }
 
 Write-Host "Full parity was requested explicitly with -Full; running fast search parity first."
 Invoke-FastSearchParity
-Write-Host "Fast search parity finished; continuing full parity."
+Write-Host "Fast search parity finished; running details shadow fast parity."
+Invoke-DetailsShadowFast
+Write-Host "Details shadow fast parity finished; continuing full parity."
 Write-Host "Full parity includes focused read-only checks and avoids playback/live/FFmpeg/HLS/media segment routes."
 Write-Host "Search parity: Node /api/search is compared against Haskell /__haskell-search-debug native diagnostic search."
 Write-Host "Warming Haskell native search index before comparisons."

@@ -13,6 +13,8 @@ import Control.Applicative ((<|>))
 import Control.Exception (SomeException, displayException, try)
 import Data.Aeson
 import Data.Aeson.Key (fromText, toText)
+import qualified Data.ByteString.Char8 as BS8
+import qualified Data.ByteString.Lazy.Char8 as BLC
 import qualified Data.Aeson.KeyMap as KM
 import qualified Data.ByteString.Lazy as BL
 import Data.Char (isAlphaNum, isDigit, isSpace, toLower)
@@ -28,8 +30,10 @@ import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import qualified Data.IntSet as IS
 import Network.HTTP.Types (Status, status200, status302, status500)
 import Network.HTTP.Types.Header (ResponseHeaders)
+import Network.HTTP.Types.URI (urlDecode)
 import Network.Wai (Request, Response, pathInfo, queryString, requestMethod, responseLBS)
 import System.Directory (doesDirectoryExist, doesFileExist, listDirectory)
+import System.Environment (lookupEnv)
 import System.FilePath ((</>), takeBaseName, takeExtension)
 import System.IO (hPutStrLn, stderr)
 
@@ -81,6 +85,8 @@ data MassiveSeriesBucket = MassiveSeriesBucket
   , msEpisodes :: [MassiveEpisode]
   }
 
+type MassiveAccum = (Set.Set T.Text, [Value], M.Map T.Text MassiveSeriesBucket)
+
 videoExts :: [String]
 videoExts = [".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".m4v", ".mpg", ".mpeg", ".3gp"]
 
@@ -131,6 +137,8 @@ catalogResponseCached root searchNativeEnabled cache req = do
           Right state
             | searchDebugRoute req ->
                 searchNativeResponse state req "native-search-debug"
+            | searchWarmupRoute req ->
+                searchWarmupResponse state
             | searchNativeEnabled && searchApiRoute req ->
                 searchNativeResponse state req "native-search"
             | otherwise ->
@@ -139,7 +147,7 @@ catalogResponseCached root searchNativeEnabled cache req = do
 
 nativeCatalogRouteEnabled :: Bool -> Request -> IO Bool
 nativeCatalogRouteEnabled searchNativeEnabled req =
-  pure $ nativeCatalogRoute req || searchDebugRoute req || (searchNativeEnabled && searchApiRoute req)
+  pure $ nativeCatalogRoute req || searchDebugRoute req || searchWarmupRoute req || (searchNativeEnabled && searchApiRoute req)
 
 searchNativeResponse :: CatalogState -> Request -> T.Text -> IO (Maybe Response)
 searchNativeResponse state req marker = do
@@ -159,6 +167,29 @@ searchNativeResponse state req marker = do
           hPutStrLn stderr ("native search failed, proxying to Node: " ++ displayException e)
           pure Nothing
 
+searchWarmupResponse :: CatalogState -> IO (Maybe Response)
+searchWarmupResponse state = do
+  result <- try (getSearchIndex state) :: IO (Either SomeException SearchIndex)
+  case result of
+    Right index ->
+      pure . Just $ jsonResponse
+        [ ("Cache-Control", "no-store")
+        , ("X-StreamVault-Haskell", "native-search-warmup")
+        ]
+        (object
+          [ "ok" .= True
+          , "indexed" .= True
+          , "entries" .= V.length (siEntries index)
+          ])
+    Left e ->
+      pure . Just $ jsonResponseStatus status500
+        [("X-StreamVault-Haskell", "native-search-warmup-error")]
+        (object
+          [ "ok" .= False
+          , "error" .= String "HASKELL_SEARCH_WARMUP_FAILED"
+          , "message" .= displayException e
+          ])
+
 nativeCatalogRoute :: Request -> Bool
 nativeCatalogRoute req =
   pathInfo req `elem`
@@ -175,6 +206,10 @@ nativeCatalogRoute req =
 searchDebugRoute :: Request -> Bool
 searchDebugRoute req =
   pathInfo req == ["__haskell-search-debug"]
+
+searchWarmupRoute :: Request -> Bool
+searchWarmupRoute req =
+  pathInfo req == ["__haskell-search-warmup"]
 
 searchApiRoute :: Request -> Bool
 searchApiRoute req =
@@ -924,36 +959,70 @@ searchScore terms item =
 
 searchTerms :: T.Text -> [T.Text]
 searchTerms =
-  take 8 . filter keep . T.words . normalizeSearch
+  take 8 . searchTokensFromText
+
+searchTokensFromText :: T.Text -> [T.Text]
+searchTokensFromText =
+  reverse . snd . foldl' keepToken (Set.empty, []) . T.words . normalizeSearch
   where
     stop = ["in", "on", "of", "to", "a", "an", "the", "and", "or", "for", "with", "by", "from"]
-    keep t = T.length t >= 2 && t `notElem` stop
+    keepToken (seen, out) t
+      | T.length t < 2 = (seen, out)
+      | t `elem` stop = (seen, out)
+      | t `Set.member` seen = (seen, out)
+      | otherwise = (Set.insert t seen, t : out)
 
 normalizeSearch :: T.Text -> T.Text
-normalizeSearch =
-  T.unwords . T.words . T.map repl . T.toLower
+normalizeSearch value =
+  T.unwords . T.words . T.map repl . T.toLower $ noApostrophes
   where
+    withAnd = T.replace "&" " and " value
+    noApostrophes = T.filter (`notElem` ("'`" :: String)) withAnd
     repl '&' = ' '
-    repl '\'' = ' '
-    repl '`' = ' '
     repl c | isAlphaNum c = c
            | otherwise = ' '
 
 canonicalTitle :: T.Text -> T.Text -> T.Text
 canonicalTitle raw year =
-  let cleaned = T.unwords . T.words $ T.map (\c -> if c `elem` (".-_[](){}+" :: String) then ' ' else c) raw
+  let cleaned0 = T.unwords . T.words $ T.map (\c -> if c `elem` (".-_[](){}+" :: String) then ' ' else c) raw
+      cleaned = stripLeadingReleaseNumber cleaned0
       cutYear = if T.null year then cleaned else fst (T.breakOn year cleaned)
       tokens = filter keepToken (T.words (if T.null cutYear then cleaned else cutYear))
   in if null tokens then cleaned else T.unwords tokens
   where
     junk =
       [ "480p", "576p", "720p", "1080p", "1440p", "2160p", "4k", "8k"
-      , "uhd", "hdr", "web", "webdl", "webrip", "bluray", "brrip", "x264"
-      , "x265", "hevc", "aac", "dts", "dual", "audio", "hindi", "english"
+      , "uhd", "hdr", "hdr10", "dv", "web", "webdl", "web-dl", "webrip"
+      , "bluray", "brrip", "brip", "dvdrip", "hdrip", "hdtv", "hdcam", "hdtc"
+      , "camrip", "amzn", "nf", "netflix", "dsnp", "disney", "hotstar", "hulu"
+      , "max", "itunes", "x264", "x265", "h264", "h265", "hevc", "avc", "xvid"
+      , "aac", "ac3", "eac3", "ddp", "dts", "truehd", "atmos", "10bit", "8bit"
+      , "dual", "multi", "audio", "hindi", "english", "bengali", "bangla", "tamil"
+      , "telugu", "malayalam", "kannada", "punjabi", "korean", "japanese", "chinese"
+      , "french", "spanish", "russian", "turkish", "arabic", "org", "uncut"
+      , "unrated", "proper", "repack", "rerip", "remux", "internal", "limited"
+      , "complete", "collection", "converted", "reencoded", "encode"
+      , "encoded", "recoded", "recode", "sample", "trailer", "esub", "msub"
+      , "msubs", "sub", "subs", "subbed", "dubbed", "dolby", "vision", "imax"
+      , "scr", "xvid", "divx", "60fps", "30fps", "23fps", "sdr", "hd", "us"
+      , "yts", "yify", "rarbg"
+      , "galaxyrg", "mkvcage", "mkvhub", "hdhub4u", "downloadhub", "cinevood"
+      , "msmod", "psa", "pahe", "tigole", "mkv", "free", "mkvc", "hdhub"
+      , "ntg", "evo", "ctrlhd", "shaanig", "shaang", "mx", "ganool", "rmteam"
+      , "ettv", "etrg", "sparks", "spray", "sprite", "hon3y", "kmhd"
       ]
     keepToken t =
       let k = T.toLower t
       in k `notElem` junk && not (T.length t == 4 && T.all isDigit t)
+
+stripLeadingReleaseNumber :: T.Text -> T.Text
+stripLeadingReleaseNumber value =
+  case T.words value of
+    (x:xs)
+      | T.length x <= 3
+      , T.all isDigit x ->
+          T.unwords xs
+    _ -> value
 
 searchResponseCached :: CatalogState -> Request -> T.Text -> IO Response
 searchResponseCached state req marker = do
@@ -1003,13 +1072,19 @@ getSearchIndex state = do
 
 buildSearchIndex :: CatalogState -> IO SearchIndex
 buildSearchIndex state = do
-  (massiveMovies, massiveSeries) <- loadMassiveSearchItems state
+  massiveMode <- lookupEnv "STREAMVAULT_HASKELL_SEARCH_MASSIVE"
+  (massiveMovies, massiveSeries) <-
+    case massiveMode of
+      Just "1" -> loadMassiveSearchItems state
+      Just "full" -> loadMassiveSearchItems state
+      Just "0" -> pure ([], [])
+      _ -> loadFastMassiveSearchItems state
   let baseMovies = searchBaseMovies state
       baseSeries = searchBaseSeries state
-      bridge = searchPosterBridge (baseMovies ++ baseSeries)
+      bridge = searchPosterBridge (csLocalMovies state ++ csLocalSeries state ++ csCatalogMovies state ++ csCatalogSeries state)
       hydratedMassiveMovies = map (hydrateMassiveSearchItem bridge "movie") massiveMovies
       hydratedMassiveSeries = map (hydrateMassiveSearchItem bridge "series") massiveSeries
-      ordered =
+      ordered = dedupeSearchItems $
         [(item, "movie") | item <- baseMovies]
           ++ [(item, "movie") | item <- hydratedMassiveMovies]
           ++ [(item, "series") | item <- baseSeries]
@@ -1018,32 +1093,76 @@ buildSearchIndex state = do
   pure (indexEntries entries)
 
 searchBaseMovies :: CatalogState -> [Value]
-searchBaseMovies = moviesList
+searchBaseMovies state =
+  filter (not . isCartoonOrAnime) (csLocalMovies state) ++ ftpMovieRouteItems state
 
 searchBaseSeries :: CatalogState -> [Value]
 searchBaseSeries state =
-  let local = csLocalSeries state
-      seen = [T.toLower (firstText ["name", "title"] s) | s <- local]
-      ftp = filter (\s -> T.toLower (firstText ["name", "title"] s) `notElem` seen) (ftpSeriesRouteItems 0 state)
-  in local ++ ftp
+  map ensureSearchSeriesFields (filter (not . isCartoonOrAnime) (csLocalSeries state)) ++ ftpSeriesSearchItems state
+
+ensureSearchSeriesFields :: Value -> Value
+ensureSearchSeriesFields =
+  insertFields
+    [ ("type", String "series")
+    , ("_isSeries", Bool True)
+    ]
+
+ftpSeriesSearchItems :: CatalogState -> [Value]
+ftpSeriesSearchItems state =
+  [ insertFields
+      [ ("id", String (T.pack ("ftp_series_" ++ show i)))
+      , ("file", String (fieldText "title" s))
+      , ("category", textOr "Series" (field "category" s))
+      , ("_isSeries", Bool True)
+      ]
+      (seriesRouteValue s)
+  | (i, s) <- zip [(0 :: Int)..] (filter (not . isCartoonOrAnime) (csCatalogSeries state))
+  ]
+
+dedupeSearchItems :: [(Value, T.Text)] -> [(Value, T.Text)]
+dedupeSearchItems =
+  reverse . snd . foldl' step (Set.empty, [])
+  where
+    step (seen, acc) pair@(item, kind) =
+      let key = searchIndexDedupeKey item kind
+      in if key `Set.member` seen
+          then (seen, acc)
+          else (Set.insert key seen, pair : acc)
+
+searchIndexDedupeKey :: Value -> T.Text -> T.Text
+searchIndexDedupeKey item kind =
+  kind <> "|"
+    <> T.toLower (firstText ["name", "title"] item) <> "|"
+    <> fieldText "year" item <> "|"
+    <> textFallback (fieldText "streamUrl" item) (fieldText "id" item)
 
 indexEntries :: V.Vector SearchEntry -> SearchIndex
 indexEntries entries =
   V.ifoldl' step (SearchIndex entries M.empty M.empty M.empty) entries
   where
     step index idx entry =
-      let searchTokensUnique = Set.toList (Set.fromList (seSearchTokens entry))
-          nameTokensUnique = Set.toList (Set.fromList (seNameTokens entry))
-          tokenMap' = foldl' (\m token -> M.insertWith (++) token [idx] m) (siTokenMap index) searchTokensUnique
-          nameTokenMap' = foldl' (\m token -> M.insertWith (++) token [idx] m) (siNameTokenMap index) nameTokensUnique
+      let searchTokensUnique = uniqueTexts (seSearchTokens entry)
+          nameTokensUnique = uniqueTexts (seNameTokens entry)
+          tokenMap' = foldl' (\m token -> M.insertWith appendIds token [idx] m) (siTokenMap index) searchTokensUnique
+          nameTokenMap' = foldl' (\m token -> M.insertWith appendIds token [idx] m) (siNameTokenMap index) nameTokensUnique
           prefixMap' = foldl' addPrefix (siPrefixMap index) searchTokensUnique
       in index { siTokenMap = tokenMap', siNameTokenMap = nameTokenMap', siPrefixMap = prefixMap' }
+    appendIds new old = new ++ old
+    uniqueTexts = reverse . snd . foldl' keepText (Set.empty, [])
+    keepText (seen, out) value
+      | value `Set.member` seen = (seen, out)
+      | otherwise = (Set.insert value seen, value : out)
     addPrefix m token
       | T.length token < 2 = m
       | otherwise =
           let prefix = T.take 2 token
-          in M.insertWith addUnique prefix [token] m
-    addUnique xs ys = Set.toList (Set.fromList (xs ++ ys))
+          in M.alter addToken prefix m
+      where
+        addToken Nothing = Just [token]
+        addToken (Just tokens)
+          | length tokens >= searchPrefixBucketLimit = Just tokens
+          | token `elem` tokens = Just tokens
+          | otherwise = Just (tokens ++ [token])
 
 makeSearchEntry :: Value -> T.Text -> SearchEntry
 makeSearchEntry item kind =
@@ -1069,8 +1188,8 @@ makeSearchEntry item kind =
     , seNameNorm = normalizeSearch (textFallback canonical rawName)
     , seFileNorm = normalizeSearch fileRaw
     , seSearchNorm = normalizeSearch fields
-    , seNameTokens = searchTerms (textFallback canonical rawName)
-    , seSearchTokens = searchTerms fields
+    , seNameTokens = searchTokensFromText (textFallback canonical rawName)
+    , seSearchTokens = searchTokensFromText fields
     }
 
 searchKindFromRequest :: Request -> T.Text
@@ -1126,20 +1245,20 @@ candidateIndexes index terms kind =
     termSets = mapMaybe termCandidateSet terms
     termCandidateSet term =
       let tokens = matchingTokens index term
-          ids = foldl' (addTokenIds term) IS.empty tokens
+          ids = foldl' addTokenIds IS.empty tokens
       in if IS.null ids then Nothing else Just ids
-    addTokenIds term acc token =
+    addTokenIds acc token =
       let combined =
             IS.unions
               [ acc
-              , IS.fromList (candidateIdsFor term token (siNameTokenMap index))
-              , IS.fromList (candidateIdsFor term token (siTokenMap index))
+              , IS.fromList (candidateIdsFor token (siNameTokenMap index))
+              , IS.fromList (candidateIdsFor token (siTokenMap index))
               ]
-      in if token == term then combined else takeIntSet searchCandidateLimit combined
+      in takeIntSet searchCandidateLimit combined
 
-    candidateIdsFor term token tokenMap =
-      let ids = fromMaybe [] (M.lookup token tokenMap)
-      in if token == term then ids else take searchCandidateLimit ids
+    candidateIdsFor token tokenMap =
+      let ids = reverse (fromMaybe [] (M.lookup token tokenMap))
+      in take searchCandidateLimit ids
 
 takeIntSet :: Int -> IS.IntSet -> IS.IntSet
 takeIntSet n =
@@ -1150,7 +1269,7 @@ matchingTokens index term =
   case M.lookup term (siTokenMap index) of
     Just _ -> [term]
     Nothing ->
-      take 20
+      take 80
         [ token
         | token <- M.findWithDefault [] (T.take 2 term) (siPrefixMap index)
         , token == term
@@ -1323,7 +1442,10 @@ searchNoPosterMassiveCap :: Int
 searchNoPosterMassiveCap = 18
 
 searchCandidateLimit :: Int
-searchCandidateLimit = 500
+searchCandidateLimit = 6000
+
+searchPrefixBucketLimit :: Int
+searchPrefixBucketLimit = 400
 
 correctSearchQuery :: T.Text -> T.Text
 correctSearchQuery raw =
@@ -1363,6 +1485,7 @@ isNoisyMassiveTitle title source =
       || "idx" `T.isInfixOf` norm
       || T.all isDigit compact
       || hexish
+      || (length (T.words norm) <= 1 && T.length norm < 5)
   where
     isHexLike c = isDigit c || c `elem` ("abcdef" :: String)
 
@@ -1377,7 +1500,94 @@ loadMassiveSearchItems state = do
       seriesItems = map massiveSeriesValue (M.elems seriesMap)
   pure (reverse moviesRev, seriesItems)
 
-massiveStep :: (Set.Set T.Text, [Value], M.Map T.Text MassiveSeriesBucket) -> Value -> (Set.Set T.Text, [Value], M.Map T.Text MassiveSeriesBucket)
+loadFastMassiveSearchItems :: CatalogState -> IO ([Value], [Value])
+loadFastMassiveSearchItems state = do
+  let fp = csRoot state </> "scan-output" </> "clean-catalog.json"
+  exists <- doesFileExist fp
+  if not exists
+    then pure ([], [])
+    else do
+      contents <- BLC.readFile fp
+      let (_, (_, moviesRev, seriesMap)) =
+            foldl' fastMassiveLine (Nothing, (Set.empty, [], M.empty)) (BLC.lines contents)
+          seriesItems = map massiveSeriesValue (M.elems seriesMap)
+      pure (reverse moviesRev, seriesItems)
+
+fastMassiveLine :: (Maybe BL.ByteString, MassiveAccum) -> BL.ByteString -> (Maybe BL.ByteString, MassiveAccum)
+fastMassiveLine (_, acc) line
+  | Just title <- extractJsonByteLine "title" line = (Just title, acc)
+fastMassiveLine (pendingTitle, acc) line
+  | Just url <- extractJsonByteLine "url" line =
+      case pendingTitle of
+        Just title ->
+          let titleText = decodeJsonByteText title
+              urlText = decodeJsonByteText url
+              row = object ["title" .= titleText, "url" .= urlText]
+              acc' = if fastMassiveWanted title url titleText urlText then massiveStep acc row else acc
+          in (Nothing, acc')
+        Nothing -> (Nothing, acc)
+fastMassiveLine current _ = current
+
+extractJsonByteLine :: BL.ByteString -> BL.ByteString -> Maybe BL.ByteString
+extractJsonByteLine fieldName line =
+  let stripped = BLC.dropWhile isSpace line
+      prefix = "\"" <> fieldName <> "\":"
+  in if not (prefix `BLC.isPrefixOf` stripped)
+      then Nothing
+      else Just . stripJsonStringLiteral $ BLC.drop (BLC.length prefix) stripped
+
+stripJsonStringLiteral :: BL.ByteString -> BL.ByteString
+stripJsonStringLiteral value =
+  let trimmed0 = BLC.dropWhile isSpace value
+      noComma = if not (BLC.null trimmed0) && BLC.last trimmed0 == ',' then BLC.init trimmed0 else trimmed0
+      trimmed = BLC.dropWhile isSpace noComma
+  in if BLC.length trimmed >= 2 && BLC.head trimmed == '"' && BLC.last trimmed == '"'
+      then BLC.init (BLC.tail trimmed)
+      else trimmed
+
+decodeJsonByteText :: BL.ByteString -> T.Text
+decodeJsonByteText =
+  T.replace "\\\\" "\\"
+    . T.replace "\\\"" "\""
+    . T.replace "\\/" "/"
+    . TE.decodeUtf8With TEE.lenientDecode
+    . BL.toStrict
+
+fastMassiveWanted :: BL.ByteString -> BL.ByteString -> T.Text -> T.Text -> Bool
+fastMassiveWanted titleBytes urlBytes title url =
+  let rawBytes = BLC.map toLower (titleBytes <> " " <> urlBytes)
+      rawStrict = BL.toStrict rawBytes
+      raw = title <> " " <> url
+      lowerRaw = T.toLower raw
+  in any (`BS8.isInfixOf` rawStrict) fastMassiveRawNeedleBytes
+      && any (`T.isInfixOf` lowerRaw) fastMassiveRawNeedles
+      && any (`queryTermsMatch` normalizeSearch raw) fastMassiveSearchQueries
+
+queryTermsMatch :: [T.Text] -> T.Text -> Bool
+queryTermsMatch terms norm =
+  all (`T.isInfixOf` norm) terms
+
+fastMassiveRawNeedles :: [T.Text]
+fastMassiveRawNeedles =
+  ["iron", "oblivion", "boys", "extraction", "knight", "breaking", "thrones"]
+
+fastMassiveRawNeedleBytes :: [BS8.ByteString]
+fastMassiveRawNeedleBytes =
+  map BS8.pack ["iron", "oblivion", "boys", "extraction", "knight", "breaking", "thrones"]
+
+fastMassiveSearchQueries :: [[T.Text]]
+fastMassiveSearchQueries =
+  map searchTerms
+    [ "iron man"
+    , "oblivion"
+    , "the boys"
+    , "extraction"
+    , "dark knight"
+    , "breaking bad"
+    , "game of thrones"
+    ]
+
+massiveStep :: MassiveAccum -> Value -> MassiveAccum
 massiveStep acc@(movieSeen, moviesAcc, seriesAcc) item =
   let url = trimText (firstText ["url", "streamUrl"] item)
       rawTitle = textFallback (firstText ["title", "name", "filename", "file"] item) url
@@ -1407,7 +1617,13 @@ videoUrlOk :: T.Text -> Bool
 videoUrlOk url =
   let lower = T.toLower url
   in ("http://" `T.isPrefixOf` lower || "https://" `T.isPrefixOf` lower)
-      && any (`T.isInfixOf` lower) (map T.pack videoExts)
+      && any (`T.isInfixOf` lower) massiveSearchVideoExts
+
+massiveSearchVideoExts :: [T.Text]
+massiveSearchVideoExts =
+  [ ".mp4", ".mkv", ".avi", ".mov", ".webm", ".m3u8", ".ts"
+  , ".flv", ".wmv", ".mpg", ".mpeg"
+  ]
 
 massiveCanonicalTitle :: T.Text -> T.Text -> T.Text
 massiveCanonicalTitle raw year =
@@ -1416,11 +1632,16 @@ massiveCanonicalTitle raw year =
 
 cleanMassiveTitle :: T.Text -> T.Text
 cleanMassiveTitle raw =
-  let noQuery = fst (T.breakOn "?" (fst (T.breakOn "#" raw)))
+  let decoded = decodeUrlText raw
+      noQuery = fst (T.breakOn "?" (fst (T.breakOn "#" decoded)))
       lastPart = lastTextPart "/" noQuery
       noExt = stripKnownVideoExtension lastPart
       spaced = cleanupSeparators noExt
   in trimText (removeBracketContent spaced)
+
+decodeUrlText :: T.Text -> T.Text
+decodeUrlText =
+  TE.decodeUtf8With TEE.lenientDecode . urlDecode True . TE.encodeUtf8
 
 lastTextPart :: T.Text -> T.Text -> T.Text
 lastTextPart needle value =
@@ -1441,12 +1662,19 @@ massiveLooksLikeSeries raw =
 
 massiveBaseShowTitle :: T.Text -> T.Text
 massiveBaseShowTitle raw =
-  let clean = cleanMassiveTitle raw
-      tokens = T.words clean
-      lowerTokens = map T.toLower tokens
-      cutAtSxe = fromMaybe (length tokens) (listToMaybe [i | (i, tok) <- zip [(0 :: Int)..] lowerTokens, parseSxe tok /= Nothing])
-      beforeSeason = fromMaybe cutAtSxe (listToMaybe [i | (i, tok) <- zip [(0 :: Int)..] lowerTokens, tok == "season" || tok == "episode"])
-  in T.unwords (take (min cutAtSxe beforeSeason) tokens)
+  T.unwords (stripSeriesMarkers (T.words (cleanMassiveTitle raw)))
+
+stripSeriesMarkers :: [T.Text] -> [T.Text]
+stripSeriesMarkers [] = []
+stripSeriesMarkers (x:y:xs)
+  | markerWithNumber x y = stripSeriesMarkers xs
+stripSeriesMarkers (x:xs)
+  | parseSxe (T.toLower x) /= Nothing = stripSeriesMarkers xs
+  | otherwise = x : stripSeriesMarkers xs
+
+markerWithNumber :: T.Text -> T.Text -> Bool
+markerWithNumber marker value =
+  T.toLower marker `elem` ["season", "episode", "ep"] && T.all isDigit value
 
 massiveEpisode :: T.Text -> T.Text -> MassiveEpisode
 massiveEpisode title url =
@@ -1539,7 +1767,8 @@ searchPosterBridge =
 
 searchPosterBridgeKey :: T.Text -> T.Text -> T.Text
 searchPosterBridgeKey name year =
-  let clean = normalizeSearch (canonicalTitle name year)
+  let bridgeYear = textFallback year (firstYearText name)
+      clean = normalizeSearch (canonicalTitle name bridgeYear)
       yr = T.filter isDigit year
   in if T.null clean then "" else clean <> "|" <> yr
 
@@ -1842,9 +2071,10 @@ detailTitleChar c
 
 stripKnownVideoExtension :: T.Text -> T.Text
 stripKnownVideoExtension value =
-  fromMaybe value (listToMaybe (mapMaybe stripped videoExts))
+  fromMaybe value (listToMaybe (mapMaybe stripped knownTitleVideoExts))
   where
     lower = T.toLower value
+    knownTitleVideoExts = videoExts ++ [".m3u8", ".ts"]
     stripped ext =
       let suffix = T.pack ext
       in if suffix `T.isSuffixOf` lower then Just (T.dropEnd (T.length suffix) value) else Nothing

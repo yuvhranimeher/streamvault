@@ -83,7 +83,7 @@ startupLog port upstream root cwd debugEnabled searchNativeEnabled = do
   putStrLn ("nativeSearchFlag=" ++ if searchNativeEnabled then "enabled" else "disabled")
   putStrLn "serverMode=blocking-raw-socket"
   putStrLn "healthRoutes=/__haskell-health,/api/health"
-  putStrLn "nativeRoutesEnabled=/api/downloads,/download/:id(302-only),/api/movies,/api/series,/api/section/:key,/api/home-feed,/api/channels,/api/details/:type/:id(cache-hit-only),/__haskell-search-debug"
+  putStrLn "nativeRoutesEnabled=/api/downloads,/download/:id(302-only),/api/movies,/api/series,/api/section/:key,/api/home-feed,/api/channels,/api/details/:type/:id(cache-hit-only),/__haskell-search-debug,/__haskell-search-warmup"
   putStrLn "gatedNativeRoutes=/api/search behind STREAMVAULT_HASKELL_SEARCH_NATIVE=1 with 1500ms fallback to Node"
   putStrLn "proxiedRoutesEnabled=all unsupported/risky routes -> Node, including playback/live/HLS/FFmpeg/poster-cache/static/service-worker"
   putStrLn "warpDiagnostic=minimal Warp helper binds but does not dispatch requests on this Windows GHC runtime"

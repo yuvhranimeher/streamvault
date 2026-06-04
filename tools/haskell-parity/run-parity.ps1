@@ -1,7 +1,8 @@
 param(
   [string]$NodeBase = "http://127.0.0.1:3000",
   [string]$HaskellBase = "http://127.0.0.1:3031",
-  [int]$TimeoutMs = 60000
+  [int]$TimeoutMs = 60000,
+  [switch]$Full
 )
 
 $ErrorActionPreference = "Stop"
@@ -24,7 +25,34 @@ $env:NODE_BASE = $NodeBase
 $env:HASKELL_BASE = $HaskellBase
 $env:PARITY_TIMEOUT_MS = [string]$TimeoutMs
 
+function Invoke-FastSearchParity {
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\haskell-parity\run-search-parity-fast.ps1" -NodeBase $NodeBase -HaskellBase $HaskellBase -TimeoutMs $TimeoutMs
+  if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+  }
+}
+
+if (-not $Full.IsPresent) {
+  Write-Host "Full parity is slow and currently opt-in. Running fast search parity only."
+  Invoke-FastSearchParity
+  exit 0
+}
+
+Write-Host "Full parity was requested explicitly with -Full; running fast search parity first."
+Invoke-FastSearchParity
+Write-Host "Fast search parity finished; continuing full parity."
 Write-Host "Search parity: Node /api/search is compared against Haskell /__haskell-search-debug native diagnostic search."
+Write-Host "Warming Haskell native search index before comparisons."
+
+$WarmupTimeoutSec = [Math]::Max(180, [Math]::Ceiling($TimeoutMs / 1000) * 3)
+try {
+  $Warmup = Invoke-WebRequest -Uri "$HaskellBase/__haskell-search-warmup" -UseBasicParsing -TimeoutSec $WarmupTimeoutSec
+  if ($Warmup.StatusCode -ne 200) {
+    throw "warmup status $($Warmup.StatusCode)"
+  }
+} catch {
+  throw "Haskell search warmup failed: $($_.Exception.Message)"
+}
 
 node .\tools\haskell-parity\compare.js
 if ($LASTEXITCODE -ne 0) {

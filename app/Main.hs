@@ -4,7 +4,7 @@ module Main where
 
 import Control.Concurrent (forkFinally)
 import Control.Exception (SomeException, displayException, try)
-import Control.Monad (forever, void)
+import Control.Monad (forever, void, when)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Char8 as B8
@@ -63,24 +63,27 @@ runServer = do
   nodeBase <- lookupEnv "STREAMVAULT_NODE"
   root <- maybe getCurrentDirectory pure =<< lookupEnv "STREAMVAULT_ROOT"
   cwd <- getCurrentDirectory
+  debugEnabled <- fmap (== Just "1") (lookupEnv "STREAMVAULT_HASKELL_DEBUG")
   catalogCache <- newCatalogCache
   manager <- HC.newManager HC.defaultManagerSettings
   let port = maybe 3001 readInt portText
       upstream = stripTrailingSlash (fromMaybe "http://127.0.0.1:3000" nodeBase)
-  startupLog port upstream root cwd
-  runRawServer port (handleClient root catalogCache manager upstream)
+  startupLog port upstream root cwd debugEnabled
+  runRawServer port (handleClient root catalogCache manager upstream debugEnabled)
 
-startupLog :: Int -> String -> FilePath -> FilePath -> IO ()
-startupLog port upstream root cwd = do
+startupLog :: Int -> String -> FilePath -> FilePath -> Bool -> IO ()
+startupLog port upstream root cwd debugEnabled = do
   putStrLn "StreamVault Haskell backend starting"
   putStrLn ("PORT=" ++ show port)
   putStrLn ("STREAMVAULT_NODE=" ++ upstream)
   putStrLn ("STREAMVAULT_ROOT=" ++ root)
   putStrLn ("workingDirectory=" ++ cwd)
+  putStrLn ("debugRequestLogging=" ++ if debugEnabled then "enabled" else "disabled")
   putStrLn "serverMode=blocking-raw-socket"
   putStrLn "healthRoutes=/__haskell-health,/api/health"
-  putStrLn "nativeRoutesEnabled=/api/downloads,/download/:id(302-only),/api/movies,/api/series,/api/section/:key,/api/home-feed,/api/channels,/api/details/:type/:id(cache-hit-only)"
-  putStrLn "proxiedRoutesEnabled=all unsupported/risky routes -> Node"
+  putStrLn "nativeRoutesEnabled=/api/downloads,/download/:id(302-only),/api/movies,/api/series,/api/section/:key,/api/home-feed,/api/channels,/api/details/:type/:id(cache-hit-only),/__haskell-search-debug"
+  putStrLn "gatedNativeRoutes=none; /api/search remains proxied while native search is diagnostic-only"
+  putStrLn "proxiedRoutesEnabled=all unsupported/risky routes -> Node, including playback/live/HLS/FFmpeg/poster-cache/static/service-worker"
   putStrLn "warpDiagnostic=minimal Warp helper binds but does not dispatch requests on this Windows GHC runtime"
   putStrLn ("listening=http://127.0.0.1:" ++ show port)
 
@@ -98,32 +101,53 @@ runRawServer port handler = do
     (conn, remote) <- Socket.accept sock
     void $ forkFinally (handler conn remote) (\_ -> Socket.close conn)
 
-handleClient :: FilePath -> CatalogCache -> HC.Manager -> String -> Socket.Socket -> Socket.SockAddr -> IO ()
-handleClient root catalogCache manager upstream conn remote = do
+handleClient :: FilePath -> CatalogCache -> HC.Manager -> String -> Bool -> Socket.Socket -> Socket.SockAddr -> IO ()
+handleClient root catalogCache manager upstream debugEnabled conn remote = do
   parsed <- timeout 10000000 (readRawRequest conn remote)
   case parsed of
     Nothing ->
       sendJson conn HT.status408 "{\"error\":\"REQUEST_TIMEOUT\",\"message\":\"Timed out reading request headers\"}"
     Just (Left msg) ->
       sendJson conn HT.status400 (jsonErrorStrict "BAD_REQUEST" msg)
-    Just (Right rawReq)
-      | rrPath rawReq == "/__haskell-health" ->
-          sendJson conn HT.status200 "{\"ok\":true,\"runtime\":\"haskell-gateway\",\"server\":\"blocking-raw-socket\"}"
-      | rrPath rawReq == "/api/health" ->
-          sendJson conn HT.status200 "{\"ok\":true,\"runtime\":\"haskell-gateway\",\"shadow\":true,\"server\":\"blocking-raw-socket\"}"
-      | otherwise -> do
-          waiReq <- toWaiRequest rawReq
-          nativeResult <- try (catalogResponseCached root catalogCache waiReq) :: IO (Either SomeException (Maybe Response))
-          case nativeResult of
-            Right (Just native) ->
-              case responseToSimple native of
-                Just (status, headers, body) -> sendSimple conn status headers body
-                Nothing -> proxyToNode manager upstream rawReq conn
-            Right Nothing ->
-              proxyToNode manager upstream rawReq conn
-            Left e -> do
-              hPutStrLn stderr ("native route failed, proxying to Node: " ++ displayException e)
-              proxyToNode manager upstream rawReq conn
+    Just (Right rawReq) -> do
+      when debugEnabled $
+        putStrLn ("request " ++ B8.unpack (rrMethod rawReq) ++ " " ++ B8.unpack (rrPath rawReq <> rrQuery rawReq))
+      handleRawRequest root catalogCache manager upstream conn rawReq
+
+handleRawRequest :: FilePath -> CatalogCache -> HC.Manager -> String -> Socket.Socket -> RawRequest -> IO ()
+handleRawRequest root catalogCache manager upstream conn rawReq
+  | rrPath rawReq == "/__haskell-health" =
+      sendJson conn HT.status200 "{\"ok\":true,\"runtime\":\"haskell-gateway\",\"server\":\"blocking-raw-socket\"}"
+  | rrPath rawReq == "/api/health" =
+      sendJson conn HT.status200 "{\"ok\":true,\"runtime\":\"haskell-gateway\",\"shadow\":true,\"server\":\"blocking-raw-socket\"}"
+  | otherwise = do
+      waiReq <- toWaiRequest rawReq
+      let nativeAttempt = try (catalogResponseCached root catalogCache waiReq) :: IO (Either SomeException (Maybe Response))
+      nativeResult <- case nativeRouteTimeoutMicros rawReq of
+        Nothing -> nativeAttempt
+        Just micros -> do
+          timed <- timeout micros nativeAttempt
+          case timed of
+            Just result -> pure result
+            Nothing -> do
+              hPutStrLn stderr ("native search route timed out after " ++ show (micros `div` 1000) ++ "ms, proxying to Node")
+              pure (Right Nothing)
+      case nativeResult of
+        Right (Just native) ->
+          case responseToSimple native of
+            Just (status, headers, body) -> sendSimple conn status headers body
+            Nothing -> proxyToNode manager upstream rawReq conn
+        Right Nothing ->
+          proxyToNode manager upstream rawReq conn
+        Left e -> do
+          hPutStrLn stderr ("native route failed, proxying to Node: " ++ displayException e)
+          proxyToNode manager upstream rawReq conn
+
+nativeRouteTimeoutMicros :: RawRequest -> Maybe Int
+nativeRouteTimeoutMicros rawReq
+  | rrPath rawReq == "/api/search"
+  , lookupHeader "x-streamvault-shadow-origin" (rrHeaders rawReq) == Just "node" = Just 1500000
+  | otherwise = Nothing
 
 readRawRequest :: Socket.Socket -> Socket.SockAddr -> IO (Either String RawRequest)
 readRawRequest conn remote = do

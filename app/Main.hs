@@ -6,22 +6,25 @@ import Control.Concurrent (forkFinally)
 import Control.Exception (SomeException, displayException, try)
 import Control.Monad (forever, void, when)
 import Data.Aeson (Value(..), decode, encode, object, (.=))
+import Data.Aeson.Key (fromText, toText)
 import qualified Data.Aeson.KeyMap as KM
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Char8 as B8
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Lazy.Char8 as BLC
 import qualified Data.CaseInsensitive as CI
 import Data.Char (isSpace)
 import Data.Int (Int64)
-import Data.IORef (atomicModifyIORef', newIORef)
-import Data.Maybe (fromMaybe)
+import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
+import Data.Maybe (fromMaybe, listToMaybe)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Encoding.Error as TEE
+import qualified Data.Vector as V
 import qualified Network.HTTP.Client as HC
 import qualified Network.HTTP.Types as HT
-import Network.HTTP.Types.URI (urlDecode)
+import Network.HTTP.Types.URI (renderQuery, urlDecode, urlEncode)
 import qualified Network.Socket as Socket
 import Network.Socket (withSocketsDo)
 import qualified Network.Socket.ByteString as SocketBS
@@ -74,15 +77,18 @@ runServer = do
   cwd <- getCurrentDirectory
   debugEnabled <- fmap (== Just "1") (lookupEnv "STREAMVAULT_HASKELL_DEBUG")
   searchNativeEnabled <- fmap (== Just "1") (lookupEnv "STREAMVAULT_HASKELL_SEARCH_NATIVE")
+  detailsShadowCompareEnabled <- fmap (== Just "1") (lookupEnv "STREAMVAULT_HASKELL_DETAILS_SHADOW_COMPARE")
+  detailsTimeoutMs <- maybe 17000 readInt <$> lookupEnv "STREAMVAULT_HASKELL_DETAILS_NODE_TIMEOUT_MS"
   catalogCache <- newCatalogCache
+  detailsShadowComparisons <- newIORef []
   manager <- HC.newManager HC.defaultManagerSettings
   let port = maybe 3001 readInt portText
       upstream = stripTrailingSlash (fromMaybe "http://127.0.0.1:3000" nodeBase)
-  startupLog port upstream root cwd debugEnabled searchNativeEnabled
-  runRawServer port (handleClient startedAt root searchNativeEnabled catalogCache manager upstream debugEnabled)
+  startupLog port upstream root cwd debugEnabled searchNativeEnabled detailsShadowCompareEnabled detailsTimeoutMs
+  runRawServer port (handleClient startedAt root searchNativeEnabled catalogCache manager upstream debugEnabled detailsShadowCompareEnabled detailsTimeoutMs detailsShadowComparisons)
 
-startupLog :: Int -> String -> FilePath -> FilePath -> Bool -> Bool -> IO ()
-startupLog port upstream root cwd debugEnabled searchNativeEnabled = do
+startupLog :: Int -> String -> FilePath -> FilePath -> Bool -> Bool -> Bool -> Int -> IO ()
+startupLog port upstream root cwd debugEnabled searchNativeEnabled detailsShadowCompareEnabled detailsTimeoutMs = do
   putStrLn "StreamVault Haskell backend starting"
   putStrLn ("PORT=" ++ show port)
   putStrLn ("STREAMVAULT_NODE=" ++ upstream)
@@ -90,9 +96,11 @@ startupLog port upstream root cwd debugEnabled searchNativeEnabled = do
   putStrLn ("workingDirectory=" ++ cwd)
   putStrLn ("debugRequestLogging=" ++ if debugEnabled then "enabled" else "disabled")
   putStrLn ("nativeSearchFlag=" ++ if searchNativeEnabled then "enabled" else "disabled")
+  putStrLn ("detailsShadowCompare=" ++ if detailsShadowCompareEnabled then "enabled" else "disabled")
+  putStrLn ("detailsNodeTimeoutMs=" ++ show detailsTimeoutMs)
   putStrLn "serverMode=blocking-raw-socket"
   putStrLn "healthRoutes=/__haskell-health,/api/health"
-  putStrLn "nativeRoutesEnabled=/api/dashboard/ping,/api/history(read-only),/api/version,/api/downloads,/download/:id(302-only),/api/movies,/api/series,/api/section/:key,/api/home-feed,/api/channels,/api/details/:type/:id(cache-hit-only),/__haskell-search-debug,/__haskell-search-warmup"
+  putStrLn "nativeRoutesEnabled=/api/dashboard/ping,/api/history(read-only),/api/version,/api/downloads,/download/:id(302-only),/api/movies,/api/series,/api/section/:key,/api/home-feed,/api/channels,/api/details/:type/:id(cache-hit then proxy-cache-miss),/__haskell-details-shadow-debug,/__haskell-search-debug,/__haskell-search-warmup"
   putStrLn "gatedNativeRoutes=/api/search behind STREAMVAULT_HASKELL_SEARCH_NATIVE=1 with 1500ms fallback to Node"
   putStrLn "proxiedRoutesEnabled=all unsupported/risky routes -> Node, including playback/live/HLS/FFmpeg/poster-cache/static/service-worker"
   putStrLn "warpDiagnostic=minimal Warp helper binds but does not dispatch requests on this Windows GHC runtime"
@@ -112,8 +120,8 @@ runRawServer port handler = do
     (conn, remote) <- Socket.accept sock
     void $ forkFinally (handler conn remote) (\_ -> Socket.close conn)
 
-handleClient :: POSIXTime -> FilePath -> Bool -> CatalogCache -> HC.Manager -> String -> Bool -> Socket.Socket -> Socket.SockAddr -> IO ()
-handleClient startedAt root searchNativeEnabled catalogCache manager upstream debugEnabled conn remote = do
+handleClient :: POSIXTime -> FilePath -> Bool -> CatalogCache -> HC.Manager -> String -> Bool -> Bool -> Int -> IORef [Value] -> Socket.Socket -> Socket.SockAddr -> IO ()
+handleClient startedAt root searchNativeEnabled catalogCache manager upstream debugEnabled detailsShadowCompareEnabled detailsTimeoutMs detailsShadowComparisons conn remote = do
   parsed <- timeout 10000000 (readRawRequest conn remote)
   case parsed of
     Nothing ->
@@ -123,10 +131,10 @@ handleClient startedAt root searchNativeEnabled catalogCache manager upstream de
     Just (Right rawReq) -> do
       when debugEnabled $
         putStrLn ("request " ++ B8.unpack (rrMethod rawReq) ++ " " ++ B8.unpack (rrPath rawReq <> rrQuery rawReq))
-      handleRawRequest startedAt root searchNativeEnabled catalogCache manager upstream conn rawReq
+      handleRawRequest startedAt root searchNativeEnabled catalogCache manager upstream debugEnabled detailsShadowCompareEnabled detailsTimeoutMs detailsShadowComparisons conn rawReq
 
-handleRawRequest :: POSIXTime -> FilePath -> Bool -> CatalogCache -> HC.Manager -> String -> Socket.Socket -> RawRequest -> IO ()
-handleRawRequest startedAt root searchNativeEnabled catalogCache manager upstream conn rawReq
+handleRawRequest :: POSIXTime -> FilePath -> Bool -> CatalogCache -> HC.Manager -> String -> Bool -> Bool -> Int -> IORef [Value] -> Socket.Socket -> RawRequest -> IO ()
+handleRawRequest startedAt root searchNativeEnabled catalogCache manager upstream debugEnabled detailsShadowCompareEnabled detailsTimeoutMs detailsShadowComparisons conn rawReq
   | rrPath rawReq == "/__haskell-health" =
       sendJson conn HT.status200 "{\"ok\":true,\"runtime\":\"haskell-gateway\",\"server\":\"blocking-raw-socket\"}"
   | rrPath rawReq == "/api/health" =
@@ -137,6 +145,8 @@ handleRawRequest startedAt root searchNativeEnabled catalogCache manager upstrea
       sendHistory conn root
   | rrMethod rawReq == "GET" && rrPath rawReq == "/api/version" =
       sendVersion conn
+  | rrMethod rawReq == "GET" && rrPath rawReq == "/__haskell-details-shadow-debug" =
+      sendDetailsShadowDebug root searchNativeEnabled catalogCache manager upstream debugEnabled detailsShadowCompareEnabled detailsTimeoutMs detailsShadowComparisons conn rawReq
   | otherwise = do
       waiReq <- toWaiRequest rawReq
       let nativeAttempt = try (catalogResponseCached root searchNativeEnabled catalogCache waiReq) :: IO (Either SomeException (Maybe Response))
@@ -155,15 +165,371 @@ handleRawRequest startedAt root searchNativeEnabled catalogCache manager upstrea
             Just (status, headers, body) -> sendSimple conn status headers body
             Nothing -> proxyToNode manager upstream rawReq conn
         Right Nothing ->
-          proxyToNode manager upstream rawReq conn
+          if detailsApiRoute rawReq
+            then proxyDetailsCacheMiss manager upstream debugEnabled detailsShadowCompareEnabled detailsTimeoutMs detailsShadowComparisons rawReq conn
+            else proxyToNode manager upstream rawReq conn
         Left e -> do
           hPutStrLn stderr ("native route failed, proxying to Node: " ++ displayException e)
-          proxyToNode manager upstream rawReq conn
+          if detailsApiRoute rawReq
+            then proxyDetailsCacheMiss manager upstream debugEnabled detailsShadowCompareEnabled detailsTimeoutMs detailsShadowComparisons rawReq conn
+            else proxyToNode manager upstream rawReq conn
 
 nativeRouteTimeoutMicros :: RawRequest -> Maybe Int
 nativeRouteTimeoutMicros rawReq
   | rrPath rawReq == "/api/search" = Just 1500000
   | otherwise = Nothing
+
+data BufferedNodeResponse = BufferedNodeResponse
+  { bnrStatus  :: HT.Status
+  , bnrHeaders :: HT.ResponseHeaders
+  , bnrBody    :: BL.ByteString
+  }
+
+detailsApiRoute :: RawRequest -> Bool
+detailsApiRoute rawReq =
+  rrMethod rawReq == "GET"
+    && case decodePathInfo (rrPath rawReq) of
+         ("api":"details":rawType:_:_) -> T.toLower rawType `elem` ["movie", "tv", "series", "show"]
+         _ -> False
+
+detailsMediaTypeFromRaw :: RawRequest -> T.Text
+detailsMediaTypeFromRaw rawReq =
+  case decodePathInfo (rrPath rawReq) of
+    ("api":"details":rawType:_) ->
+      if T.toLower rawType `elem` ["tv", "series", "show"] then "tv" else "movie"
+    _ -> "movie"
+
+proxyDetailsCacheMiss :: HC.Manager -> String -> Bool -> Bool -> Int -> IORef [Value] -> RawRequest -> Socket.Socket -> IO ()
+proxyDetailsCacheMiss manager upstream debugEnabled compareEnabled detailsTimeoutMs comparisons rawReq conn = do
+  fetched <- fetchDetailsFromNode manager upstream detailsTimeoutMs rawReq
+  case fetched of
+    Left msg ->
+      sendDetailsProxyError conn HT.status502 "UPSTREAM_NODE_UNAVAILABLE" msg
+    Right nodeRes -> do
+      let decoded = decode (bnrBody nodeRes) :: Maybe Value
+          warnings = detailsValidationWarnings (detailsMediaTypeFromRaw rawReq) decoded
+      when (debugEnabled && not (null warnings)) $
+        hPutStrLn stderr ("details proxy shape warnings: " ++ show warnings)
+      when compareEnabled $
+        recordDetailsShadowComparison comparisons (detailsComparisonSummary rawReq nodeRes decoded warnings)
+      sendSimple conn
+        (bnrStatus nodeRes)
+        (detailsProxyResponseHeaders (bnrHeaders nodeRes))
+        (bnrBody nodeRes)
+
+fetchDetailsFromNode :: HC.Manager -> String -> Int -> RawRequest -> IO (Either String BufferedNodeResponse)
+fetchDetailsFromNode manager upstream detailsTimeoutMs rawReq = do
+  let targetUrl = upstream ++ B8.unpack (rrPath rawReq <> rrQuery rawReq)
+  parsed <- try (HC.parseRequest targetUrl) :: IO (Either SomeException HC.Request)
+  case parsed of
+    Left e ->
+      pure . Left $ "bad upstream URL: " ++ displayException e
+    Right baseReq -> do
+      let timeoutMicros = max 1 detailsTimeoutMs * 1000
+          outReq = baseReq
+            { HC.method = rrMethod rawReq
+            , HC.requestHeaders = addOrReplaceHeaders detailsProxyRequestHeaders (filterRequestHeaders (rrHeaders rawReq))
+            , HC.requestBody = HC.RequestBodyLBS (rrBody rawReq)
+            , HC.responseTimeout = HC.responseTimeoutMicro timeoutMicros
+            }
+      proxied <- try (HC.httpLbs outReq manager) :: IO (Either SomeException (HC.Response BL.ByteString))
+      pure $ case proxied of
+        Left e -> Left (displayException e)
+        Right res -> Right BufferedNodeResponse
+          { bnrStatus = HC.responseStatus res
+          , bnrHeaders = HC.responseHeaders res
+          , bnrBody = HC.responseBody res
+          }
+
+detailsProxyRequestHeaders :: HT.RequestHeaders
+detailsProxyRequestHeaders =
+  [ ("x-streamvault-shadow-bypass", "1")
+  , ("x-streamvault-shadow-origin", "haskell-details-cache-miss")
+  , ("x-streamvault-details-shadow", "1")
+  ]
+
+addOrReplaceHeaders :: HT.RequestHeaders -> HT.RequestHeaders -> HT.RequestHeaders
+addOrReplaceHeaders extras headers =
+  extras ++ filter (\(name, _) -> CI.foldedCase name `notElem` extraNames) headers
+  where
+    extraNames = map (CI.foldedCase . fst) extras
+
+detailsProxyResponseHeaders :: HT.ResponseHeaders -> HT.ResponseHeaders
+detailsProxyResponseHeaders headers =
+  filtered ++
+    [ ("X-StreamVault-Haskell", "proxy-cache-miss")
+    , ("X-StreamVault-Haskell-Details", "proxy-cache-miss")
+    ]
+  where
+    blocked =
+      hopByHopHeaders ++
+        [ "content-length"
+        , "x-streamvault-haskell"
+        , "x-streamvault-haskell-details"
+        ]
+    filtered = filter (\(name, _) -> CI.foldedCase name `notElem` blocked) headers
+
+sendDetailsProxyError :: Socket.Socket -> HT.Status -> String -> String -> IO ()
+sendDetailsProxyError conn status code msg =
+  sendAesonJson conn status
+    [ ("Cache-Control", "no-store")
+    , ("X-StreamVault-Haskell", "proxy-cache-miss-error")
+    , ("X-StreamVault-Haskell-Details", "proxy-cache-miss-error")
+    ]
+    (object
+      [ "ok" .= False
+      , "error" .= code
+      , "message" .= msg
+      ])
+
+sendDetailsShadowDebug :: FilePath -> Bool -> CatalogCache -> HC.Manager -> String -> Bool -> Bool -> Int -> IORef [Value] -> Socket.Socket -> RawRequest -> IO ()
+sendDetailsShadowDebug root searchNativeEnabled catalogCache manager upstream debugEnabled compareEnabled detailsTimeoutMs comparisons conn rawReq =
+  case detailsDebugRawRequest rawReq of
+    Left msg ->
+      sendAesonJson conn HT.status400 detailsDebugHeaders
+        (object
+          [ "ok" .= False
+          , "route" .= String "/__haskell-details-shadow-debug"
+          , "error" .= String "BAD_DETAILS_DEBUG_REQUEST"
+          , "message" .= msg
+          ])
+    Right detailsReq -> do
+      waiReq <- toWaiRequest detailsReq
+      native <- try (catalogResponseCached root searchNativeEnabled catalogCache waiReq) :: IO (Either SomeException (Maybe Response))
+      case native of
+        Right (Just res) ->
+          case responseToSimple res of
+            Just (status, headers, body) ->
+              sendDetailsShadowDebugBody conn comparisons detailsReq "native-cache-hit" (headerText "x-streamvault-haskell" headers) status (decode body :: Maybe Value) []
+            Nothing ->
+              sendDetailsShadowDebugBody conn comparisons detailsReq "native-cache-hit" (Just "native-details-cache") HT.status500 Nothing ["native response was not a simple buffered response"]
+        Right Nothing ->
+          sendDetailsShadowDebugProxy conn manager upstream debugEnabled compareEnabled detailsTimeoutMs comparisons detailsReq
+        Left e -> do
+          hPutStrLn stderr ("details shadow debug native lookup failed: " ++ displayException e)
+          sendDetailsShadowDebugProxy conn manager upstream debugEnabled compareEnabled detailsTimeoutMs comparisons detailsReq
+
+sendDetailsShadowDebugProxy :: Socket.Socket -> HC.Manager -> String -> Bool -> Bool -> Int -> IORef [Value] -> RawRequest -> IO ()
+sendDetailsShadowDebugProxy conn manager upstream debugEnabled compareEnabled detailsTimeoutMs comparisons detailsReq = do
+  fetched <- fetchDetailsFromNode manager upstream detailsTimeoutMs detailsReq
+  case fetched of
+    Left msg ->
+      sendAesonJson conn HT.status502 detailsDebugHeaders
+        (object
+          [ "ok" .= False
+          , "route" .= String "/__haskell-details-shadow-debug"
+          , "result" .= String "proxy-cache-miss-error"
+          , "routeMarker" .= String "proxy-cache-miss-error"
+          , "detailsRoute" .= rawTargetText detailsReq
+          , "error" .= String "UPSTREAM_NODE_UNAVAILABLE"
+          , "message" .= msg
+          ])
+    Right nodeRes -> do
+      let decoded = decode (bnrBody nodeRes) :: Maybe Value
+          warnings = detailsValidationWarnings (detailsMediaTypeFromRaw detailsReq) decoded
+      when (debugEnabled && not (null warnings)) $
+        hPutStrLn stderr ("details shadow debug shape warnings: " ++ show warnings)
+      when compareEnabled $
+        recordDetailsShadowComparison comparisons (detailsComparisonSummary detailsReq nodeRes decoded warnings)
+      sendDetailsShadowDebugBody conn comparisons detailsReq "proxy-cache-miss" (Just "proxy-cache-miss") (bnrStatus nodeRes) decoded warnings
+
+sendDetailsShadowDebugBody :: Socket.Socket -> IORef [Value] -> RawRequest -> T.Text -> Maybe T.Text -> HT.Status -> Maybe Value -> [String] -> IO ()
+sendDetailsShadowDebugBody conn comparisons detailsReq result marker status decoded warnings = do
+  recent <- readIORef comparisons
+  sendAesonJson conn HT.status200 detailsDebugHeaders
+    (object
+      [ "ok" .= True
+      , "route" .= String "/__haskell-details-shadow-debug"
+      , "detailsRoute" .= rawTargetText detailsReq
+      , "result" .= result
+      , "routeMarker" .= fromMaybe "" marker
+      , "status" .= HT.statusCode status
+      , "shape" .= detailsShapeSummary decoded
+      , "validationWarnings" .= warnings
+      , "recentComparisonCount" .= length recent
+      , "lastComparison" .= listToMaybe recent
+      ])
+
+detailsDebugHeaders :: HT.ResponseHeaders
+detailsDebugHeaders =
+  [ ("Cache-Control", "no-store")
+  , ("X-StreamVault-Haskell", "details-shadow-debug")
+  ]
+
+detailsDebugRawRequest :: RawRequest -> Either String RawRequest
+detailsDebugRawRequest rawReq =
+  if BS.null ident
+    then Left "Missing required id query parameter."
+    else Right rawReq
+      { rrMethod = "GET"
+      , rrPath = "/api/details/" <> mediaPath <> "/" <> urlEncode False ident
+      , rrQuery = renderQuery True forwardQuery
+      , rrBody = BL.empty
+      }
+  where
+    mediaRaw = fromMaybe "movie" (lookupQueryBytes "type" rawReq)
+    mediaText = T.toLower (decodeQueryBytes mediaRaw)
+    mediaPath = if mediaText `elem` ["tv", "series", "show"] then "tv" else "movie"
+    ident = fromMaybe BS.empty $
+      lookupQueryBytes "id" rawReq
+        `orElse` lookupQueryBytes "tmdbId" rawReq
+        `orElse` lookupQueryBytes "title" rawReq
+        `orElse` lookupQueryBytes "name" rawReq
+    forwardQuery =
+      [ (key, Just value)
+      | key <- ["title", "name", "year", "tmdbId", "type"]
+      , Just value <- [lookupQueryBytes key rawReq]
+      ]
+
+orElse :: Maybe a -> Maybe a -> Maybe a
+orElse (Just a) _ = Just a
+orElse Nothing b = b
+
+lookupQueryBytes :: BS.ByteString -> RawRequest -> Maybe BS.ByteString
+lookupQueryBytes key rawReq =
+  case lookup key (HT.parseQuery (dropQueryMark (rrQuery rawReq))) of
+    Just (Just value) -> Just value
+    _ -> Nothing
+
+dropQueryMark :: BS.ByteString -> BS.ByteString
+dropQueryMark raw =
+  if "?" `BS.isPrefixOf` raw then BS.drop 1 raw else raw
+
+decodeQueryBytes :: BS.ByteString -> T.Text
+decodeQueryBytes =
+  TE.decodeUtf8With TEE.lenientDecode
+
+rawTargetText :: RawRequest -> T.Text
+rawTargetText rawReq =
+  decodeQueryBytes (rrPath rawReq <> rrQuery rawReq)
+
+headerText :: BS.ByteString -> HT.ResponseHeaders -> Maybe T.Text
+headerText name headers =
+  decodeQueryBytes <$> lookup (CI.mk name) headers
+
+recordDetailsShadowComparison :: IORef [Value] -> Value -> IO ()
+recordDetailsShadowComparison ref summary = do
+  atomicModifyIORef' ref $ \items ->
+    let next = take 25 (summary : items)
+    in (next, ())
+  hPutStrLn stderr ("[Details shadow compare] " ++ BLC.unpack (encode summary))
+
+detailsComparisonSummary :: RawRequest -> BufferedNodeResponse -> Maybe Value -> [String] -> Value
+detailsComparisonSummary rawReq nodeRes decoded warnings =
+  object
+    [ "mode" .= String "proxy-cache-miss"
+    , "detailsRoute" .= rawTargetText rawReq
+    , "status" .= HT.statusCode (bnrStatus nodeRes)
+    , "expected" .= object
+        [ "type" .= detailsMediaTypeFromRaw rawReq
+        , "title" .= maybe "" decodeQueryBytes (lookupQueryBytes "title" rawReq `orElse` lookupQueryBytes "name" rawReq)
+        , "year" .= maybe "" decodeQueryBytes (lookupQueryBytes "year" rawReq)
+        ]
+    , "node" .= detailsShapeSummary decoded
+    , "validationWarnings" .= warnings
+    ]
+
+detailsShapeSummary :: Maybe Value -> Value
+detailsShapeSummary Nothing =
+  object ["root" .= String "non-json"]
+detailsShapeSummary (Just (Object o)) =
+  object
+    [ "root" .= String "object"
+    , "keys" .= map toText (KM.keys o)
+    , "ok" .= objectLookupValue "ok" (Object o)
+    , "type" .= firstObjectText ["type"] (Object o)
+    , "title" .= firstObjectText ["title", "name"] (Object o)
+    , "year" .= firstObjectText ["year"] (Object o)
+    , "posterPresent" .= objectFieldPresent "poster" (Object o)
+    , "backdropPresent" .= objectFieldPresent "backdrop" (Object o)
+    , "overviewPresent" .= objectFieldPresent "overview" (Object o)
+    , "trailers" .= arrayCount "trailers" (Object o)
+    , "cast" .= arrayCount "cast" (Object o)
+    , "crew" .= arrayCount "crew" (Object o)
+    , "productionCompanies" .= arrayCount "productionCompanies" (Object o)
+    , "similar" .= arrayCount "similar" (Object o)
+    , "moreByDirector" .= arrayCount "moreByDirector" (Object o)
+    , "episodesKind" .= valueKind (objectLookupValue "episodes" (Object o))
+    , "episodesPresent" .= objectFieldPresent "episodes" (Object o)
+    ]
+detailsShapeSummary (Just (Array xs)) =
+  object ["root" .= String "array", "length" .= V.length xs]
+detailsShapeSummary (Just value) =
+  object ["root" .= valueKind value]
+
+detailsValidationWarnings :: T.Text -> Maybe Value -> [String]
+detailsValidationWarnings _ Nothing =
+  ["response body is not valid JSON"]
+detailsValidationWarnings expectedMedia (Just (Object o)) =
+  concat
+    [ if KM.member (fromText "ok") o then [] else ["missing ok field"]
+    , if T.null titleText then ["missing title/name field"] else []
+    , case objectLookupValue "type" rootValue of
+        String t | not (T.null t) && t /= expectedMedia ->
+          ["type " ++ T.unpack t ++ " does not match route type " ++ T.unpack expectedMedia]
+        _ -> []
+    , concatMap optionalArrayWarning ["trailers", "cast", "crew", "productionCompanies", "similar", "moreByDirector"]
+    , case objectLookupValue "episodes" rootValue of
+        Null -> []
+        Array _ -> []
+        Object _ -> []
+        _ -> ["episodes is present but is not an array or object"]
+    ]
+  where
+    rootValue = Object o
+    titleText = firstObjectText ["title", "name"] rootValue
+    optionalArrayWarning key =
+      case objectLookupValue key rootValue of
+        Null -> []
+        Array _ -> []
+        _ -> [T.unpack key ++ " is present but is not an array"]
+detailsValidationWarnings _ (Just _) =
+  ["response JSON root is not an object"]
+
+objectLookupValue :: T.Text -> Value -> Value
+objectLookupValue key (Object o) =
+  fromMaybe Null (KM.lookup (fromText key) o)
+objectLookupValue _ _ = Null
+
+firstObjectText :: [T.Text] -> Value -> T.Text
+firstObjectText keys value =
+  fromMaybe "" . listToMaybe $
+    [ text
+    | key <- keys
+    , let text = valueAsText (objectLookupValue key value)
+    , not (T.null text)
+    ]
+
+valueAsText :: Value -> T.Text
+valueAsText (String t) = t
+valueAsText (Number n) = T.pack (show n)
+valueAsText (Bool True) = "true"
+valueAsText (Bool False) = "false"
+valueAsText _ = ""
+
+objectFieldPresent :: T.Text -> Value -> Bool
+objectFieldPresent key value =
+  case objectLookupValue key value of
+    Null -> False
+    String t -> not (T.null t)
+    Array xs -> not (V.null xs)
+    Object o -> not (KM.null o)
+    Bool b -> b
+    Number _ -> True
+
+arrayCount :: T.Text -> Value -> Maybe Int
+arrayCount key value =
+  case objectLookupValue key value of
+    Array xs -> Just (V.length xs)
+    _ -> Nothing
+
+valueKind :: Value -> T.Text
+valueKind Null = "null"
+valueKind (String _) = "string"
+valueKind (Number _) = "number"
+valueKind (Bool _) = "boolean"
+valueKind (Array _) = "array"
+valueKind (Object _) = "object"
 
 sendDashboardPing :: Socket.Socket -> POSIXTime -> IO ()
 sendDashboardPing conn startedAt = do

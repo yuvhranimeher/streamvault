@@ -15,6 +15,7 @@ const HASKELL_SHADOW_ENABLED = process.env.STREAMVAULT_HASKELL_SHADOW === '1';
 const HASKELL_SHADOW_BASE = (process.env.STREAMVAULT_HASKELL_BASE || 'http://127.0.0.1:3031').replace(/\/+$/, '');
 const HASKELL_SHADOW_TIMEOUT_MS = 1500;
 const HASKELL_SHADOW_BYPASS_HEADER = 'x-streamvault-shadow-bypass';
+const DETAILS_SHADOW_READONLY_HEADER = 'x-streamvault-details-shadow';
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
 const MEDIA_ROOT   = 'C:\\Users\\Mac Mini\\Desktop\\Website Host\\Streaming_Website\\streamvault';
@@ -1639,7 +1640,7 @@ function svHaskellShadowRoute(req) {
   if (parts.length >= 4 && parts[0] === 'api' && parts[1] === 'details') {
     const type = String(parts[2] || '').toLowerCase();
     if (['movie', 'tv', 'series', 'show'].includes(type)) {
-      return { kind: 'details-cache-hit', expectedStatus: 200, requiredMarker: 'native-details-cache' };
+      return { kind: 'details-shadow', expectedStatus: 200, allowedMarkers: ['native-details-cache', 'proxy-cache-miss'] };
     }
     return null;
   }
@@ -1681,9 +1682,10 @@ async function svTryHaskellShadow(req, res, route) {
     await svDiscardShadowBody(upstream);
     return { forwarded: false, reason: `status ${upstream.status} != ${route.expectedStatus}` };
   }
-  if (route.requiredMarker && marker !== route.requiredMarker) {
+  const allowedMarkers = route.allowedMarkers || (route.requiredMarker ? [route.requiredMarker] : null);
+  if (allowedMarkers && !allowedMarkers.includes(marker)) {
     await svDiscardShadowBody(upstream);
-    return { forwarded: false, reason: `marker ${JSON.stringify(marker)} != ${JSON.stringify(route.requiredMarker)}` };
+    return { forwarded: false, reason: `marker ${JSON.stringify(marker)} not in ${JSON.stringify(allowedMarkers)}` };
   }
 
   if (route.kind === 'download-redirect') {
@@ -1718,7 +1720,7 @@ async function svDiscardShadowBody(upstream) {
 }
 
 function svForwardShadowHeaders(res, upstream, route) {
-  for (const name of ['content-type', 'cache-control', 'x-streamvault-haskell']) {
+  for (const name of ['content-type', 'cache-control', 'x-streamvault-haskell', 'x-streamvault-haskell-details']) {
     const value = upstream.headers.get(name);
     if (value) res.setHeader(name, value);
   }
@@ -2316,6 +2318,7 @@ app.get('/api/details/debug', async (req, res) => {
 
 app.get('/api/details/:type/:id', async (req, res) => {
   const mediaType = ['tv', 'series', 'show'].includes(String(req.params.type || '').toLowerCase()) ? 'tv' : 'movie';
+  const shadowReadOnly = req.headers[DETAILS_SHADOW_READONLY_HEADER] === '1';
   const normalizedTitle = normalizeDetailTitle(req.query.title || req.query.name || req.params.id || '', req.query.year || '');
   const item = findLocalDetailItem(mediaType, req.params.id, normalizedTitle.title);
   const tmdbId = tmdbIdFromRequest({ ...req.query, id: req.params.id }, mediaType) || (/^\d+$/.test(String(item.tmdbId || '')) ? item.tmdbId : '');
@@ -2339,7 +2342,7 @@ app.get('/api/details/:type/:id', async (req, res) => {
 
   if (diskCached && hasExtendedDetail(diskCached.data) && Date.now() - Number(diskCached.time || 0) < TITLE_DETAILS_CACHE_MS) {
     const local = localDetailsObject(item, mediaType, normalizedTitle.title, { generateFallbacks: false });
-    titleDetailsCache.set(cacheKey, { time: diskCached.time, data: diskCached.data });
+    if (!shadowReadOnly) titleDetailsCache.set(cacheKey, { time: diskCached.time, data: diskCached.data });
     res.setHeader('Cache-Control', 'public, max-age=900');
     return res.json({ ...local, ...diskCached.data, localOnly: false });
   }
@@ -2362,9 +2365,11 @@ app.get('/api/details/:type/:id', async (req, res) => {
         companies: data.productionCompanies?.length,
         similar: data.similar?.length,
       });
-      titleDetailsCache.set(cacheKey, { time: Date.now(), data: fresh });
-      diskDetailCache[cacheKey] = { time: Date.now(), data: fresh };
-      saveDetailCache();
+      if (!shadowReadOnly) {
+        titleDetailsCache.set(cacheKey, { time: Date.now(), data: fresh });
+        diskDetailCache[cacheKey] = { time: Date.now(), data: fresh };
+        saveDetailCache();
+      }
       res.setHeader('Cache-Control', 'public, max-age=900');
       return res.json(data);
     }

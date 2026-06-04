@@ -24,6 +24,13 @@ const endpoints = [
   { name: 'search-iron-man', path: '/api/search?q=iron%20man', kind: 'search' },
   { name: 'search-oblivion', path: '/api/search?q=oblivion', kind: 'search' },
   { name: 'search-oblibion', path: '/api/search?q=oblibion', kind: 'search' },
+  { name: 'search-the-boys', path: '/api/search?q=the%20boys', kind: 'search' },
+  { name: 'search-extraction', path: '/api/search?q=extraction', kind: 'search' },
+  { name: 'search-pirates-caribbean', path: '/api/search?q=pirates%20caribbean', kind: 'search' },
+  { name: 'search-spider-man', path: '/api/search?q=spider%20man', kind: 'search' },
+  { name: 'search-dark-knight', path: '/api/search?q=dark%20knight', kind: 'search' },
+  { name: 'search-breaking-bad', path: '/api/search?q=breaking%20bad', kind: 'search' },
+  { name: 'search-game-of-thrones', path: '/api/search?q=game%20of%20thrones', kind: 'search' },
   { name: 'channels', path: '/api/channels', kind: 'channels' },
   { name: 'section-marvel', path: '/api/section/marvel?page=1&limit=20', kind: 'section' },
   { name: 'section-dc', path: '/api/section/dc?page=1&limit=20', kind: 'section' },
@@ -37,6 +44,24 @@ const endpoints = [
   {
     name: 'details-series-cache-hit',
     path: '/api/details/tv/76479?title=The%20Boys&year=2019&tmdbId=76479',
+    kind: 'details-cache-hit',
+    haskellOnly: true,
+  },
+  {
+    name: 'details-pirates-cache-hit',
+    path: '/api/details/movie/Pirates%20of%20the%20Caribbean-Dead%20Men%20Tell%20No%20Tales?title=Pirates%20of%20the%20Caribbean-Dead%20Men%20Tell%20No%20Tales&year=2017',
+    kind: 'details-cache-hit',
+    haskellOnly: true,
+  },
+  {
+    name: 'details-extraction-cache-hit',
+    path: '/api/details/movie/Extraction?title=Extraction&year=2020',
+    kind: 'details-cache-hit',
+    haskellOnly: true,
+  },
+  {
+    name: 'details-dark-knight-cache-hit',
+    path: '/api/details/movie/The%20Dark%20Knight?title=The%20Dark%20Knight&year=2008',
     kind: 'details-cache-hit',
     haskellOnly: true,
   },
@@ -143,6 +168,9 @@ function compareEndpoint(ep, nodeResult, haskellResult) {
   if (ep.kind === 'haskell-health') {
     return compareHaskellHealth(ep, nodeResult, haskellResult);
   }
+  if (ep.kind === 'search') {
+    return compareSearchEndpoint(ep, nodeResult, haskellResult);
+  }
 
   const nodeShape = shape(ep.kind, nodeResult);
   const haskellShape = shape(ep.kind, haskellResult);
@@ -162,6 +190,70 @@ function compareEndpoint(ep, nodeResult, haskellResult) {
     kind: ep.kind,
     pass: diffs.length === 0,
     diffs,
+    node: stripForReport(nodeResult, nodeShape),
+    haskell: stripForReport(haskellResult, haskellShape),
+  };
+}
+
+function compareSearchEndpoint(ep, nodeResult, haskellResult) {
+  const nodeShape = shape(ep.kind, nodeResult);
+  const haskellShape = shape(ep.kind, haskellResult);
+  const diffs = [];
+  const warnings = [];
+
+  if (!nodeResult.ok) diffs.push(`Node fetch failed: ${nodeResult.error}`);
+  if (!haskellResult.ok) diffs.push(`Haskell fetch failed: ${haskellResult.error}`);
+  if (nodeResult.ok && haskellResult.ok && nodeResult.status !== haskellResult.status) {
+    diffs.push(`status ${nodeResult.status} != ${haskellResult.status}`);
+  }
+
+  const nodeJson = nodeResult.json || {};
+  const haskellJson = haskellResult.json || {};
+  const nodeItems = Array.isArray(nodeJson.items) ? nodeJson.items : [];
+  const haskellItems = Array.isArray(haskellJson.items) ? haskellJson.items : [];
+  const expectedKeys = ['indexed', 'instant', 'items', 'page', 'pages', 'total'];
+  const nodeKeys = Object.keys(nodeJson).sort();
+  const haskellKeys = Object.keys(haskellJson).sort();
+  if (!sameJson(nodeKeys, expectedKeys)) warnings.push(`Node search keys ${JSON.stringify(nodeKeys)} differ from expected ${JSON.stringify(expectedKeys)}`);
+  if (!sameJson(haskellKeys, expectedKeys)) diffs.push(`Haskell search keys ${JSON.stringify(haskellKeys)} differ from expected ${JSON.stringify(expectedKeys)}`);
+  for (const key of ['total', 'page', 'pages', 'instant', 'indexed']) {
+    if (nodeJson[key] !== haskellJson[key]) diffs.push(`${key} ${JSON.stringify(nodeJson[key])} != ${JSON.stringify(haskellJson[key])}`);
+  }
+  if (nodeItems.length !== haskellItems.length) diffs.push(`items.length ${nodeItems.length} != ${haskellItems.length}`);
+
+  const nodeTop = nodeItems.slice(0, 20).map(searchIdentityOf);
+  const haskellTop = haskellItems.slice(0, 20).map(searchIdentityOf);
+  const nodeTopKeys = nodeTop.map(searchCompareKey);
+  const haskellTopKeys = haskellTop.map(searchCompareKey);
+  const overlap = nodeTopKeys.filter(k => haskellTopKeys.includes(k)).length;
+  const neededOverlap = Math.min(12, nodeTopKeys.length, haskellTopKeys.length);
+  if (!sameJson(nodeTopKeys, haskellTopKeys)) {
+    const msg = `first20 order differs; overlap=${overlap}/${Math.min(nodeTopKeys.length, haskellTopKeys.length)}`;
+    if (overlap < neededOverlap) diffs.push(msg);
+    else warnings.push(msg);
+  }
+
+  const posterDelta = Math.abs(nodeTop.filter(x => x.poster).length - haskellTop.filter(x => x.poster).length);
+  const backdropDelta = Math.abs(nodeTop.filter(x => x.backdrop).length - haskellTop.filter(x => x.backdrop).length);
+  if (posterDelta > 5) diffs.push(`first20 poster presence delta ${posterDelta} > 5`);
+  if (backdropDelta > 5) warnings.push(`first20 backdrop presence delta ${backdropDelta}`);
+
+  const haskellByKey = new Map(haskellTop.map(item => [searchCompareKey(item), item]));
+  for (const nodeItem of nodeTop) {
+    const hItem = haskellByKey.get(searchCompareKey(nodeItem));
+    if (!hItem) continue;
+    if (nodeItem.tmdbId && hItem.tmdbId && String(nodeItem.tmdbId) !== String(hItem.tmdbId)) {
+      diffs.push(`tmdbId mismatch for ${nodeItem.name}: ${nodeItem.tmdbId} != ${hItem.tmdbId}`);
+    }
+  }
+
+  return {
+    name: ep.name,
+    path: ep.path,
+    kind: ep.kind,
+    pass: diffs.length === 0,
+    diffs,
+    warnings,
     node: stripForReport(nodeResult, nodeShape),
     haskell: stripForReport(haskellResult, haskellShape),
   };
@@ -286,7 +378,7 @@ function shape(kind, result) {
         instant: json.instant,
         indexed: json.indexed,
         itemKeys: keysOf(json.items && json.items[0]).filter(k => !k.startsWith('_sv')),
-        sample: (json.items || []).slice(0, 10).map(identityOf),
+        first20: (json.items || []).slice(0, 20).map(searchIdentityOf),
       };
     case 'home-feed':
       return {
@@ -376,6 +468,33 @@ function identityOf(item) {
   };
 }
 
+function searchIdentityOf(item) {
+  if (!item || typeof item !== 'object') return item;
+  return {
+    id: item.id ?? null,
+    tmdbId: item.tmdbId ?? null,
+    name: item.name ?? item.title ?? null,
+    title: item.title ?? null,
+    year: item.year ?? null,
+    type: item.type ?? (item._isSeries || item.seasons ? 'series' : 'movie'),
+    poster: !!item.poster,
+    backdrop: !!item.backdrop,
+  };
+}
+
+function searchCompareKey(item) {
+  if (!item || typeof item !== 'object') return String(item);
+  const type = String(item.type || '').toLowerCase();
+  const name = String(item.name || item.title || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const year = String(item.year || '').replace(/[^0-9]/g, '').slice(0, 4);
+  const tmdb = item.tmdbId ? `tmdb:${item.tmdbId}` : '';
+  return [type, name, year, tmdb].filter(Boolean).join('|');
+}
+
+function sameJson(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 function renderText(summary) {
   const lines = [
     'StreamVault Haskell Parity Report',
@@ -397,6 +516,9 @@ function renderText(summary) {
     lines.push(`  haskell: status=${row.haskell.status} bytes=${row.haskell.bytes} ms=${row.haskell.ms}`);
     if (row.diffs.length) {
       for (const diff of row.diffs) lines.push(`  - ${diff}`);
+    }
+    if (row.warnings && row.warnings.length) {
+      for (const warning of row.warnings) lines.push(`  ! ${warning}`);
     }
   }
   lines.push('');

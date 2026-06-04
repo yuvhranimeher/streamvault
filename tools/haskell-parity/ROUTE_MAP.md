@@ -23,6 +23,7 @@ These routes are safe, read-only, and backed by existing catalog/cache files:
 - `GET /api/home-feed?limit=`
 - `GET /api/channels`
 - `GET /api/details/:type/:id` for `detail-cache.json` hits only
+- `GET /__haskell-search-debug?q=` diagnostic native search
 
 Native catalog loading is lazy. Health routes do not load the catalog.
 
@@ -56,8 +57,9 @@ The Haskell shadow migration must not change these Node routes or frontend behav
 
 ## Known Parity Gaps And Decisions
 
-- `/api/search` remains proxied because Node search builds a large index from local, FTP, and `scan-output/clean-catalog.json` sources, hydrates massive-catalog poster metadata, applies fuzzy token matching, caps no-poster massive results, and caches scored results. A simpler native search would reduce or reorder results.
+- `/api/search` remains proxied. Native Haskell search exists only at `/__haskell-search-debug?q=` because expanded parity still shows serious count/poster-presence drift on several target queries.
 - Details cache misses remain proxied because Node may call TMDB, build extended details, and update `detail-cache.json`. Haskell only serves known extended cache hits and never calls TMDB.
+- Dashboard/read-only metadata routes remain proxied for now. `/api/dashboard/ping` and `/api/dashboard/stats` need a separate dashboard contract check; watch history/progress routes may have write-coupled behavior; media-info can trigger expensive ffprobe-style work and is intentionally not migrated in this pass.
 - Playback, FFmpeg, HLS, poster-cache, live playback, service worker, and frontend/static routes remain untouched because they involve streaming side effects, cache mutation, browser behavior, or file/process lifecycles outside this safe read-only catalog slice.
 - `GET /api/live/test/:id` is not implemented in the current Node server. Live playlist and segment routes are playback routes and remain proxied.
 
@@ -74,6 +76,13 @@ The parity harness compares these safe Node-vs-Haskell endpoints:
 - `/api/search?q=iron%20man`
 - `/api/search?q=oblivion`
 - `/api/search?q=oblibion`
+- `/api/search?q=the%20boys`
+- `/api/search?q=extraction`
+- `/api/search?q=pirates%20caribbean`
+- `/api/search?q=spider%20man`
+- `/api/search?q=dark%20knight`
+- `/api/search?q=breaking%20bad`
+- `/api/search?q=game%20of%20thrones`
 - `/api/channels`
 - `/api/section/marvel?page=1&limit=20`
 - `/api/section/dc?page=1&limit=20`
@@ -83,5 +92,10 @@ The harness also performs Haskell-only native cache-hit checks for:
 
 - `/api/details/movie/Man%20of%20Steel?title=Man%20of%20Steel&year=2013`
 - `/api/details/tv/76479?title=The%20Boys&year=2019&tmdbId=76479`
+- `/api/details/movie/Pirates%20of%20the%20Caribbean-Dead%20Men%20Tell%20No%20Tales?title=Pirates%20of%20the%20Caribbean-Dead%20Men%20Tell%20No%20Tales&year=2017`
+- `/api/details/movie/Extraction?title=Extraction&year=2020`
+- `/api/details/movie/The%20Dark%20Knight?title=The%20Dark%20Knight&year=2008`
+
+`Game of Thrones` is not currently present as an extended `detail-cache.json` hit, so it is documented but not added as a failing fixture.
 
 The details rows are Haskell-only because the current Node `/api/details/:type/:id` handler bypasses disk `detail-cache.json` and may call TMDB. Playback, FFmpeg, HLS, stream URLs, poster cache mutation, and heavy/random TMDB routes are not tested automatically.

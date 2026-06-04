@@ -1709,6 +1709,7 @@ detailCacheCandidates state req mediaType rawId title year item =
       | (key, _) <- KM.toList cache
       , let keyText = toText key
       , detailCacheKeyMatches (mediaAliases mediaType) ids titles years keyText
+          || detailDirectCacheKeyMatches ids titles years keyText
       ]
 
 mediaAliases :: T.Text -> [T.Text]
@@ -1743,15 +1744,54 @@ detailCacheKeyMatches medias ids titles years keyText =
               idHit = ident `elem` ids
               titleHit = identNorm `elem` titleNorms
               wantedYears = filter (not . T.null) years
-              yearHit = null wantedYears || keyYear `elem` wantedYears || T.null keyYear
+              yearHit = detailYearMatches wantedYears keyYear
           in (idHit || titleHit) && yearHit
+
+detailDirectCacheKeyMatches :: [T.Text] -> [T.Text] -> [T.Text] -> T.Text -> Bool
+detailDirectCacheKeyMatches ids titles years keyText =
+  directIdHit || directTitleHit || splitHit || prefixedHit
+  where
+    titleNorms = map detailTitleKey titles
+    wantedYears = filter (not . T.null) years
+    (ident, keyYear) = splitDetailCacheRest keyText
+    directIdHit = keyText `elem` ids
+    directTitleHit =
+      detailTitleKey keyText `elem` titleNorms
+        && detailYearMatches wantedYears (firstYearText keyText)
+    splitHit =
+      not (T.null ident)
+        && detailYearMatches wantedYears keyYear
+        && (ident `elem` ids || detailTitleKey ident `elem` titleNorms)
+    prefixedHit =
+      any matchPrefixed ["__series__", "__tmdb_id__"]
+    matchPrefixed prefix =
+      case T.stripPrefix prefix keyText of
+        Nothing -> False
+        Just rest -> rest `elem` ids || detailTitleKey rest `elem` titleNorms
 
 splitDetailCacheRest :: T.Text -> (T.Text, T.Text)
 splitDetailCacheRest rest =
   let parts = T.splitOn ":" rest
   in case reverse parts of
        [] -> ("", "")
-       (yr:xs) -> (T.intercalate ":" (reverse xs), yr)
+       (yr:xs)
+         | not (null xs)
+         , detailYearDigits yr /= "" ->
+             (T.intercalate ":" (reverse xs), detailYearDigits yr)
+         | otherwise -> (rest, "")
+
+detailYearMatches :: [T.Text] -> T.Text -> Bool
+detailYearMatches wantedYears rawYear =
+  let keyYear = detailYearDigits rawYear
+  in null wantedYears || keyYear `elem` wantedYears || T.null keyYear
+
+detailYearDigits :: T.Text -> T.Text
+detailYearDigits value =
+  let digits = T.filter isDigit value
+  in if T.length digits == 4
+        && ("19" `T.isPrefixOf` digits || "20" `T.isPrefixOf` digits)
+      then digits
+      else ""
 
 lookupDetailCache :: CatalogState -> [T.Text] -> Maybe Value
 lookupDetailCache state keys =

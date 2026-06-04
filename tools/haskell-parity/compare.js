@@ -42,6 +42,18 @@ const endpoints = [
     haskellOnly: true,
   },
   {
+    name: 'details-title-only-cache-hit',
+    path: '/api/details/movie/Man%20of%20Steel?title=Man%20of%20Steel',
+    kind: 'details-cache-hit',
+    haskellOnly: true,
+  },
+  {
+    name: 'details-cache-key-id-hit',
+    path: '/api/details/movie/movie%3AMan%20of%20Steel%3A2013?title=Man%20of%20Steel&year=2013',
+    kind: 'details-cache-hit',
+    haskellOnly: true,
+  },
+  {
     name: 'details-series-cache-hit',
     path: '/api/details/tv/76479?title=The%20Boys&year=2019&tmdbId=76479',
     kind: 'details-cache-hit',
@@ -50,6 +62,12 @@ const endpoints = [
   {
     name: 'details-pirates-cache-hit',
     path: '/api/details/movie/Pirates%20of%20the%20Caribbean-Dead%20Men%20Tell%20No%20Tales?title=Pirates%20of%20the%20Caribbean-Dead%20Men%20Tell%20No%20Tales&year=2017',
+    kind: 'details-cache-hit',
+    haskellOnly: true,
+  },
+  {
+    name: 'details-pirates-punctuation-cache-hit',
+    path: '/api/details/movie/Pirates%20of%20the%20Caribbean%3A%20Dead%20Men%20Tell%20No%20Tales?title=Pirates%20of%20the%20Caribbean%3A%20Dead%20Men%20Tell%20No%20Tales&year=2017',
     kind: 'details-cache-hit',
     haskellOnly: true,
   },

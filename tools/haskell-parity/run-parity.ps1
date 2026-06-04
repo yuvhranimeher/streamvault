@@ -24,7 +24,7 @@ $env:NODE_BASE = $NodeBase
 $env:HASKELL_BASE = $HaskellBase
 $env:PARITY_TIMEOUT_MS = [string]$TimeoutMs
 
-Write-Host "Search parity: /api/search remains proxied; use /__haskell-search-debug for native diagnostic search."
+Write-Host "Search parity: Node /api/search is compared against Haskell /__haskell-search-debug native diagnostic search."
 
 node .\tools\haskell-parity\compare.js
 if ($LASTEXITCODE -ne 0) {

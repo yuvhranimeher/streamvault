@@ -64,25 +64,27 @@ runServer = do
   root <- maybe getCurrentDirectory pure =<< lookupEnv "STREAMVAULT_ROOT"
   cwd <- getCurrentDirectory
   debugEnabled <- fmap (== Just "1") (lookupEnv "STREAMVAULT_HASKELL_DEBUG")
+  searchNativeEnabled <- fmap (== Just "1") (lookupEnv "STREAMVAULT_HASKELL_SEARCH_NATIVE")
   catalogCache <- newCatalogCache
   manager <- HC.newManager HC.defaultManagerSettings
   let port = maybe 3001 readInt portText
       upstream = stripTrailingSlash (fromMaybe "http://127.0.0.1:3000" nodeBase)
-  startupLog port upstream root cwd debugEnabled
-  runRawServer port (handleClient root catalogCache manager upstream debugEnabled)
+  startupLog port upstream root cwd debugEnabled searchNativeEnabled
+  runRawServer port (handleClient root searchNativeEnabled catalogCache manager upstream debugEnabled)
 
-startupLog :: Int -> String -> FilePath -> FilePath -> Bool -> IO ()
-startupLog port upstream root cwd debugEnabled = do
+startupLog :: Int -> String -> FilePath -> FilePath -> Bool -> Bool -> IO ()
+startupLog port upstream root cwd debugEnabled searchNativeEnabled = do
   putStrLn "StreamVault Haskell backend starting"
   putStrLn ("PORT=" ++ show port)
   putStrLn ("STREAMVAULT_NODE=" ++ upstream)
   putStrLn ("STREAMVAULT_ROOT=" ++ root)
   putStrLn ("workingDirectory=" ++ cwd)
   putStrLn ("debugRequestLogging=" ++ if debugEnabled then "enabled" else "disabled")
+  putStrLn ("nativeSearchFlag=" ++ if searchNativeEnabled then "enabled" else "disabled")
   putStrLn "serverMode=blocking-raw-socket"
   putStrLn "healthRoutes=/__haskell-health,/api/health"
   putStrLn "nativeRoutesEnabled=/api/downloads,/download/:id(302-only),/api/movies,/api/series,/api/section/:key,/api/home-feed,/api/channels,/api/details/:type/:id(cache-hit-only),/__haskell-search-debug"
-  putStrLn "gatedNativeRoutes=none; /api/search remains proxied while native search is diagnostic-only"
+  putStrLn "gatedNativeRoutes=/api/search behind STREAMVAULT_HASKELL_SEARCH_NATIVE=1 with 1500ms fallback to Node"
   putStrLn "proxiedRoutesEnabled=all unsupported/risky routes -> Node, including playback/live/HLS/FFmpeg/poster-cache/static/service-worker"
   putStrLn "warpDiagnostic=minimal Warp helper binds but does not dispatch requests on this Windows GHC runtime"
   putStrLn ("listening=http://127.0.0.1:" ++ show port)
@@ -101,8 +103,8 @@ runRawServer port handler = do
     (conn, remote) <- Socket.accept sock
     void $ forkFinally (handler conn remote) (\_ -> Socket.close conn)
 
-handleClient :: FilePath -> CatalogCache -> HC.Manager -> String -> Bool -> Socket.Socket -> Socket.SockAddr -> IO ()
-handleClient root catalogCache manager upstream debugEnabled conn remote = do
+handleClient :: FilePath -> Bool -> CatalogCache -> HC.Manager -> String -> Bool -> Socket.Socket -> Socket.SockAddr -> IO ()
+handleClient root searchNativeEnabled catalogCache manager upstream debugEnabled conn remote = do
   parsed <- timeout 10000000 (readRawRequest conn remote)
   case parsed of
     Nothing ->
@@ -112,17 +114,17 @@ handleClient root catalogCache manager upstream debugEnabled conn remote = do
     Just (Right rawReq) -> do
       when debugEnabled $
         putStrLn ("request " ++ B8.unpack (rrMethod rawReq) ++ " " ++ B8.unpack (rrPath rawReq <> rrQuery rawReq))
-      handleRawRequest root catalogCache manager upstream conn rawReq
+      handleRawRequest root searchNativeEnabled catalogCache manager upstream conn rawReq
 
-handleRawRequest :: FilePath -> CatalogCache -> HC.Manager -> String -> Socket.Socket -> RawRequest -> IO ()
-handleRawRequest root catalogCache manager upstream conn rawReq
+handleRawRequest :: FilePath -> Bool -> CatalogCache -> HC.Manager -> String -> Socket.Socket -> RawRequest -> IO ()
+handleRawRequest root searchNativeEnabled catalogCache manager upstream conn rawReq
   | rrPath rawReq == "/__haskell-health" =
       sendJson conn HT.status200 "{\"ok\":true,\"runtime\":\"haskell-gateway\",\"server\":\"blocking-raw-socket\"}"
   | rrPath rawReq == "/api/health" =
       sendJson conn HT.status200 "{\"ok\":true,\"runtime\":\"haskell-gateway\",\"shadow\":true,\"server\":\"blocking-raw-socket\"}"
   | otherwise = do
       waiReq <- toWaiRequest rawReq
-      let nativeAttempt = try (catalogResponseCached root catalogCache waiReq) :: IO (Either SomeException (Maybe Response))
+      let nativeAttempt = try (catalogResponseCached root searchNativeEnabled catalogCache waiReq) :: IO (Either SomeException (Maybe Response))
       nativeResult <- case nativeRouteTimeoutMicros rawReq of
         Nothing -> nativeAttempt
         Just micros -> do
@@ -145,8 +147,7 @@ handleRawRequest root catalogCache manager upstream conn rawReq
 
 nativeRouteTimeoutMicros :: RawRequest -> Maybe Int
 nativeRouteTimeoutMicros rawReq
-  | rrPath rawReq == "/api/search"
-  , lookupHeader "x-streamvault-shadow-origin" (rrHeaders rawReq) == Just "node" = Just 1500000
+  | rrPath rawReq == "/api/search" = Just 1500000
   | otherwise = Nothing
 
 readRawRequest :: Socket.Socket -> Socket.SockAddr -> IO (Either String RawRequest)

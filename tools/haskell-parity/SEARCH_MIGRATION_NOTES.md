@@ -45,6 +45,7 @@ Generated during the `haskell-native-search-and-metadata` pass.
 ## Haskell Migration Status
 
 - Default `/api/search` remains proxied to Node.
+- Guarded rollout flag: `STREAMVAULT_HASKELL_SEARCH_NATIVE=1` lets the Haskell shadow process attempt native `/api/search` with a 1500 ms timeout and fallback to Node.
 - Diagnostic route: `GET /__haskell-search-debug?q=...`.
 - Haskell search lazily builds and caches an in-memory index after the first native/debug search request.
 - Haskell includes local movies, local series, `catalog.json`, and `scan-output/clean-catalog.json` when present.
@@ -56,5 +57,5 @@ Generated during the `haskell-native-search-and-metadata` pass.
 - Massive catalog IDs are deterministic Haskell IDs, not Node MD5 IDs.
 - Haskell massive parsing is intentionally conservative; exact massive-series grouping may differ from Node.
 - First diagnostic search may take roughly a minute on this dataset while the 200MB clean catalog index is built; warmed diagnostic searches are fast.
-- Expanded parity found strong top-result overlap for several queries but serious count/poster-presence drift for others, so `/api/search` is not enabled behind a rollout flag in this branch.
-- Native search remains debug-only until those parity blockers are fixed.
+- Expanded parity found strong top-result overlap for several queries but serious count/poster-presence drift for others, so the flag must remain off by default.
+- Native search remains diagnostic-first until those parity blockers are fixed.

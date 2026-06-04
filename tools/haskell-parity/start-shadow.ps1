@@ -1,7 +1,8 @@
 param(
   [int]$Port = 3031,
   [string]$NodeBase = "http://127.0.0.1:3000",
-  [int]$StartupTimeoutSec = 90
+  [int]$StartupTimeoutSec = 90,
+  [switch]$NativeSearch
 )
 
 $ErrorActionPreference = "Stop"
@@ -47,12 +48,18 @@ if (Test-Health $HealthUrl) {
 
 $RootLiteral = Escape-SingleQuote $Root
 $NodeBaseLiteral = Escape-SingleQuote $NodeBase
+$NativeSearchValue = if ($NativeSearch.IsPresent) { "1" } else { "" }
 $Command = @"
 `$ErrorActionPreference = "Stop"
 Set-Location -LiteralPath '$RootLiteral'
 `$env:PORT = '$Port'
 `$env:STREAMVAULT_NODE = '$NodeBaseLiteral'
 `$env:STREAMVAULT_ROOT = '$RootLiteral'
+if ('$NativeSearchValue' -eq '1') {
+  `$env:STREAMVAULT_HASKELL_SEARCH_NATIVE = '1'
+} else {
+  Remove-Item Env:STREAMVAULT_HASKELL_SEARCH_NATIVE -ErrorAction SilentlyContinue
+}
 cabal run streamvault-haskell-backend
 "@
 

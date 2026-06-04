@@ -21,16 +21,16 @@ const endpoints = [
   { name: 'movies-page1-limit40', path: '/api/movies?page=1&limit=40', kind: 'movies' },
   { name: 'series-page1-limit40', path: '/api/series?page=1&limit=40', kind: 'series' },
   { name: 'home-feed', path: '/api/home-feed', kind: 'home-feed' },
-  { name: 'search-iron-man', path: '/api/search?q=iron%20man', kind: 'search' },
-  { name: 'search-oblivion', path: '/api/search?q=oblivion', kind: 'search' },
-  { name: 'search-oblibion', path: '/api/search?q=oblibion', kind: 'search' },
-  { name: 'search-the-boys', path: '/api/search?q=the%20boys', kind: 'search' },
-  { name: 'search-extraction', path: '/api/search?q=extraction', kind: 'search' },
-  { name: 'search-pirates-caribbean', path: '/api/search?q=pirates%20caribbean', kind: 'search' },
-  { name: 'search-spider-man', path: '/api/search?q=spider%20man', kind: 'search' },
-  { name: 'search-dark-knight', path: '/api/search?q=dark%20knight', kind: 'search' },
-  { name: 'search-breaking-bad', path: '/api/search?q=breaking%20bad', kind: 'search' },
-  { name: 'search-game-of-thrones', path: '/api/search?q=game%20of%20thrones', kind: 'search' },
+  searchEndpoint('search-iron-man', 'iron%20man'),
+  searchEndpoint('search-oblivion', 'oblivion'),
+  searchEndpoint('search-oblibion', 'oblibion'),
+  searchEndpoint('search-the-boys', 'the%20boys'),
+  searchEndpoint('search-extraction', 'extraction'),
+  searchEndpoint('search-pirates-caribbean', 'pirates%20caribbean'),
+  searchEndpoint('search-spider-man', 'spider%20man'),
+  searchEndpoint('search-dark-knight', 'dark%20knight'),
+  searchEndpoint('search-breaking-bad', 'breaking%20bad'),
+  searchEndpoint('search-game-of-thrones', 'game%20of%20thrones'),
   { name: 'channels', path: '/api/channels', kind: 'channels' },
   { name: 'section-marvel', path: '/api/section/marvel?page=1&limit=20', kind: 'section' },
   { name: 'section-dc', path: '/api/section/dc?page=1&limit=20', kind: 'section' },
@@ -67,6 +67,15 @@ const endpoints = [
   },
 ];
 
+function searchEndpoint(name, encodedQuery) {
+  return {
+    name,
+    path: `/api/search?q=${encodedQuery}`,
+    haskellPath: `/__haskell-search-debug?q=${encodedQuery}`,
+    kind: 'search',
+  };
+}
+
 main().catch(err => {
   console.error(err && err.stack ? err.stack : err);
   process.exit(1);
@@ -79,11 +88,11 @@ async function main() {
 
   const rows = [];
   for (const ep of endpoints) {
-    const haskellResult = await fetchEndpoint(haskellBase, ep, haskellDir);
+    const haskellResult = await fetchEndpoint(haskellBase, ep, haskellDir, 'haskell');
     if (ep.haskellOnly) {
       rows.push(compareHaskellOnlyEndpoint(ep, haskellResult));
     } else {
-      const nodeResult = await fetchEndpoint(nodeBase, ep, nodeDir);
+      const nodeResult = await fetchEndpoint(nodeBase, ep, nodeDir, 'node');
       rows.push(compareEndpoint(ep, nodeResult, haskellResult));
     }
   }
@@ -118,8 +127,9 @@ function findRoot(start) {
   throw new Error('Run from inside the StreamVault project.');
 }
 
-async function fetchEndpoint(base, ep, targetDir) {
-  const url = base + ep.path;
+async function fetchEndpoint(base, ep, targetDir, side) {
+  const requestPath = side === 'haskell' && ep.haskellPath ? ep.haskellPath : ep.path;
+  const url = base + requestPath;
   const file = path.join(targetDir, ep.name + '.json');
   const metaFile = path.join(targetDir, ep.name + '.meta.json');
   const started = Date.now();
@@ -135,6 +145,7 @@ async function fetchEndpoint(base, ep, targetDir) {
     const result = {
       ok: true,
       url,
+      path: requestPath,
       status: res.status,
       ms: Date.now() - started,
       bytes: Buffer.byteLength(text),
@@ -149,6 +160,7 @@ async function fetchEndpoint(base, ep, targetDir) {
     const result = {
       ok: false,
       url,
+      path: requestPath,
       status: 0,
       ms: Date.now() - started,
       bytes: 0,
@@ -187,6 +199,7 @@ function compareEndpoint(ep, nodeResult, haskellResult) {
   return {
     name: ep.name,
     path: ep.path,
+    haskellPath: ep.haskellPath || ep.path,
     kind: ep.kind,
     pass: diffs.length === 0,
     diffs,
@@ -250,6 +263,7 @@ function compareSearchEndpoint(ep, nodeResult, haskellResult) {
   return {
     name: ep.name,
     path: ep.path,
+    haskellPath: ep.haskellPath || ep.path,
     kind: ep.kind,
     pass: diffs.length === 0,
     diffs,
@@ -278,6 +292,7 @@ function compareHaskellOnlyEndpoint(ep, haskellResult) {
   return {
     name: ep.name,
     path: ep.path,
+    haskellPath: ep.haskellPath || ep.path,
     kind: ep.kind,
     mode: 'haskell-only-cache-hit',
     pass: diffs.length === 0,
@@ -305,6 +320,7 @@ function compareHaskellHealth(ep, nodeResult, haskellResult) {
   return {
     name: ep.name,
     path: ep.path,
+    haskellPath: ep.haskellPath || ep.path,
     kind: ep.kind,
     pass: diffs.length === 0,
     diffs,
@@ -508,6 +524,9 @@ function renderText(summary) {
   ];
   for (const row of summary.rows) {
     lines.push(`${row.pass ? 'PASS' : 'FAIL'} ${row.path}`);
+    if (row.haskellPath && row.haskellPath !== row.path) {
+      lines.push(`  haskell path: ${row.haskellPath}`);
+    }
     if (row.node && row.node.skipped) {
       lines.push(`  node:    skipped (${row.node.reason})`);
     } else {

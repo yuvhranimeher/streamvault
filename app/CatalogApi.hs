@@ -31,6 +31,7 @@ import Network.HTTP.Types.Header (ResponseHeaders)
 import Network.Wai (Request, Response, pathInfo, queryString, requestMethod, responseLBS)
 import System.Directory (doesDirectoryExist, doesFileExist, listDirectory)
 import System.FilePath ((</>), takeBaseName, takeExtension)
+import System.IO (hPutStrLn, stderr)
 
 import CryptoHashCompat (sha1Hex16)
 
@@ -110,9 +111,9 @@ loadCatalogState root = do
     , csSearchCache = searchCache
     }
 
-catalogResponseCached :: FilePath -> CatalogCache -> Request -> IO (Maybe Response)
-catalogResponseCached root cache req = do
-  nativeRoute <- nativeCatalogRouteEnabled req
+catalogResponseCached :: FilePath -> Bool -> CatalogCache -> Request -> IO (Maybe Response)
+catalogResponseCached root searchNativeEnabled cache req = do
+  nativeRoute <- nativeCatalogRouteEnabled searchNativeEnabled req
   if requestMethod req == "OPTIONS" && nativeRoute
     then pure $ Just $ responseWith status200 [("Access-Control-Allow-Origin", "*")] ""
     else if requestMethod req /= "GET" || not nativeRoute
@@ -130,13 +131,15 @@ catalogResponseCached root cache req = do
           Right state
             | searchDebugRoute req ->
                 searchNativeResponse state req "native-search-debug"
+            | searchNativeEnabled && searchApiRoute req ->
+                searchNativeResponse state req "native-search"
             | otherwise ->
                 pure (catalogResponse state req)
           Left _ -> pure Nothing
 
-nativeCatalogRouteEnabled :: Request -> IO Bool
-nativeCatalogRouteEnabled req =
-  pure $ nativeCatalogRoute req || searchDebugRoute req
+nativeCatalogRouteEnabled :: Bool -> Request -> IO Bool
+nativeCatalogRouteEnabled searchNativeEnabled req =
+  pure $ nativeCatalogRoute req || searchDebugRoute req || (searchNativeEnabled && searchApiRoute req)
 
 searchNativeResponse :: CatalogState -> Request -> T.Text -> IO (Maybe Response)
 searchNativeResponse state req marker = do
@@ -152,7 +155,9 @@ searchNativeResponse state req marker = do
               , "error" .= String "HASKELL_SEARCH_FAILED"
               , "message" .= displayException e
               ])
-      | otherwise -> pure Nothing
+      | otherwise -> do
+          hPutStrLn stderr ("native search failed, proxying to Node: " ++ displayException e)
+          pure Nothing
 
 nativeCatalogRoute :: Request -> Bool
 nativeCatalogRoute req =
@@ -170,6 +175,10 @@ nativeCatalogRoute req =
 searchDebugRoute :: Request -> Bool
 searchDebugRoute req =
   pathInfo req == ["__haskell-search-debug"]
+
+searchApiRoute :: Request -> Bool
+searchApiRoute req =
+  pathInfo req == ["api", "search"]
 
 catalogResponse :: CatalogState -> Request -> Maybe Response
 catalogResponse state req

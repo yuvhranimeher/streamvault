@@ -24,6 +24,7 @@ These routes are safe, read-only, and backed by existing catalog/cache files:
 - `GET /api/channels`
 - `GET /api/details/:type/:id` for `detail-cache.json` hits only
 - `GET /__haskell-search-debug?q=` diagnostic native search
+- `GET /api/search?q=` only when `STREAMVAULT_HASKELL_SEARCH_NATIVE=1`, with a 1500 ms fallback to Node
 
 Native catalog loading is lazy. Health routes do not load the catalog.
 
@@ -34,7 +35,7 @@ Everything not listed as native is proxied to Node, including:
 - Static frontend and `public`
 - Service worker
 - Dashboard routes
-- `GET /api/search`
+- `GET /api/search` by default
 - Details cache misses and TMDB lookup routes
 - History/progress routes
 - Media info, duration, qualities, subtitles
@@ -57,7 +58,7 @@ The Haskell shadow migration must not change these Node routes or frontend behav
 
 ## Known Parity Gaps And Decisions
 
-- `/api/search` remains proxied. Native Haskell search exists only at `/__haskell-search-debug?q=` because expanded parity still shows serious count/poster-presence drift on several target queries.
+- `/api/search` remains proxied by default. Native Haskell search is exposed at `/__haskell-search-debug?q=` and can be attempted on `/api/search` only with `STREAMVAULT_HASKELL_SEARCH_NATIVE=1`, because expanded parity still shows serious count/poster-presence drift on several target queries.
 - Details cache misses remain proxied because Node may call TMDB, build extended details, and update `detail-cache.json`. Haskell only serves known extended cache hits and never calls TMDB.
 - Dashboard/read-only metadata routes remain proxied for now. `/api/dashboard/ping` and `/api/dashboard/stats` need a separate dashboard contract check; watch history/progress routes may have write-coupled behavior; media-info can trigger expensive ffprobe-style work and is intentionally not migrated in this pass.
 - Playback, FFmpeg, HLS, poster-cache, live playback, service worker, and frontend/static routes remain untouched because they involve streaming side effects, cache mutation, browser behavior, or file/process lifecycles outside this safe read-only catalog slice.
@@ -65,7 +66,7 @@ The Haskell shadow migration must not change these Node routes or frontend behav
 
 ## Parity Endpoint Set
 
-The parity harness compares these safe Node-vs-Haskell endpoints:
+The parity harness compares these safe Node-vs-Haskell endpoints. Search rows use Node `/api/search` against Haskell `/__haskell-search-debug` so the report measures native search instead of proxy behavior:
 
 - `/__haskell-health`
 - `/api/health`

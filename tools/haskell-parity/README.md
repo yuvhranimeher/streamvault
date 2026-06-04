@@ -35,6 +35,11 @@ Compatibility copies are also written to:
 - `tools/haskell-parity/out/parity-report.txt`
 - `tools/haskell-parity/out/parity-report.json`
 
+Audit notes:
+
+- `tools/haskell-parity/SEARCH_MIGRATION_NOTES.md`
+- `tools/haskell-parity/DETAILS_MIGRATION_NOTES.md`
+
 Native Haskell search can be tested directly with:
 
 ```powershell

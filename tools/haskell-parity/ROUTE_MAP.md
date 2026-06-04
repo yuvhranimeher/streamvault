@@ -92,11 +92,14 @@ The parity harness compares these safe Node-vs-Haskell endpoints. Search rows us
 The harness also performs Haskell-only native cache-hit checks for:
 
 - `/api/details/movie/Man%20of%20Steel?title=Man%20of%20Steel&year=2013`
+- `/api/details/movie/Man%20of%20Steel?title=Man%20of%20Steel`
+- `/api/details/movie/movie%3AMan%20of%20Steel%3A2013?title=Man%20of%20Steel&year=2013`
 - `/api/details/tv/76479?title=The%20Boys&year=2019&tmdbId=76479`
 - `/api/details/movie/Pirates%20of%20the%20Caribbean-Dead%20Men%20Tell%20No%20Tales?title=Pirates%20of%20the%20Caribbean-Dead%20Men%20Tell%20No%20Tales&year=2017`
+- `/api/details/movie/Pirates%20of%20the%20Caribbean%3A%20Dead%20Men%20Tell%20No%20Tales?title=Pirates%20of%20the%20Caribbean%3A%20Dead%20Men%20Tell%20No%20Tales&year=2017`
 - `/api/details/movie/Extraction?title=Extraction&year=2020`
 - `/api/details/movie/The%20Dark%20Knight?title=The%20Dark%20Knight&year=2008`
 
 `Game of Thrones` is not currently present as an extended `detail-cache.json` hit, so it is documented but not added as a failing fixture.
 
-The details rows are Haskell-only because the current Node `/api/details/:type/:id` handler bypasses disk `detail-cache.json` and may call TMDB. Playback, FFmpeg, HLS, stream URLs, poster cache mutation, and heavy/random TMDB routes are not tested automatically.
+The details rows are Haskell-only because the current Node `/api/details/:type/:id` handler bypasses disk `detail-cache.json` and may call TMDB. They cover title-only, title-plus-year, `tmdbId`, full cache-key-as-id, and punctuation-normalized title lookups. Playback, FFmpeg, HLS, stream URLs, poster cache mutation, and heavy/random TMDB routes are not tested automatically.

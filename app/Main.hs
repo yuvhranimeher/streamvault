@@ -5,6 +5,8 @@ module Main where
 import Control.Concurrent (forkFinally)
 import Control.Exception (SomeException, displayException, try)
 import Control.Monad (forever, void, when)
+import Data.Aeson (Value(..), decode, encode, object, (.=))
+import qualified Data.Aeson.KeyMap as KM
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Char8 as B8
@@ -30,10 +32,16 @@ import Network.Wai.Internal
   , Response(..)
   , setRequestBodyChunks
   )
-import System.Directory (getCurrentDirectory)
+import System.Directory (doesFileExist, getCurrentDirectory)
 import System.Environment (lookupEnv)
+import System.FilePath ((</>))
+import System.Info (compilerName, compilerVersion)
 import System.IO (BufferMode(LineBuffering), hPutStrLn, hSetBuffering, stderr, stdout)
 import System.Timeout (timeout)
+import Data.Time.Clock (getCurrentTime)
+import Data.Time.Clock.POSIX (POSIXTime, getPOSIXTime)
+import Data.Time.Format (defaultTimeLocale, formatTime)
+import Data.Version (showVersion)
 
 import CatalogApi (CatalogCache, catalogResponseCached, newCatalogCache)
 
@@ -59,6 +67,7 @@ main = withSocketsDo $ do
 
 runServer :: IO ()
 runServer = do
+  startedAt <- getPOSIXTime
   portText <- lookupEnv "PORT"
   nodeBase <- lookupEnv "STREAMVAULT_NODE"
   root <- maybe getCurrentDirectory pure =<< lookupEnv "STREAMVAULT_ROOT"
@@ -70,7 +79,7 @@ runServer = do
   let port = maybe 3001 readInt portText
       upstream = stripTrailingSlash (fromMaybe "http://127.0.0.1:3000" nodeBase)
   startupLog port upstream root cwd debugEnabled searchNativeEnabled
-  runRawServer port (handleClient root searchNativeEnabled catalogCache manager upstream debugEnabled)
+  runRawServer port (handleClient startedAt root searchNativeEnabled catalogCache manager upstream debugEnabled)
 
 startupLog :: Int -> String -> FilePath -> FilePath -> Bool -> Bool -> IO ()
 startupLog port upstream root cwd debugEnabled searchNativeEnabled = do
@@ -83,7 +92,7 @@ startupLog port upstream root cwd debugEnabled searchNativeEnabled = do
   putStrLn ("nativeSearchFlag=" ++ if searchNativeEnabled then "enabled" else "disabled")
   putStrLn "serverMode=blocking-raw-socket"
   putStrLn "healthRoutes=/__haskell-health,/api/health"
-  putStrLn "nativeRoutesEnabled=/api/downloads,/download/:id(302-only),/api/movies,/api/series,/api/section/:key,/api/home-feed,/api/channels,/api/details/:type/:id(cache-hit-only),/__haskell-search-debug,/__haskell-search-warmup"
+  putStrLn "nativeRoutesEnabled=/api/dashboard/ping,/api/history(read-only),/api/version,/api/downloads,/download/:id(302-only),/api/movies,/api/series,/api/section/:key,/api/home-feed,/api/channels,/api/details/:type/:id(cache-hit-only),/__haskell-search-debug,/__haskell-search-warmup"
   putStrLn "gatedNativeRoutes=/api/search behind STREAMVAULT_HASKELL_SEARCH_NATIVE=1 with 1500ms fallback to Node"
   putStrLn "proxiedRoutesEnabled=all unsupported/risky routes -> Node, including playback/live/HLS/FFmpeg/poster-cache/static/service-worker"
   putStrLn "warpDiagnostic=minimal Warp helper binds but does not dispatch requests on this Windows GHC runtime"
@@ -103,8 +112,8 @@ runRawServer port handler = do
     (conn, remote) <- Socket.accept sock
     void $ forkFinally (handler conn remote) (\_ -> Socket.close conn)
 
-handleClient :: FilePath -> Bool -> CatalogCache -> HC.Manager -> String -> Bool -> Socket.Socket -> Socket.SockAddr -> IO ()
-handleClient root searchNativeEnabled catalogCache manager upstream debugEnabled conn remote = do
+handleClient :: POSIXTime -> FilePath -> Bool -> CatalogCache -> HC.Manager -> String -> Bool -> Socket.Socket -> Socket.SockAddr -> IO ()
+handleClient startedAt root searchNativeEnabled catalogCache manager upstream debugEnabled conn remote = do
   parsed <- timeout 10000000 (readRawRequest conn remote)
   case parsed of
     Nothing ->
@@ -114,14 +123,20 @@ handleClient root searchNativeEnabled catalogCache manager upstream debugEnabled
     Just (Right rawReq) -> do
       when debugEnabled $
         putStrLn ("request " ++ B8.unpack (rrMethod rawReq) ++ " " ++ B8.unpack (rrPath rawReq <> rrQuery rawReq))
-      handleRawRequest root searchNativeEnabled catalogCache manager upstream conn rawReq
+      handleRawRequest startedAt root searchNativeEnabled catalogCache manager upstream conn rawReq
 
-handleRawRequest :: FilePath -> Bool -> CatalogCache -> HC.Manager -> String -> Socket.Socket -> RawRequest -> IO ()
-handleRawRequest root searchNativeEnabled catalogCache manager upstream conn rawReq
+handleRawRequest :: POSIXTime -> FilePath -> Bool -> CatalogCache -> HC.Manager -> String -> Socket.Socket -> RawRequest -> IO ()
+handleRawRequest startedAt root searchNativeEnabled catalogCache manager upstream conn rawReq
   | rrPath rawReq == "/__haskell-health" =
       sendJson conn HT.status200 "{\"ok\":true,\"runtime\":\"haskell-gateway\",\"server\":\"blocking-raw-socket\"}"
   | rrPath rawReq == "/api/health" =
       sendJson conn HT.status200 "{\"ok\":true,\"runtime\":\"haskell-gateway\",\"shadow\":true,\"server\":\"blocking-raw-socket\"}"
+  | rrMethod rawReq == "GET" && rrPath rawReq == "/api/dashboard/ping" =
+      sendDashboardPing conn startedAt
+  | rrMethod rawReq == "GET" && rrPath rawReq == "/api/history" =
+      sendHistory conn root
+  | rrMethod rawReq == "GET" && rrPath rawReq == "/api/version" =
+      sendVersion conn
   | otherwise = do
       waiReq <- toWaiRequest rawReq
       let nativeAttempt = try (catalogResponseCached root searchNativeEnabled catalogCache waiReq) :: IO (Either SomeException (Maybe Response))
@@ -149,6 +164,68 @@ nativeRouteTimeoutMicros :: RawRequest -> Maybe Int
 nativeRouteTimeoutMicros rawReq
   | rrPath rawReq == "/api/search" = Just 1500000
   | otherwise = Nothing
+
+sendDashboardPing :: Socket.Socket -> POSIXTime -> IO ()
+sendDashboardPing conn startedAt = do
+  now <- getPOSIXTime
+  let tsMillis = floor (now * 1000) :: Integer
+      uptimeSec = max 0 (floor (now - startedAt) :: Integer)
+      runtimeVersion = compilerName ++ "-" ++ showVersion compilerVersion
+      memoryShape = object
+        [ "rss" .= (0 :: Integer)
+        , "heapTotal" .= (0 :: Integer)
+        , "heapUsed" .= (0 :: Integer)
+        , "external" .= (0 :: Integer)
+        , "arrayBuffers" .= (0 :: Integer)
+        ]
+  sendAesonJson conn HT.status200
+    [ ("Cache-Control", "no-store")
+    , ("X-StreamVault-Haskell", "native-dashboard-ping")
+    ]
+    (object
+      [ "ok" .= True
+      , "ts" .= tsMillis
+      , "uptime" .= uptimeSec
+      , "nodeVersion" .= runtimeVersion
+      , "memory" .= memoryShape
+      , "loadAvg" .= ([0, 0, 0] :: [Integer])
+      , "freemem" .= (0 :: Integer)
+      , "totalmem" .= (0 :: Integer)
+      ])
+
+sendHistory :: Socket.Socket -> FilePath -> IO ()
+sendHistory conn root = do
+  historyValue <- readJsonValueFile (root </> "watch-history.json") (Object KM.empty)
+  sendAesonJson conn HT.status200
+    [ ("Cache-Control", "no-store")
+    , ("X-StreamVault-Haskell", "native-history")
+    ]
+    historyValue
+
+sendVersion :: Socket.Socket -> IO ()
+sendVersion conn = do
+  now <- getCurrentTime
+  let isoTime = formatTime defaultTimeLocale "%FT%T%QZ" now
+  sendAesonJson conn HT.status200
+    [ ("Cache-Control", "no-store")
+    , ("X-StreamVault-Haskell", "native-version")
+    ]
+    (object
+      [ "ok" .= True
+      , "version" .= ("title-details-route-active" :: String)
+      , "time" .= isoTime
+      ])
+
+readJsonValueFile :: FilePath -> Value -> IO Value
+readJsonValueFile fp fallback = do
+  exists <- doesFileExist fp
+  if not exists
+    then pure fallback
+    else do
+      raw <- try (BL.readFile fp) :: IO (Either SomeException BL.ByteString)
+      case raw of
+        Left _ -> pure fallback
+        Right body -> pure (fromMaybe fallback (decode body))
 
 readRawRequest :: Socket.Socket -> Socket.SockAddr -> IO (Either String RawRequest)
 readRawRequest conn remote = do
@@ -327,6 +404,10 @@ hopByHopHeaders =
 sendJson :: Socket.Socket -> HT.Status -> BS.ByteString -> IO ()
 sendJson conn status body =
   sendSimple conn status [("Content-Type", "application/json")] (BL.fromStrict body)
+
+sendAesonJson :: Socket.Socket -> HT.Status -> HT.ResponseHeaders -> Value -> IO ()
+sendAesonJson conn status headers body =
+  sendSimple conn status (("Content-Type", "application/json") : headers) (encode body)
 
 sendSimple :: Socket.Socket -> HT.Status -> HT.ResponseHeaders -> BL.ByteString -> IO ()
 sendSimple conn status headers body = do

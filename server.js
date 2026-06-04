@@ -1589,10 +1589,16 @@ app.use((_, res, next) => {
   res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges, Content-Length');
   next();
 });
+app.use(async (req, res, next) => {
+  if ((req.path || '') !== '/api/dashboard/ping') return next();
+  return svHaskellShadowMiddleware(req, res, next);
+});
 app.use('/api/dashboard', dashboardRoutes);
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.use(async (req, res, next) => {
+app.use(svHaskellShadowMiddleware);
+
+async function svHaskellShadowMiddleware(req, res, next) {
   if (!HASKELL_SHADOW_ENABLED || req.headers[HASKELL_SHADOW_BYPASS_HEADER] === '1') return next();
 
   const shadowRoute = svHaskellShadowRoute(req);
@@ -1603,20 +1609,24 @@ app.use(async (req, res, next) => {
 
   console.warn(`[Haskell shadow] fallback ${req.method} ${req.originalUrl || req.url}: ${result.reason}`);
   next();
-});
+}
 
 function svHaskellShadowRoute(req) {
   if (req.method !== 'GET') return null;
 
   const pathname = req.path || String(req.url || '').split('?')[0] || '/';
-  const exactJsonRoutes = new Set([
-    '/api/downloads',
-    '/api/movies',
-    '/api/series',
-    '/api/home-feed',
-    '/api/channels',
+  const exactJsonRoutes = new Map([
+    ['/api/downloads', { kind: 'json', expectedStatus: 200 }],
+    ['/api/movies', { kind: 'json', expectedStatus: 200 }],
+    ['/api/series', { kind: 'json', expectedStatus: 200 }],
+    ['/api/home-feed', { kind: 'json', expectedStatus: 200 }],
+    ['/api/channels', { kind: 'json', expectedStatus: 200 }],
+    ['/api/dashboard/ping', { kind: 'json', expectedStatus: 200, requiredMarker: 'native-dashboard-ping' }],
+    ['/api/history', { kind: 'json', expectedStatus: 200, requiredMarker: 'native-history' }],
+    ['/api/version', { kind: 'json', expectedStatus: 200, requiredMarker: 'native-version' }],
   ]);
-  if (exactJsonRoutes.has(pathname)) return { kind: 'json', expectedStatus: 200 };
+  const exactRoute = exactJsonRoutes.get(pathname);
+  if (exactRoute) return exactRoute;
 
   const parts = pathname.split('/').filter(Boolean).map(svSafeUrlDecode);
 

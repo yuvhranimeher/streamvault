@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+﻿{-# LANGUAGE OverloadedStrings #-}
 
 module CatalogApi
   ( CatalogState
@@ -198,6 +198,9 @@ nativeCatalogRoute req =
   pathInfo req `elem`
     [ ["api", "downloads"]
     , ["api", "movies"]
+    , ["api", "trending"]
+    , ["api", "movies", "keywords"]
+    , ["api", "series", "detail"]
     , ["api", "series"]
     , ["api", "home-feed"]
     , ["api", "channels"]
@@ -235,6 +238,15 @@ catalogResponse state req
   | pathInfo req == ["api", "movies"] =
       Just $ jsonResponse [("X-StreamVault-Haskell", "native-movies")]
         (moviesResponse state req)
+  | pathInfo req == ["api", "trending"] =
+      Just $ jsonResponse [("Cache-Control", "public, max-age=60"), ("X-StreamVault-Haskell", "native-trending")]
+        (svExtraTrendingResponse state req)
+  | pathInfo req == ["api", "movies", "keywords"] =
+      Just $ jsonResponse [("Cache-Control", "public, max-age=60"), ("X-StreamVault-Haskell", "native-movies-keywords")]
+        (svExtraMoviesKeywordsResponse state req)
+  | pathInfo req == ["api", "series", "detail"] =
+      Just $ jsonResponse [("Cache-Control", "public, max-age=60"), ("X-StreamVault-Haskell", "native-series-detail")]
+        (svExtraSeriesDetailResponse state req)
   | pathInfo req == ["api", "series"] =
       Just $ jsonResponse [("X-StreamVault-Haskell", "native-series")]
         (seriesResponse state req)
@@ -2838,3 +2850,129 @@ studioKeywords "apple" =
     , "servant", "defending jacob", "black bird", "shrinking", "mythic quest", "monarch legacy of monsters", "lessons in chemistry", "pachinko", "masters of the air"
     ]
 studioKeywords _ = []
+
+-- StreamVault extra read-only API shadow routes.
+-- Safe: catalog-only JSON responses. No playback/live/FFmpeg/HLS/frontend/cache changes.
+
+svExtraTrendingResponse :: CatalogState -> Request -> Value
+svExtraTrendingResponse state req =
+  let limit = svExtraLimit 24 req
+      movies = take limit $ svExtraTrendingSort $ svExtraAllMovies state
+      shows  = take limit $ svExtraTrendingSort $ svExtraAllSeries state
+  in object
+      [ "movies" .= movies
+      , "series" .= shows
+      ]
+
+svExtraMoviesKeywordsResponse :: CatalogState -> Request -> Value
+svExtraMoviesKeywordsResponse state req =
+  let raw = fromMaybe "" (svExtraQueryParam "q" req)
+      terms = filter (not . T.null) $ map svExtraNormText $ T.splitOn "," raw
+      limit = svExtraLimit 80 req
+      items = if null terms then [] else take limit $ filter (svExtraMatchesAny terms) (svExtraAllMovies state)
+  in Array (V.fromList items)
+
+svExtraSeriesDetailResponse :: CatalogState -> Request -> Value
+svExtraSeriesDetailResponse state req =
+  let wanted = svExtraNormText $ fromMaybe "" (svExtraQueryParam "name" req <|> svExtraQueryParam "title" req)
+      items = svExtraAllSeries state
+      hit = if T.null wanted then Nothing else find (\v -> wanted == svExtraNormText (svExtraName v)) items
+      loose = if T.null wanted then Nothing else find (\v -> wanted `T.isInfixOf` svExtraNormText (svExtraName v)) items
+  in fromMaybe (Object KM.empty) (hit <|> loose)
+
+svExtraAllMovies :: CatalogState -> [Value]
+svExtraAllMovies state =
+  map (svExtraEnsureCard "movie") (csLocalMovies state ++ csCatalogMovies state)
+
+svExtraAllSeries :: CatalogState -> [Value]
+svExtraAllSeries state =
+  map (svExtraEnsureCard "tv") (csLocalSeries state ++ csCatalogSeries state)
+
+svExtraEnsureCard :: T.Text -> Value -> Value
+svExtraEnsureCard kind (Object o) =
+  let title = svExtraFirstText ["name", "title"] (Object o)
+      o1 = case KM.lookup (fromText "name") o of
+             Just (String n) | not (T.null (T.strip n)) -> o
+             _ -> if T.null title then o else KM.insert (fromText "name") (String title) o
+      o2 = case KM.lookup (fromText "type") o1 of
+             Just _ -> o1
+             Nothing -> KM.insert (fromText "type") (String kind) o1
+      o3 = if kind == "tv"
+             then case KM.lookup (fromText "seasons") o2 of
+                    Nothing -> KM.insert (fromText "seasons") (Object KM.empty) o2
+                    Just _ -> o2
+             else o2
+      o4 = KM.insert (fromText "isTrending") (Bool True) o3
+  in Object o4
+svExtraEnsureCard _ v = v
+
+svExtraTrendingSort :: [Value] -> [Value]
+svExtraTrendingSort =
+  sortBy (\a b -> compare (svExtraScore b) (svExtraScore a))
+
+svExtraScore :: Value -> Double
+svExtraScore v =
+  (svExtraReadDouble (svExtraTextField "rating" v) * 1000)
+  + fromIntegral (svExtraReadInt (svExtraTextField "year" v))
+  + if T.null (svExtraTextField "poster" v) then 0 else 250
+
+svExtraMatchesAny :: [T.Text] -> Value -> Bool
+svExtraMatchesAny terms v =
+  let hay = svExtraNormText $ T.unwords
+        [ svExtraName v
+        , svExtraTextField "filename" v
+        , svExtraTextField "overview" v
+        , svExtraTextField "genre" v
+        , svExtraTextField "category" v
+        , svExtraTextField "language" v
+        , svExtraTextField "year" v
+        ]
+  in any (`T.isInfixOf` hay) terms
+
+svExtraName :: Value -> T.Text
+svExtraName v =
+  svExtraFirstText ["name", "title"] v
+
+svExtraFirstText :: [T.Text] -> Value -> T.Text
+svExtraFirstText keys v =
+  fromMaybe "" $ listToMaybe $ filter (not . T.null) $ map (`svExtraTextField` v) keys
+
+svExtraTextField :: T.Text -> Value -> T.Text
+svExtraTextField key (Object o) =
+  case KM.lookup (fromText key) o of
+    Just (String t) -> T.strip t
+    Just (Number n) -> T.pack (show n)
+    Just (Bool True) -> "true"
+    Just (Bool False) -> "false"
+    _ -> ""
+svExtraTextField _ _ = ""
+
+svExtraQueryParam :: T.Text -> Request -> Maybe T.Text
+svExtraQueryParam key req =
+  case lookup (TE.encodeUtf8 key) (queryString req) of
+    Just (Just raw) ->
+      let txt = T.strip $ TE.decodeUtf8With TEE.lenientDecode (urlDecode True raw)
+      in if T.null txt then Nothing else Just txt
+    _ -> Nothing
+
+svExtraLimit :: Int -> Request -> Int
+svExtraLimit def req =
+  case svExtraQueryParam "limit" req of
+    Just raw -> max 1 (min 200 (svExtraReadInt raw))
+    Nothing -> def
+
+svExtraNormText :: T.Text -> T.Text
+svExtraNormText =
+  T.unwords . T.words . T.map (\c -> if isAlphaNum c then toLower c else ' ')
+
+svExtraReadInt :: T.Text -> Int
+svExtraReadInt raw =
+  case reads (T.unpack raw) of
+    ((n, _):_) -> n
+    _ -> 0
+
+svExtraReadDouble :: T.Text -> Double
+svExtraReadDouble raw =
+  case reads (T.unpack raw) of
+    ((n, _):_) -> n
+    _ -> 0

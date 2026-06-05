@@ -100,7 +100,7 @@ startupLog port upstream root cwd debugEnabled searchNativeEnabled detailsShadow
   putStrLn ("detailsNodeTimeoutMs=" ++ show detailsTimeoutMs)
   putStrLn "serverMode=blocking-raw-socket"
   putStrLn "healthRoutes=/__haskell-health,/api/health"
-  putStrLn "nativeRoutesEnabled=/api/dashboard/ping,/api/history(read-only),/api/version,/api/downloads,/download/:id(302-only),/api/movies(page-limit-safe),/api/series(page-limit-safe),/api/section/:key(page-limit-safe),/api/home-feed(limit-safe-timeout-hardened),/api/trending,/api/movies/keywords,/api/series/detail,/api/channels,/api/details/:type/:id(cache-hit then proxy-cache-miss),/api/title-details(cache-hit then proxy-miss),/api/episode-titles(cache-hit then proxy-miss),/__haskell-details-shadow-debug,/__haskell-title-details-debug,/__haskell-episode-titles-debug,/__haskell-search-debug,/__haskell-search-warmup"
+  putStrLn "nativeRoutesEnabled=/api/dashboard/ping,/api/dashboard/stats,/api/history(read-only),/api/version,/api/downloads,/download/:id(302-only),/api/movies(page-limit-safe),/api/series(page-limit-safe),/api/section/:key(page-limit-safe),/api/home-feed(limit-safe-timeout-hardened),/api/trending,/api/movies/keywords,/api/series/detail,/api/channels,/api/details/:type/:id(cache-hit then proxy-cache-miss),/api/title-details(cache-hit then proxy-miss),/api/episode-titles(cache-hit then proxy-miss),/__haskell-details-shadow-debug,/__haskell-title-details-debug,/__haskell-episode-titles-debug,/__haskell-search-debug,/__haskell-search-warmup"
   putStrLn "gatedNativeRoutes=/api/search behind STREAMVAULT_HASKELL_SEARCH_NATIVE=1 with 1500ms fallback to Node"
   putStrLn "proxiedRoutesEnabled=all unsupported/risky routes -> Node, including playback/live/HLS/FFmpeg/poster-cache/static/service-worker"
   putStrLn "warpDiagnostic=minimal Warp helper binds but does not dispatch requests on this Windows GHC runtime"
@@ -631,6 +631,69 @@ sendDashboardPing conn startedAt = do
       , "totalmem" .= (0 :: Integer)
       ])
 
+
+sendDashboardStats :: Socket.Socket -> POSIXTime -> FilePath -> IO ()
+sendDashboardStats conn startedAt root = do
+  now <- getPOSIXTime
+  sessionsValue <- readJsonValueFile (root </> "logs" </> "sessions.json") (Object KM.empty)
+  streamsValue <- readJsonValueFile (root </> "logs" </> "streams.json") (Object KM.empty)
+  perfValue <- readJsonValueFile (root </> "logs" </> "perf.json") (Array V.empty)
+  errorsValue <- readJsonValueFile (root </> "logs" </> "errors.json") (Array V.empty)
+  let tsMillis = floor (now * 1000) :: Integer
+      uptimeSec = max 0 (floor (now - startedAt) :: Integer)
+      runtimeVersion = compilerName ++ "-" ++ showVersion compilerVersion
+      usersValue = dashboardValues sessionsValue
+      activeStreamsValue = dashboardValues streamsValue
+      memoryShape = object
+        [ "rss" .= (0 :: Integer)
+        , "heapTotal" .= (0 :: Integer)
+        , "heapUsed" .= (0 :: Integer)
+        , "external" .= (0 :: Integer)
+        , "arrayBuffers" .= (0 :: Integer)
+        ]
+  sendAesonJson conn HT.status200
+    [ ("Cache-Control", "no-store")
+    , ("X-StreamVault-Haskell", "native-dashboard-stats")
+    ]
+    (object
+      [ "ts" .= tsMillis
+      , "uptime" .= uptimeSec
+      , "uptimeStr" .= dashboardUptime uptimeSec
+      , "memory" .= memoryShape
+      , "nodeVersion" .= runtimeVersion
+      , "activeUsers" .= dashboardCount usersValue
+      , "users" .= usersValue
+      , "activeStreams" .= activeStreamsValue
+      , "streamCount" .= dashboardCount activeStreamsValue
+      , "avgResponseMs" .= (0 :: Int)
+      , "recentPerf" .= perfValue
+      , "errorCount" .= dashboardCount errorsValue
+      , "recentErrors" .= errorsValue
+      , "topContent" .= Array V.empty
+      , "hourlyWatches" .= Array (V.replicate 24 (Number 0))
+      , "totalWatches" .= (0 :: Int)
+      ])
+
+dashboardValues :: Value -> Value
+dashboardValues (Object o) = Array (V.fromList (KM.elems o))
+dashboardValues (Array a) = Array a
+dashboardValues _ = Array V.empty
+
+dashboardCount :: Value -> Int
+dashboardCount (Array a) = V.length a
+dashboardCount (Object o) = KM.size o
+dashboardCount _ = 0
+
+dashboardUptime :: Integer -> String
+dashboardUptime sec =
+  let d = sec `div` 86400
+      h = (sec `mod` 86400) `div` 3600
+      m = (sec `mod` 3600) `div` 60
+      s = sec `mod` 60
+  in if d > 0 then show d ++ "d " ++ show h ++ "h " ++ show m ++ "m"
+     else if h > 0 then show h ++ "h " ++ show m ++ "m"
+     else show m ++ "m " ++ show s ++ "s"
+
 sendHistory :: Socket.Socket -> FilePath -> IO ()
 sendHistory conn root = do
   historyValue <- readJsonValueFile (root </> "watch-history.json") (Object KM.empty)
@@ -896,4 +959,5 @@ stripTrailingSlash xs =
   case reverse xs of
     ('/':rest) -> reverse rest
     _ -> xs
+
 

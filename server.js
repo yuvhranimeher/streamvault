@@ -1613,16 +1613,65 @@ async function svHaskellShadowMiddleware(req, res, next) {
   next();
 }
 
+const SV_HASKELL_SECTION_SHADOW_KEYS = new Set([
+  'netflix',
+  'marvel',
+  'dc',
+  'allmovies',
+  'all-movies',
+  'toprated',
+  'top-rated',
+  'anime',
+  'koreandrama',
+  'horrornights',
+  'cyberpunkscifi',
+  'trending',
+  'new',
+  'series',
+  'universal',
+  'disney',
+  'warner',
+  'hbo',
+  'apple',
+  'indian',
+  'drama',
+  'spanish',
+  'recentlyadded',
+  'mostwatchedtoday',
+  'mindfuck',
+  'cultclassics',
+  'a24',
+  'nostalgia90s',
+  'midnightcinema',
+  'truecrime',
+  'psychthriller',
+  'adultanimation',
+  'postapocalyptic',
+  'feelgood',
+  'darkcomedy',
+  'timetravel',
+  'spaceai',
+  'crimesyndicates',
+  'zombie',
+  'indiegems',
+  'hiddenmasterpieces',
+  'liveconcerts',
+  'documentaryvault',
+  'ghibli',
+  'romancemidnight',
+  'comingsoon'
+]);
+
 function svHaskellShadowRoute(req) {
   if (req.method !== 'GET') return null;
 
   const pathname = req.path || String(req.url || '').split('?')[0] || '/';
   const exactJsonRoutes = new Map([
-    ['/api/downloads', { kind: 'json', expectedStatus: 200 }],
-    ['/api/movies', { kind: 'json', expectedStatus: 200 }],
-    ['/api/series', { kind: 'json', expectedStatus: 200 }],
-    ['/api/home-feed', { kind: 'json', expectedStatus: 200 }],
-    ['/api/channels', { kind: 'json', expectedStatus: 200 }],
+    ['/api/downloads', { kind: 'json', expectedStatus: 200, requiredMarker: 'native-downloads' }],
+    ['/api/movies', { kind: 'json', expectedStatus: 200, requiredMarker: 'native-movies' }],
+    ['/api/series', { kind: 'json', expectedStatus: 200, requiredMarker: 'native-series' }],
+    ['/api/home-feed', { kind: 'json', expectedStatus: 200, requiredMarker: 'native-home-feed' }],
+    ['/api/channels', { kind: 'json', expectedStatus: 200, requiredMarker: 'native-channels' }],
     ['/api/dashboard/ping', { kind: 'json', expectedStatus: 200, requiredMarker: 'native-dashboard-ping' }],
     ['/api/history', { kind: 'json', expectedStatus: 200, requiredMarker: 'native-history' }],
     ['/api/version', { kind: 'json', expectedStatus: 200, requiredMarker: 'native-version' }],
@@ -1636,7 +1685,9 @@ function svHaskellShadowRoute(req) {
 
   if (parts.length === 3 && parts[0] === 'api' && parts[1] === 'section') {
     const key = String(parts[2] || '').toLowerCase();
-    if (['marvel', 'dc', 'netflix'].includes(key)) return { kind: 'json', expectedStatus: 200 };
+    if (SV_HASKELL_SECTION_SHADOW_KEYS.has(key)) {
+      return { kind: 'json', expectedStatus: 200, requiredMarker: 'native-section' };
+    }
     return null;
   }
 

@@ -100,7 +100,7 @@ startupLog port upstream root cwd debugEnabled searchNativeEnabled detailsShadow
   putStrLn ("detailsNodeTimeoutMs=" ++ show detailsTimeoutMs)
   putStrLn "serverMode=blocking-raw-socket"
   putStrLn "healthRoutes=/__haskell-health,/api/health"
-  putStrLn "nativeRoutesEnabled=/api/dashboard/ping,/api/history(read-only),/api/version,/api/downloads,/download/:id(302-only),/api/movies,/api/series,/api/section/:key,/api/home-feed,/api/channels,/api/details/:type/:id(cache-hit then proxy-cache-miss),/__haskell-details-shadow-debug,/__haskell-search-debug,/__haskell-search-warmup"
+  putStrLn "nativeRoutesEnabled=/api/dashboard/ping,/api/history(read-only),/api/version,/api/downloads,/download/:id(302-only),/api/movies,/api/series,/api/section/:key,/api/home-feed,/api/channels,/api/details/:type/:id(cache-hit then proxy-cache-miss),/api/title-details(cache-hit then proxy-miss),/api/episode-titles(cache-hit then proxy-miss),/__haskell-details-shadow-debug,/__haskell-title-details-debug,/__haskell-episode-titles-debug,/__haskell-search-debug,/__haskell-search-warmup"
   putStrLn "gatedNativeRoutes=/api/search behind STREAMVAULT_HASKELL_SEARCH_NATIVE=1 with 1500ms fallback to Node"
   putStrLn "proxiedRoutesEnabled=all unsupported/risky routes -> Node, including playback/live/HLS/FFmpeg/poster-cache/static/service-worker"
   putStrLn "warpDiagnostic=minimal Warp helper binds but does not dispatch requests on this Windows GHC runtime"
@@ -167,11 +167,15 @@ handleRawRequest startedAt root searchNativeEnabled catalogCache manager upstrea
         Right Nothing ->
           if detailsApiRoute rawReq
             then proxyDetailsCacheMiss manager upstream debugEnabled detailsShadowCompareEnabled detailsTimeoutMs detailsShadowComparisons rawReq conn
+            else if metadataApiRoute rawReq
+              then proxyMetadataCacheMiss manager upstream detailsTimeoutMs rawReq conn
             else proxyToNode manager upstream rawReq conn
         Left e -> do
           hPutStrLn stderr ("native route failed, proxying to Node: " ++ displayException e)
           if detailsApiRoute rawReq
             then proxyDetailsCacheMiss manager upstream debugEnabled detailsShadowCompareEnabled detailsTimeoutMs detailsShadowComparisons rawReq conn
+            else if metadataApiRoute rawReq
+              then proxyMetadataCacheMiss manager upstream detailsTimeoutMs rawReq conn
             else proxyToNode manager upstream rawReq conn
 
 nativeRouteTimeoutMicros :: RawRequest -> Maybe Int
@@ -199,6 +203,17 @@ detailsMediaTypeFromRaw rawReq =
       if T.toLower rawType `elem` ["tv", "series", "show"] then "tv" else "movie"
     _ -> "movie"
 
+metadataApiRoute :: RawRequest -> Bool
+metadataApiRoute rawReq =
+  rrMethod rawReq == "GET"
+    && rrPath rawReq `elem` ["/api/title-details", "/api/episode-titles"]
+
+metadataProxyMarker :: RawRequest -> BS.ByteString
+metadataProxyMarker rawReq
+  | rrPath rawReq == "/api/title-details" = "proxy-title-details-miss"
+  | rrPath rawReq == "/api/episode-titles" = "proxy-episode-titles-miss"
+  | otherwise = "proxy-metadata-miss"
+
 proxyDetailsCacheMiss :: HC.Manager -> String -> Bool -> Bool -> Int -> IORef [Value] -> RawRequest -> Socket.Socket -> IO ()
 proxyDetailsCacheMiss manager upstream debugEnabled compareEnabled detailsTimeoutMs comparisons rawReq conn = do
   fetched <- fetchDetailsFromNode manager upstream detailsTimeoutMs rawReq
@@ -217,8 +232,29 @@ proxyDetailsCacheMiss manager upstream debugEnabled compareEnabled detailsTimeou
         (detailsProxyResponseHeaders (bnrHeaders nodeRes))
         (bnrBody nodeRes)
 
+proxyMetadataCacheMiss :: HC.Manager -> String -> Int -> RawRequest -> Socket.Socket -> IO ()
+proxyMetadataCacheMiss manager upstream detailsTimeoutMs rawReq conn = do
+  fetched <- fetchMetadataFromNode manager upstream detailsTimeoutMs rawReq
+  case fetched of
+    Left msg ->
+      sendMetadataProxyError conn HT.status502 (metadataProxyMarker rawReq <> "-error") "UPSTREAM_NODE_UNAVAILABLE" msg
+    Right nodeRes -> do
+      let marker = metadataProxyMarker rawReq
+      sendSimple conn
+        (bnrStatus nodeRes)
+        (metadataProxyResponseHeaders marker (bnrHeaders nodeRes))
+        (bnrBody nodeRes)
+
 fetchDetailsFromNode :: HC.Manager -> String -> Int -> RawRequest -> IO (Either String BufferedNodeResponse)
-fetchDetailsFromNode manager upstream detailsTimeoutMs rawReq = do
+fetchDetailsFromNode manager upstream detailsTimeoutMs rawReq =
+  fetchBufferedFromNode manager upstream detailsTimeoutMs detailsProxyRequestHeaders rawReq
+
+fetchMetadataFromNode :: HC.Manager -> String -> Int -> RawRequest -> IO (Either String BufferedNodeResponse)
+fetchMetadataFromNode manager upstream detailsTimeoutMs rawReq =
+  fetchBufferedFromNode manager upstream detailsTimeoutMs metadataProxyRequestHeaders rawReq
+
+fetchBufferedFromNode :: HC.Manager -> String -> Int -> HT.RequestHeaders -> RawRequest -> IO (Either String BufferedNodeResponse)
+fetchBufferedFromNode manager upstream detailsTimeoutMs proxyHeaders rawReq = do
   let targetUrl = upstream ++ B8.unpack (rrPath rawReq <> rrQuery rawReq)
   parsed <- try (HC.parseRequest targetUrl) :: IO (Either SomeException HC.Request)
   case parsed of
@@ -228,7 +264,7 @@ fetchDetailsFromNode manager upstream detailsTimeoutMs rawReq = do
       let timeoutMicros = max 1 detailsTimeoutMs * 1000
           outReq = baseReq
             { HC.method = rrMethod rawReq
-            , HC.requestHeaders = addOrReplaceHeaders detailsProxyRequestHeaders (filterRequestHeaders (rrHeaders rawReq))
+            , HC.requestHeaders = addOrReplaceHeaders proxyHeaders (filterRequestHeaders (rrHeaders rawReq))
             , HC.requestBody = HC.RequestBodyLBS (rrBody rawReq)
             , HC.responseTimeout = HC.responseTimeoutMicro timeoutMicros
             }
@@ -246,6 +282,13 @@ detailsProxyRequestHeaders =
   [ ("x-streamvault-shadow-bypass", "1")
   , ("x-streamvault-shadow-origin", "haskell-details-cache-miss")
   , ("x-streamvault-details-shadow", "1")
+  ]
+
+metadataProxyRequestHeaders :: HT.RequestHeaders
+metadataProxyRequestHeaders =
+  [ ("x-streamvault-shadow-bypass", "1")
+  , ("x-streamvault-shadow-origin", "haskell-metadata-cache-miss")
+  , ("x-streamvault-metadata-shadow", "1")
   ]
 
 addOrReplaceHeaders :: HT.RequestHeaders -> HT.RequestHeaders -> HT.RequestHeaders
@@ -269,12 +312,41 @@ detailsProxyResponseHeaders headers =
         ]
     filtered = filter (\(name, _) -> CI.foldedCase name `notElem` blocked) headers
 
+metadataProxyResponseHeaders :: BS.ByteString -> HT.ResponseHeaders -> HT.ResponseHeaders
+metadataProxyResponseHeaders marker headers =
+  filtered ++
+    [ ("X-StreamVault-Haskell", marker)
+    , ("X-StreamVault-Haskell-Metadata", marker)
+    ]
+  where
+    blocked =
+      hopByHopHeaders ++
+        [ "content-length"
+        , "x-streamvault-haskell"
+        , "x-streamvault-haskell-details"
+        , "x-streamvault-haskell-metadata"
+        ]
+    filtered = filter (\(name, _) -> CI.foldedCase name `notElem` blocked) headers
+
 sendDetailsProxyError :: Socket.Socket -> HT.Status -> String -> String -> IO ()
 sendDetailsProxyError conn status code msg =
   sendAesonJson conn status
     [ ("Cache-Control", "no-store")
     , ("X-StreamVault-Haskell", "proxy-cache-miss-error")
     , ("X-StreamVault-Haskell-Details", "proxy-cache-miss-error")
+    ]
+    (object
+      [ "ok" .= False
+      , "error" .= code
+      , "message" .= msg
+      ])
+
+sendMetadataProxyError :: Socket.Socket -> HT.Status -> BS.ByteString -> String -> String -> IO ()
+sendMetadataProxyError conn status marker code msg =
+  sendAesonJson conn status
+    [ ("Cache-Control", "no-store")
+    , ("X-StreamVault-Haskell", marker)
+    , ("X-StreamVault-Haskell-Metadata", marker)
     ]
     (object
       [ "ok" .= False

@@ -16,6 +16,7 @@ const HASKELL_SHADOW_BASE = (process.env.STREAMVAULT_HASKELL_BASE || 'http://127
 const HASKELL_SHADOW_TIMEOUT_MS = 1500;
 const HASKELL_SHADOW_BYPASS_HEADER = 'x-streamvault-shadow-bypass';
 const DETAILS_SHADOW_READONLY_HEADER = 'x-streamvault-details-shadow';
+const METADATA_SHADOW_READONLY_HEADER = 'x-streamvault-metadata-shadow';
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
 const MEDIA_ROOT   = 'C:\\Users\\Mac Mini\\Desktop\\Website Host\\Streaming_Website\\streamvault';
@@ -1625,6 +1626,8 @@ function svHaskellShadowRoute(req) {
     ['/api/dashboard/ping', { kind: 'json', expectedStatus: 200, requiredMarker: 'native-dashboard-ping' }],
     ['/api/history', { kind: 'json', expectedStatus: 200, requiredMarker: 'native-history' }],
     ['/api/version', { kind: 'json', expectedStatus: 200, requiredMarker: 'native-version' }],
+    ['/api/title-details', { kind: 'metadata-shadow', expectedStatus: 200, allowedMarkers: ['native-title-details-cache', 'proxy-title-details-miss'] }],
+    ['/api/episode-titles', { kind: 'metadata-shadow', expectedStatus: 200, allowedMarkers: ['native-episode-titles-cache', 'proxy-episode-titles-miss'] }],
   ]);
   const exactRoute = exactJsonRoutes.get(pathname);
   if (exactRoute) return exactRoute;
@@ -1720,7 +1723,7 @@ async function svDiscardShadowBody(upstream) {
 }
 
 function svForwardShadowHeaders(res, upstream, route) {
-  for (const name of ['content-type', 'cache-control', 'x-streamvault-haskell', 'x-streamvault-haskell-details']) {
+  for (const name of ['content-type', 'cache-control', 'x-streamvault-haskell', 'x-streamvault-haskell-details', 'x-streamvault-haskell-metadata']) {
     const value = upstream.headers.get(name);
     if (value) res.setHeader(name, value);
   }
@@ -3714,6 +3717,7 @@ async function buildTitleDetails(mediaType, tmdbId, title, year) {
 }
 
 app.get('/api/title-details', async (req, res) => {
+  const shadowReadOnly = req.headers[METADATA_SHADOW_READONLY_HEADER] === '1';
   const mediaType = requestMediaType(req.query);
   const normalizedTitle = splitSearchTitleYear(req.query.title || req.query.name || '', req.query.year || '');
   const title = normalizedTitle.title;
@@ -3728,7 +3732,7 @@ app.get('/api/title-details', async (req, res) => {
 
   try {
     const data = await withTimeout(buildTitleDetails(mediaType, tmdbId, title, year), 5000, emptyTitleDetails(mediaType, title));
-    titleDetailsCache.set(cacheKey, { time: Date.now(), data });
+    if (!shadowReadOnly) titleDetailsCache.set(cacheKey, { time: Date.now(), data });
     res.setHeader('Cache-Control', 'public, max-age=900');
     res.json(data);
   } catch (e) {
@@ -3742,6 +3746,7 @@ app.get('/api/version', (req, res) => {
 });
 
 app.get('/api/episode-titles', async (req, res) => {
+  const shadowReadOnly = req.headers[METADATA_SHADOW_READONLY_HEADER] === '1';
   const { show, season } = req.query;
   if (!show || !season) return res.status(400).json({ error: 'Missing show or season' });
 
@@ -3760,8 +3765,10 @@ app.get('/api/episode-titles', async (req, res) => {
       const search = await tmdbGet(`/search/tv?query=${encodeURIComponent(cleanShow)}&page=1`);
       tmdbId = search?.results?.[0]?.id;
       if (!tmdbId) return res.json([]);
-      epTitleCache[idKey] = tmdbId;
-      saveEpCache();
+      if (!shadowReadOnly) {
+        epTitleCache[idKey] = tmdbId;
+        saveEpCache();
+      }
     }
 
     const data = await tmdbGet(`/tv/${tmdbId}/season/${season}`);
@@ -3776,8 +3783,10 @@ app.get('/api/episode-titles', async (req, res) => {
       airDate:  e.air_date    || '',
     }));
 
-    epTitleCache[cacheKey] = result;
-    saveEpCache();
+    if (!shadowReadOnly) {
+      epTitleCache[cacheKey] = result;
+      saveEpCache();
+    }
     res.json(result);
   } catch (e) {
     console.error('[TMDB] Error:', e.message);

@@ -31,7 +31,7 @@ import qualified Data.IntSet as IS
 import Network.HTTP.Types (Status, status200, status302, status500)
 import Network.HTTP.Types.Header (ResponseHeaders)
 import Network.HTTP.Types.URI (urlDecode)
-import Network.Wai (Request, Response, pathInfo, queryString, requestMethod, responseLBS)
+import Network.Wai (Request, Response, pathInfo, queryString, requestHeaders, requestMethod, responseLBS)
 import System.Directory (doesDirectoryExist, doesFileExist, listDirectory)
 import System.Environment (lookupEnv)
 import System.FilePath ((</>), takeBaseName, takeExtension)
@@ -48,6 +48,7 @@ data CatalogState = CatalogState
   , csDownloads     :: [Value]
   , csChannels      :: Value
   , csDetailCache   :: KM.KeyMap Value
+  , csEpisodeTitleCache :: KM.KeyMap Value
   , csSearchCache   :: IORef (Maybe SearchIndex)
   }
 
@@ -99,6 +100,7 @@ loadCatalogState root = do
   posterCache <- readJsonObject (root </> "poster-cache.json")
   channels <- readJsonValue (root </> "channels.json") (Array V.empty)
   detailCache <- readJsonObject (root </> "detail-cache.json")
+  episodeTitleCache <- readJsonObject (root </> "episode-title-cache.json")
   downloads <- loadDownloads root
   localMovies <- buildLocalMovies root posterCache
   localSeriesItems <- buildLocalSeries root posterCache
@@ -114,6 +116,7 @@ loadCatalogState root = do
     , csDownloads = downloads
     , csChannels = channels
     , csDetailCache = detailCache
+    , csEpisodeTitleCache = episodeTitleCache
     , csSearchCache = searchCache
     }
 
@@ -198,6 +201,8 @@ nativeCatalogRoute req =
     , ["api", "series"]
     , ["api", "home-feed"]
     , ["api", "channels"]
+    , ["api", "title-details"]
+    , ["api", "episode-titles"]
     ]
     || ["api", "section"] `isPrefixOf` pathInfo req
     || ["api", "details"] `isPrefixOf` pathInfo req
@@ -239,12 +244,27 @@ catalogResponse state req
   | pathInfo req == ["api", "channels"] =
       Just $ jsonResponse [("X-StreamVault-Haskell", "native-channels")]
         (csChannels state)
+  | pathInfo req == ["api", "title-details"] =
+      fmap
+        (jsonResponse
+          [ ("Cache-Control", "public, max-age=900")
+          , ("X-StreamVault-Haskell", "native-title-details-cache")
+          , ("X-StreamVault-Haskell-Metadata", "native-title-details-cache")
+          ])
+        (titleDetailsResponse state req)
+  | pathInfo req == ["api", "episode-titles"] =
+      fmap
+        (jsonResponse
+          [ ("X-StreamVault-Haskell", "native-episode-titles-cache")
+          , ("X-StreamVault-Haskell-Metadata", "native-episode-titles-cache")
+          ])
+        (episodeTitlesResponse state req)
   | ["api", "section"] `isPrefixOf` pathInfo req =
       case drop 2 (pathInfo req) of
         (key:_) -> Just $ jsonResponse [("Cache-Control", "public, max-age=60"), ("X-StreamVault-Haskell", "native-section")]
           (sectionResponse state req key)
         _ -> Nothing
-  | ["api", "details"] `isPrefixOf` pathInfo req =
+  | ["api", "details"] `isPrefixOf` pathInfo req && not (detailsShadowBypassRequest req) =
       fmap (jsonResponse [("Cache-Control", "public, max-age=900"), ("X-StreamVault-Haskell", "native-details-cache")])
         (detailsResponse state req)
   | otherwise = Nothing
@@ -276,6 +296,15 @@ corsHeaders =
   , ("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
   , ("Access-Control-Allow-Headers", "Content-Type, Range")
   ]
+
+detailsShadowBypassRequest :: Request -> Bool
+detailsShadowBypassRequest req =
+  any headerEnabled ["x-streamvault-details-shadow", "x-streamvault-shadow-bypass"]
+  where
+    headerEnabled name =
+      case lookup name (requestHeaders req) of
+        Just "1" -> True
+        _ -> False
 
 readJsonValue :: FilePath -> Value -> IO Value
 readJsonValue fp fallback = do
@@ -1868,6 +1897,116 @@ homeFeedResponse state req =
     , "hero" .= hero
     , "rows" .= [row | (_, _, row) <- builtRows]
     ]
+
+titleDetailsResponse :: CatalogState -> Request -> Maybe Value
+titleDetailsResponse state req = do
+  let mediaType = metadataMediaType req
+      rawTitle = fromMaybe "" (firstQueryText ["title", "name", "id", "tmdbId"] req)
+      rawIdent = fromMaybe rawTitle (firstQueryText ["id", "tmdbId"] req)
+      queryYear = fromMaybe "" (queryText "year" req)
+      (requestTitle, requestYear0) = normalizeDetailTitle rawTitle queryYear
+      item = localDetailItem state mediaType rawIdent requestTitle
+      itemYear = maybe "" (fieldText "year") item
+      requestYear = textFallback requestYear0 itemYear
+      keys = detailCacheCandidates state req mediaType rawIdent requestTitle requestYear item
+  cached <- lookupDetailCache state keys
+  pure (titleDetailsNodeShape mediaType requestTitle cached)
+
+metadataMediaType :: Request -> T.Text
+metadataMediaType req =
+  let rawType = T.toLower (fromMaybe "" (firstQueryText ["type", "mediaType"] req))
+      rawId = fromMaybe "" (queryText "id" req)
+  in if "tmdb_tv_" `T.isPrefixOf` rawId || rawType `elem` ["tv", "series", "show"]
+       then "tv"
+       else "movie"
+
+titleDetailsNodeShape :: T.Text -> T.Text -> Value -> Value
+titleDetailsNodeShape mediaType fallbackTitle cached =
+  object
+    [ "ok" .= valueOr (Bool True) "ok" cached
+    , "tmdbId" .= nullish (field "tmdbId" cached)
+    , "imdbId" .= textOr "" (field "imdbId" cached)
+    , "type" .= textFallback (fieldText "type" cached) mediaType
+    , "title" .= textFallback (fieldText "title" cached) (textFallback (fieldText "name" cached) fallbackTitle)
+    , "overview" .= textOr "" (field "overview" cached)
+    , "poster" .= nullish (field "poster" cached)
+    , "backdrop" .= nullish (field "backdrop" cached)
+    , "year" .= textOr "" (field "year" cached)
+    , "rating" .= nullish (field "rating" cached)
+    , "runtime" .= textOr "" (field "runtime" cached)
+    , "genres" .= textOr "" (fallbackValue (field "genres" cached) (field "genre" cached))
+    , "language" .= textOr "" (field "language" cached)
+    , "ratings" .= arrayOrEmpty (field "ratings" cached)
+    , "trailers" .= arrayOrEmpty (field "trailers" cached)
+    , "cast" .= arrayOrEmpty (field "cast" cached)
+    , "crew" .= arrayOrEmpty (field "crew" cached)
+    , "productionCompanies" .= arrayOrEmpty (field "productionCompanies" cached)
+    , "similar" .= arrayOrEmpty (field "similar" cached)
+    , "moreByDirector" .= arrayOrEmpty (field "moreByDirector" cached)
+    , "director" .= field "director" cached
+    , "about" .= arrayOrEmpty (field "about" cached)
+    , "playbackInfo" .= arrayOrEmpty (field "playbackInfo" cached)
+    ]
+
+valueOr :: Value -> T.Text -> Value -> Value
+valueOr fallback key value =
+  case field key value of
+    Null -> fallback
+    found -> found
+
+episodeTitlesResponse :: CatalogState -> Request -> Maybe Value
+episodeTitlesResponse state req = do
+  showName <- firstQueryText ["show"] req
+  season <- firstQueryText ["season"] req
+  let cacheKey = cleanEpisodeShow showName <> "__S" <> season
+  case KM.lookup (fromText cacheKey) (csEpisodeTitleCache state) of
+    Just value@(Array _) -> Just value
+    _ -> Nothing
+
+cleanEpisodeShow :: T.Text -> T.Text
+cleanEpisodeShow =
+  trimText
+    . T.unwords
+    . T.words
+    . stripEpisodeQualityTail
+    . removeSquareParenContent
+
+removeSquareParenContent :: T.Text -> T.Text
+removeSquareParenContent = T.pack . go . T.unpack
+  where
+    go [] = []
+    go ('[':xs) = stripClosed '[' ']' xs
+    go ('(':xs) = stripClosed '(' ')' xs
+    go (x:xs) = x : go xs
+    stripClosed open close xs =
+      case break (== close) xs of
+        (_, []) -> open : go xs
+        (_, _:rest) -> go rest
+
+stripEpisodeQualityTail :: T.Text -> T.Text
+stripEpisodeQualityTail value =
+  let lower = T.toLower value
+      positions =
+        [ pos
+        | token <- episodeTitleQualityTokens
+        , pos <- findNeedlePositions token lower
+        , hasWordBoundary pos token lower
+        ]
+  in case positions of
+       [] -> value
+       xs -> T.take (minimum xs) value
+
+episodeTitleQualityTokens :: [T.Text]
+episodeTitleQualityTokens =
+  ["720p", "1080p", "480p", "4k", "webrip", "bluray", "x264", "x265", "hevc", "aac", "nf", "amzn", "hdtv"]
+
+hasWordBoundary :: Int -> T.Text -> T.Text -> Bool
+hasWordBoundary pos token value =
+  beforeOk && afterOk
+  where
+    beforeOk = pos <= 0 || not (isAlphaNum (T.index value (pos - 1)))
+    after = pos + T.length token
+    afterOk = after >= T.length value || not (isAlphaNum (T.index value after))
 
 detailsResponse :: CatalogState -> Request -> Maybe Value
 detailsResponse state req =

@@ -233,6 +233,12 @@ catalogResponse state req
   | pathInfo req == ["api", "details", "debug"] =
       Just $ jsonResponse [("Cache-Control", "no-store"), ("X-StreamVault-Haskell", "native-details-debug"), ("X-StreamVault-Route", "early-native-details-debug")]
         (detailsDebugResponse state)
+  | pathInfo req == ["api", "catalog-stats"] =
+      Just $ jsonResponse [("Cache-Control", "no-store"), ("X-StreamVault-Haskell", "native-catalog-stats")]
+        (catalogStatsResponse state)
+  | pathInfo req == ["api", "downloads", "debug"] =
+      Just $ jsonResponse [("Cache-Control", "no-store"), ("X-StreamVault-Haskell", "native-downloads-debug")]
+        (downloadsDebugResponse state)
   | pathInfo req == ["api", "downloads"] =
       Just $ jsonResponse [("Cache-Control", "no-store"), ("X-StreamVault-Haskell", "native-downloads")]
         (downloadsResponse state req)
@@ -3016,6 +3022,7 @@ detailsDebugResponse state =
     , "cacheKeys" .= KM.size (csDetailCache state)
     , "tmdbTestTitle" .= Null
     ]
+
 
 
 

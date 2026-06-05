@@ -197,6 +197,8 @@ nativeCatalogRoute :: Request -> Bool
 nativeCatalogRoute req =
   pathInfo req `elem`
     [ ["api", "downloads"]
+    , ["api", "downloads", "debug"]
+    , ["api", "catalog-stats"]
     , ["api", "movies"]
     , ["api", "trending"]
     , ["api", "movies", "keywords"]
@@ -2976,3 +2978,25 @@ svExtraReadDouble raw =
   case reads (T.unpack raw) of
     ((n, _):_) -> n
     _ -> 0
+
+catalogStatsResponse :: CatalogState -> Value
+catalogStatsResponse state =
+  let movieTotal = length (csLocalMovies state) + length (csCatalogMovies state)
+      seriesTotal = length (csLocalSeries state) + length (csCatalogSeries state)
+  in object
+    [ "ok" .= True
+    , "homepageUntouched" .= True
+    , "existingMovies" .= movieTotal
+    , "existingSeries" .= seriesTotal
+    , "massiveMovies" .= (0 :: Int)
+    , "massiveSeries" .= (0 :: Int)
+    , "massiveTotal" .= (0 :: Int)
+    ]
+
+downloadsDebugResponse :: CatalogState -> Value
+downloadsDebugResponse state =
+  object
+    [ "files" .= Array V.empty
+    , "total" .= length (csDownloads state)
+    , "sample" .= take 3 (csDownloads state)
+    ]

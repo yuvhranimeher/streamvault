@@ -230,6 +230,9 @@ catalogResponse state req
   | requestMethod req == "OPTIONS" =
       Just $ responseWith status200 [("Access-Control-Allow-Origin", "*")] ""
   | requestMethod req /= "GET" = Nothing
+  | pathInfo req == ["api", "details", "debug"] =
+      Just $ jsonResponse [("Cache-Control", "no-store"), ("X-StreamVault-Haskell", "native-details-debug"), ("X-StreamVault-Route", "early-native-details-debug")]
+        (detailsDebugResponse state)
   | pathInfo req == ["api", "downloads"] =
       Just $ jsonResponse [("Cache-Control", "no-store"), ("X-StreamVault-Haskell", "native-downloads")]
         (downloadsResponse state req)
@@ -3000,3 +3003,17 @@ downloadsDebugResponse state =
     , "total" .= length (csDownloads state)
     , "sample" .= take 3 (csDownloads state)
     ]
+
+detailsDebugResponse :: CatalogState -> Value
+detailsDebugResponse state =
+  object
+    [ "ok" .= True
+    , "hasTmdbToken" .= False
+    , "movies" .= length (csLocalMovies state)
+    , "series" .= length (csLocalSeries state)
+    , "catalogMovies" .= length (csCatalogMovies state)
+    , "catalogSeries" .= length (csCatalogSeries state)
+    , "cacheKeys" .= KM.size (csDetailCache state)
+    , "tmdbTestTitle" .= Null
+    ]
+

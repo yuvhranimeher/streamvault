@@ -150,7 +150,7 @@ catalogResponseCached root searchNativeEnabled cache req = do
 
 nativeCatalogRouteEnabled :: Bool -> Request -> IO Bool
 nativeCatalogRouteEnabled searchNativeEnabled req =
-  pure $ nativeCatalogRoute req || searchDebugRoute req || searchWarmupRoute req || (searchNativeEnabled && searchApiRoute req)
+  pure $ nativeCatalogRoute req || searchDebugRoute req || searchWarmupRoute req || searchApiRoute req
 
 searchNativeResponse :: CatalogState -> Request -> T.Text -> IO (Maybe Response)
 searchNativeResponse state req marker = do
@@ -3016,4 +3016,6 @@ detailsDebugResponse state =
     , "cacheKeys" .= KM.size (csDetailCache state)
     , "tmdbTestTitle" .= Null
     ]
+
+
 

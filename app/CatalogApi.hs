@@ -275,7 +275,7 @@ jsonResponse extra body =
 
 jsonResponseStatus :: Status -> ResponseHeaders -> Value -> Response
 jsonResponseStatus st extra body =
-  responseWith st (("Content-Type", "application/json") : extra) (encode body)
+  responseWith st (("Content-Type", "application/json; charset=utf-8") : extra) (encode body)
 
 downloadRedirectResponse :: T.Text -> Response
 downloadRedirectResponse url =
@@ -754,9 +754,19 @@ queryInt name fallback req =
 
 readInt :: Int -> String -> Int
 readInt fallback raw =
-  case reads raw of
-    [(n, "")] -> n
-    _ -> fallback
+  let trimmed = dropWhile isSpace raw
+      (negative, rest) =
+        case trimmed of
+          ('-':xs) -> (True, xs)
+          ('+':xs) -> (False, xs)
+          xs -> (False, xs)
+      digits = takeWhile isDigit rest
+  in if null digits
+       then fallback
+       else
+         let parsed = read digits
+             signed = if negative then negate parsed else parsed
+         in if signed == 0 then fallback else signed
 
 pageSlice :: PageMode -> Int -> Int -> [Value] -> (Int, Int, [Value], Int)
 pageSlice mode page limit items =

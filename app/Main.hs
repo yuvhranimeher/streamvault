@@ -100,7 +100,7 @@ startupLog port upstream root cwd debugEnabled searchNativeEnabled detailsShadow
   putStrLn ("detailsNodeTimeoutMs=" ++ show detailsTimeoutMs)
   putStrLn "serverMode=blocking-raw-socket"
   putStrLn "healthRoutes=/__haskell-health,/api/health"
-  putStrLn "nativeRoutesEnabled=/api/dashboard/ping,/api/history(read-only),/api/version,/api/downloads,/download/:id(302-only),/api/movies,/api/series,/api/section/:key,/api/home-feed,/api/channels,/api/details/:type/:id(cache-hit then proxy-cache-miss),/api/title-details(cache-hit then proxy-miss),/api/episode-titles(cache-hit then proxy-miss),/__haskell-details-shadow-debug,/__haskell-title-details-debug,/__haskell-episode-titles-debug,/__haskell-search-debug,/__haskell-search-warmup"
+  putStrLn "nativeRoutesEnabled=/api/dashboard/ping,/api/history(read-only),/api/version,/api/downloads,/download/:id(302-only),/api/movies(page-limit-safe),/api/series(page-limit-safe),/api/section/:key(page-limit-safe),/api/home-feed(limit-safe),/api/channels,/api/details/:type/:id(cache-hit then proxy-cache-miss),/api/title-details(cache-hit then proxy-miss),/api/episode-titles(cache-hit then proxy-miss),/__haskell-details-shadow-debug,/__haskell-title-details-debug,/__haskell-episode-titles-debug,/__haskell-search-debug,/__haskell-search-warmup"
   putStrLn "gatedNativeRoutes=/api/search behind STREAMVAULT_HASKELL_SEARCH_NATIVE=1 with 1500ms fallback to Node"
   putStrLn "proxiedRoutesEnabled=all unsupported/risky routes -> Node, including playback/live/HLS/FFmpeg/poster-cache/static/service-worker"
   putStrLn "warpDiagnostic=minimal Warp helper binds but does not dispatch requests on this Windows GHC runtime"

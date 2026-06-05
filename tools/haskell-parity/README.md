@@ -50,6 +50,12 @@ Fast metadata parity can also be run directly:
 powershell -ExecutionPolicy Bypass -File .\tools\haskell-parity\run-metadata-parity-fast.ps1 -TimeoutMs 20000
 ```
 
+Fast catalog parameter parity can also be run directly:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\haskell-param-parity\run-catalog-param-parity-fast.ps1 -TimeoutMs 20000
+```
+
 Outputs:
 
 - `tools/haskell-parity/out/reports/parity-report.txt`
@@ -63,6 +69,7 @@ Compatibility copies are also written to:
 - `tools/haskell-parity/out/parity-report.json`
 - `tools/haskell-parity/out/details-shadow-fast-report.txt`
 - `tools/haskell-parity/out/metadata-fast-report.txt`
+- `tools/haskell-parity/out/catalog-param-fast-report.txt`
 
 Audit notes:
 
@@ -71,6 +78,16 @@ Audit notes:
 - `tools/haskell-parity/DETAILS_CACHE_MISS_SHADOW_NOTES.md`
 - `tools/haskell-parity/METADATA_API_MIGRATION_NOTES.md`
 - `tools/haskell-parity/READONLY_API_MIGRATION_NOTES.md`
+- `tools/haskell-parity/CATALOG_PARAM_PARITY_NOTES.md`
+
+Catalog parameter-safe routes now cover:
+
+- `/api/movies?page=&limit=` with zero-based page semantics and Node-compatible limit fallback
+- `/api/series?page=&limit=` with Node's default array response and paged envelope response
+- `/api/section/:key?page=&limit=` for the validated section allow-list
+- `/api/home-feed?limit=` with Node-compatible row limit clamping
+
+The catalog fast runner compares movies, series, and section compact response summaries and writes no large snapshots. Home-feed behavior is audited in `CATALOG_PARAM_PARITY_NOTES.md`, but it is skipped by the fast runner because the current Node primary home-feed response can exceed the fast timeout.
 
 Native Haskell search can be tested directly with:
 

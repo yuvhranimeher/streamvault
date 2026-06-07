@@ -8,7 +8,7 @@ Step "Collect Node fixtures"
 node "tools\details-parity-v1\collect-node-details-fixtures.js"
 
 Step "Run native Haskell cached details"
-runghc "tools\details-parity-v1\NativeCachedDetails.hs"
+runghc -package aeson -package bytestring -package text -package vector -package scientific -package directory "tools\details-parity-v1\NativeCachedDetails.hs"
 
 Step "Normalize shapes"
 node "tools\details-parity-v1\shape-node-details.js"
@@ -29,3 +29,4 @@ if ($changes) {
 } else {
   Write-Host "No changes to commit."
 }
+

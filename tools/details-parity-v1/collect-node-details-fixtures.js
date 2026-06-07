@@ -72,11 +72,15 @@ function pickSamples(catalog) {
 async function detectBase() {
   for (const base of BASES) {
     try {
-      const r = await getJson(`${base}/api/version`);
+      await getJson(`${base}/api/health`);
+      return base;
+    } catch {}
+    try {
+      const r = await getJson(`${base}/api/home-feed`);
       if (r.status >= 200 && r.status < 500) return base;
     } catch {}
   }
-  throw new Error("Node server not reachable on 3030 or 3000. Start Node first.");
+  throw new Error("Node server not reachable on 3030 or 3000. Start Node first: node server.js");
 }
 
 async function main() {
@@ -129,3 +133,4 @@ main().catch(e => {
   console.error(e.message);
   process.exit(1);
 });
+

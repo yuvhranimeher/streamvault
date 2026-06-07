@@ -69,8 +69,10 @@ findMatch :: Fixture -> String -> Maybe Value
 findMatch (Fixture rs) url =
   let (pathPart, queryPart) = break (== '?') url
       bits = split '/' pathPart
-      typ = if length bits > 2 then bits !! 2 else ""
-      title = fromMaybe "" (lookup "title" (parseQuery queryPart))
+      typ = if length bits > 3 then bits !! 3 else ""
+      title = case lookup "title" (parseQuery queryPart) of
+        Just t -> t
+        Nothing -> if length bits > 4 then bits !! 4 else ""
       clean = lower . urlDecode
   in rowData <$> find (\r -> clean (rType (rowReq r)) == clean typ && clean (rTitle (rowReq r)) == clean title) rs
 
@@ -99,7 +101,9 @@ lower = map toLower
 
 sendJson :: Socket -> BL.ByteString -> IO ()
 sendJson conn body = do
-  let header = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: "
+  let header = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\nContent-Length: "
             ++ show (BL.length body) ++ "\r\n\r\n"
   sendAll conn (BS.pack header)
   sendAll conn (BL.toStrict body)
+
+

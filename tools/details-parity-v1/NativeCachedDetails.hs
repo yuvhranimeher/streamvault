@@ -1,10 +1,4 @@
 ﻿{-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -package aeson #-}
-{-# OPTIONS_GHC -package bytestring #-}
-{-# OPTIONS_GHC -package text #-}
-{-# OPTIONS_GHC -package vector #-}
-{-# OPTIONS_GHC -package scientific #-}
-{-# OPTIONS_GHC -package directory #-}
 
 import Data.Aeson
 import Data.Aeson.Key (fromText, toText)
@@ -263,5 +257,6 @@ main = do
       ]
 
   putStrLn ("Wrote Haskell fixtures using cache entries: " ++ show (length caches))
+
 
 

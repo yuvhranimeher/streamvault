@@ -63,6 +63,15 @@ typeNorm t
   | t == "movie" = "movie"
   | otherwise = t
 
+strictTitleMatch :: T.Text -> T.Text -> Bool
+strictTitleMatch wanted candidate =
+  let w = loose wanted
+      c = loose candidate
+  in w /= "" && c /= "" && (
+       w == c ||
+       (T.length w >= 8 && T.length c >= 8 && (w `T.isInfixOf` c || c `T.isInfixOf` w))
+     )
+
 parseKeyMeta :: T.Text -> (T.Text, T.Text)
 parseKeyMeta k
   | "__series__" `T.isPrefixOf` k = ("tv", T.drop 10 k)
@@ -180,7 +189,7 @@ matchLocal typ title xs = fromMaybe KM.empty $ listToMaybe $ mapMaybe go xs
     wanted = loose title
     go (Object o) =
       let t = loose (txt o ["title","name"])
-      in if t == wanted || wanted `T.isInfixOf` t || t `T.isInfixOf` wanted then Just o else Nothing
+      in if strictTitleMatch title (txt o ["title","name"]) then Just o else Nothing
     go _ = Nothing
 
 matchFresh :: T.Text -> T.Text -> T.Text -> [(T.Text, Object)] -> Maybe Object
@@ -196,7 +205,7 @@ matchFresh typ reqTitle nodeTmdbId caches = listToMaybe $ mapMaybe good caches
           keyTypeNorm = typeNorm keyType
           typeOk = mt == "" || mt == typ || keyTypeNorm == "" || keyTypeNorm == typ
           idOk = nodeTmdbId /= "" && did == nodeTmdbId
-          titleOk = wanted /= "" && (dt == wanted || kt == wanted || wanted `T.isInfixOf` dt || dt `T.isInfixOf` wanted || wanted `T.isInfixOf` kt || kt `T.isInfixOf` wanted)
+          titleOk = strictTitleMatch reqTitle (txt d ["title","name"]) || strictTitleMatch reqTitle keyTitle
       in if typeOk && (idOk || titleOk) then Just d else Nothing
 
 localObject :: T.Text -> T.Text -> Object -> Object
@@ -257,6 +266,7 @@ main = do
       ]
 
   putStrLn ("Wrote Haskell fixtures using cache entries: " ++ show (length caches))
+
 
 
 

@@ -166,7 +166,7 @@
             "index": 6
           }
         ],
-        "backdrop": "https://image.tmdb.org/t/p/w500/dZIj0MxV54VLf39RaD4xjzjjLOY.jpg",
+        "backdrop": "https://image.tmdb.org/t/p/w1280/aIw4c18EWwQmIWZv0W6s60y47aB.jpg",
         "cast": [
           {
             "parityPlaceholder": true,
@@ -247,14 +247,14 @@
           }
         ],
         "director": {
-          "id": 1389462,
-          "image": null,
-          "name": "Manish Shrivastav",
+          "id": 1333,
+          "image": "https://image.tmdb.org/t/p/w185/eNGqhebQ4cDssjVeNFrKtUvweV5.jpg",
+          "name": "Andy Serkis",
           "role": "Director"
         },
         "genre": "Fantasy, Adventure, Action",
         "genres": "Fantasy, Adventure, Action",
-        "imdbId": "tt1016177",
+        "imdbId": "tt32328541",
         "language": "English",
         "localOnly": false,
         "moreByDirector": [
@@ -306,9 +306,9 @@
         ],
         "name": "The Lord of the Rings: The Hunt for Gollum",
         "ok": true,
-        "overview": "Mrs. Dave does not approve of her daughter, Vasundhara's next-door boyfriend, Abhay Narula, and arranges her marriage with Carson Gharodia. In protest, she elopes with Abhay on his motorbike. Enroute to Goa they run out of petrol and hitch a ride from a male named Bihari. It is this ride that will turn their lives upside down and pit them against the Police, goons, and a male named Jagtap Tiwari who thinks that they are gold and cocaine smugglers.",
+        "overview": "The film takes place early in the events of The Fellowship of the Ring — specifically in the gap between Bilbo’s 111th birthday celebration and Gandalf’s return to Bag End after confirming that Frodo possesses the One Ring. During this unseen period, Aragorn and Gandalf secretly hunt for Gollum before Sauron’s forces can find him first. The story centers largely on Gollum’s perspective, following his flight, paranoia, and survival as multiple powers race to track him down.",
         "playbackInfo": [],
-        "poster": "https://image.tmdb.org/t/p/w500/QkzRFm636ObSqAjbEETqYADpfm.jpg",
+        "poster": "https://image.tmdb.org/t/p/w500/gL7CybVuRKOVNr3UGYqroo4c8i0.jpg",
         "productionCompanies": [
           {
             "parityPlaceholder": true,
@@ -472,7 +472,7 @@
           }
         ],
         "title": "The Lord of the Rings: The Hunt for Gollum",
-        "tmdbId": 20299,
+        "tmdbId": 1090869,
         "trailers": [],
         "type": "movie",
         "year": "2027",

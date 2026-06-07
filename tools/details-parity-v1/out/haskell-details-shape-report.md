@@ -14,11 +14,11 @@ Rows: 10
 ## movie: The Hunt for Gollum (2009)
 
 - ok: true
-- title: The Hunt for Gollum (2009)
+- title: The Lord of the Rings: The Hunt for Gollum
 - type: movie
-- genre: 
+- genre: Fantasy, Adventure, Action
 - poster/backdrop/overview: true/true/true
-- ratings/cast/crew/trailers/similar/companies/about: 1/0/0/0/24/0/0
+- ratings/cast/crew/trailers/similar/companies/about: 0/7/8/0/24/7/6
 
 ## movie: From the Ashes (Jaras Enzar) (2024)
 
@@ -41,11 +41,11 @@ Rows: 10
 ## movie: Go (2007)
 
 - ok: true
-- title: Go (2007)
+- title: Go
 - type: movie
-- genre: 
+- genre: Crime, Romance
 - poster/backdrop/overview: true/false/true
-- ratings/cast/crew/trailers/similar/companies/about: 1/0/0/0/24/0/0
+- ratings/cast/crew/trailers/similar/companies/about: 1/9/4/0/24/1/7
 
 ## movie: Heaven (2022)
 

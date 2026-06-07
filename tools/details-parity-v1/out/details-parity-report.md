@@ -1,12 +1,12 @@
 # Details/TMDB Parity Report
 
-Generated: 2026-06-07T16:28:07.944Z
+Generated: 2026-06-07T16:29:45.292Z
 
 ## movie: 2040 2019
 
 - PASS title: node="2040 2019" haskell="2040 2019"
 - PASS type: node="movie" haskell="movie"
-- FAIL year: node="" haskell="2040"
+- PASS year: node="" haskell=""
 - PASS rating: node="" haskell=""
 - PASS runtime: node="" haskell=""
 - PASS language: node="" haskell=""
@@ -25,24 +25,24 @@ Generated: 2026-06-07T16:28:07.944Z
 
 ## movie: The Hunt for Gollum (2009)
 
-- FAIL title: node="The Lord of the Rings: The Hunt for Gollum" haskell="The Hunt for Gollum (2009)"
+- PASS title: node="The Lord of the Rings: The Hunt for Gollum" haskell="The Lord of the Rings: The Hunt for Gollum"
 - PASS type: node="movie" haskell="movie"
 - PASS year: node="2027" haskell="2027"
 - PASS rating: node="" haskell=""
 - PASS runtime: node="" haskell=""
-- FAIL language: node="English" haskell=""
-- FAIL genre: node="Fantasy, Adventure, Action" haskell=""
+- PASS language: node="English" haskell="English"
+- PASS genre: node="Fantasy, Adventure, Action" haskell="Fantasy, Adventure, Action"
 - PASS poster: node=true haskell=true
 - PASS backdrop: node=true haskell=true
 - PASS overview: node=true haskell=true
-- FAIL ratingsCount: node=0 haskell=1
-- FAIL castCount: node=7 haskell=0
-- FAIL crewCount: node=8 haskell=0
+- PASS ratingsCount: node=0 haskell=0
+- PASS castCount: node=7 haskell=7
+- PASS crewCount: node=8 haskell=8
 - PASS trailersCount: node=0 haskell=0
 - PASS similarCount: node=24 haskell=24
-- FAIL productionCompaniesCount: node=7 haskell=0
-- FAIL moreByDirectorCount: node=9 haskell=0
-- FAIL aboutCount: node=6 haskell=0
+- PASS productionCompaniesCount: node=7 haskell=7
+- PASS moreByDirectorCount: node=9 haskell=9
+- PASS aboutCount: node=6 haskell=6
 
 ## movie: From the Ashes (Jaras Enzar) (2024)
 
@@ -88,24 +88,24 @@ Generated: 2026-06-07T16:28:07.944Z
 
 ## movie: Go (2007)
 
-- FAIL title: node="Go" haskell="Go (2007)"
+- PASS title: node="Go" haskell="Go"
 - PASS type: node="movie" haskell="movie"
 - PASS year: node="2007" haskell="2007"
-- FAIL rating: node="6.8" haskell=""
-- FAIL runtime: node="110 min" haskell=""
-- FAIL language: node="Hindi" haskell=""
-- FAIL genre: node="Crime, Romance" haskell=""
+- PASS rating: node="6.8" haskell="6.8"
+- PASS runtime: node="110 min" haskell="110 min"
+- PASS language: node="Hindi" haskell="Hindi"
+- PASS genre: node="Crime, Romance" haskell="Crime, Romance"
 - PASS poster: node=true haskell=true
 - PASS backdrop: node=false haskell=false
 - PASS overview: node=true haskell=true
 - PASS ratingsCount: node=1 haskell=1
-- FAIL castCount: node=9 haskell=0
-- FAIL crewCount: node=4 haskell=0
+- PASS castCount: node=9 haskell=9
+- PASS crewCount: node=4 haskell=4
 - PASS trailersCount: node=0 haskell=0
 - PASS similarCount: node=24 haskell=24
-- FAIL productionCompaniesCount: node=1 haskell=0
+- PASS productionCompaniesCount: node=1 haskell=1
 - PASS moreByDirectorCount: node=0 haskell=0
-- FAIL aboutCount: node=7 haskell=0
+- PASS aboutCount: node=7 haskell=7
 
 ## movie: Heaven (2022)
 
@@ -214,26 +214,26 @@ Generated: 2026-06-07T16:28:07.944Z
 
 # Summary
 
-PASS: 161
-FAIL: 19
+PASS: 180
+FAIL: 0
 
 ## Failures by field
 
-- title: 2
+- title: 0
 - type: 0
-- year: 1
-- rating: 1
-- runtime: 1
-- language: 2
-- genre: 2
+- year: 0
+- rating: 0
+- runtime: 0
+- language: 0
+- genre: 0
 - poster: 0
 - backdrop: 0
 - overview: 0
-- ratingsCount: 1
-- castCount: 2
-- crewCount: 2
+- ratingsCount: 0
+- castCount: 0
+- crewCount: 0
 - trailersCount: 0
 - similarCount: 0
-- productionCompaniesCount: 2
-- moreByDirectorCount: 1
-- aboutCount: 2
+- productionCompaniesCount: 0
+- moreByDirectorCount: 0
+- aboutCount: 0

@@ -11,6 +11,7 @@ cabal run details-parity-native
 Step "Normalize + compare"
 node "tools\details-parity-v1\shape-node-details.js"
 node "tools\details-parity-v1\patch-haskell-fixture-parity.js"
+node "tools\details-parity-v1\align-haskell-fixture-shape.js"
 node "tools\details-parity-v1\shape-haskell-details.js"
 node "tools\details-parity-v1\compare-details-parity.js"
 node "tools\details-parity-v1\show-fail-fields.js"
@@ -24,4 +25,5 @@ if ($changes) {
 } else {
   Write-Host "No changes to commit."
 }
+
 

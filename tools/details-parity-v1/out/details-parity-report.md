@@ -1,6 +1,6 @@
 # Details/TMDB Parity Report
 
-Generated: 2026-06-07T16:25:38.960Z
+Generated: 2026-06-07T16:28:07.944Z
 
 ## movie: 2040 2019
 
@@ -18,31 +18,31 @@ Generated: 2026-06-07T16:25:38.960Z
 - PASS castCount: node=0 haskell=0
 - PASS crewCount: node=0 haskell=0
 - PASS trailersCount: node=0 haskell=0
-- FAIL similarCount: node=18 haskell=0
+- PASS similarCount: node=18 haskell=18
 - PASS productionCompaniesCount: node=0 haskell=0
 - PASS moreByDirectorCount: node=0 haskell=0
 - PASS aboutCount: node=0 haskell=0
 
 ## movie: The Hunt for Gollum (2009)
 
-- FAIL title: node="The Lord of the Rings: The Hunt for Gollum" haskell="Go"
+- FAIL title: node="The Lord of the Rings: The Hunt for Gollum" haskell="The Hunt for Gollum (2009)"
 - PASS type: node="movie" haskell="movie"
-- FAIL year: node="2027" haskell="2007"
-- FAIL rating: node="" haskell="6.8"
-- FAIL runtime: node="" haskell="110 min"
-- FAIL language: node="English" haskell="Hindi"
-- FAIL genre: node="Fantasy, Adventure, Action" haskell="Crime, Romance"
+- PASS year: node="2027" haskell="2027"
+- PASS rating: node="" haskell=""
+- PASS runtime: node="" haskell=""
+- FAIL language: node="English" haskell=""
+- FAIL genre: node="Fantasy, Adventure, Action" haskell=""
 - PASS poster: node=true haskell=true
 - PASS backdrop: node=true haskell=true
 - PASS overview: node=true haskell=true
 - FAIL ratingsCount: node=0 haskell=1
-- FAIL castCount: node=7 haskell=9
-- FAIL crewCount: node=8 haskell=4
+- FAIL castCount: node=7 haskell=0
+- FAIL crewCount: node=8 haskell=0
 - PASS trailersCount: node=0 haskell=0
 - PASS similarCount: node=24 haskell=24
-- FAIL productionCompaniesCount: node=7 haskell=1
+- FAIL productionCompaniesCount: node=7 haskell=0
 - FAIL moreByDirectorCount: node=9 haskell=0
-- FAIL aboutCount: node=6 haskell=7
+- FAIL aboutCount: node=6 haskell=0
 
 ## movie: From the Ashes (Jaras Enzar) (2024)
 
@@ -60,7 +60,7 @@ Generated: 2026-06-07T16:25:38.960Z
 - PASS castCount: node=0 haskell=0
 - PASS crewCount: node=0 haskell=0
 - PASS trailersCount: node=0 haskell=0
-- FAIL similarCount: node=18 haskell=0
+- PASS similarCount: node=18 haskell=18
 - PASS productionCompaniesCount: node=0 haskell=0
 - PASS moreByDirectorCount: node=0 haskell=0
 - PASS aboutCount: node=0 haskell=0
@@ -88,24 +88,24 @@ Generated: 2026-06-07T16:25:38.960Z
 
 ## movie: Go (2007)
 
-- PASS title: node="Go" haskell="Go"
+- FAIL title: node="Go" haskell="Go (2007)"
 - PASS type: node="movie" haskell="movie"
 - PASS year: node="2007" haskell="2007"
-- PASS rating: node="6.8" haskell="6.8"
-- PASS runtime: node="110 min" haskell="110 min"
-- PASS language: node="Hindi" haskell="Hindi"
-- PASS genre: node="Crime, Romance" haskell="Crime, Romance"
+- FAIL rating: node="6.8" haskell=""
+- FAIL runtime: node="110 min" haskell=""
+- FAIL language: node="Hindi" haskell=""
+- FAIL genre: node="Crime, Romance" haskell=""
 - PASS poster: node=true haskell=true
-- FAIL backdrop: node=false haskell=true
+- PASS backdrop: node=false haskell=false
 - PASS overview: node=true haskell=true
 - PASS ratingsCount: node=1 haskell=1
-- PASS castCount: node=9 haskell=9
-- PASS crewCount: node=4 haskell=4
+- FAIL castCount: node=9 haskell=0
+- FAIL crewCount: node=4 haskell=0
 - PASS trailersCount: node=0 haskell=0
 - PASS similarCount: node=24 haskell=24
-- PASS productionCompaniesCount: node=1 haskell=1
+- FAIL productionCompaniesCount: node=1 haskell=0
 - PASS moreByDirectorCount: node=0 haskell=0
-- PASS aboutCount: node=7 haskell=7
+- FAIL aboutCount: node=7 haskell=0
 
 ## movie: Heaven (2022)
 
@@ -140,11 +140,11 @@ Generated: 2026-06-07T16:25:38.960Z
 - PASS poster: node=true haskell=true
 - PASS backdrop: node=true haskell=true
 - PASS overview: node=true haskell=true
-- FAIL ratingsCount: node=1 haskell=0
+- PASS ratingsCount: node=1 haskell=1
 - PASS castCount: node=0 haskell=0
 - PASS crewCount: node=0 haskell=0
 - PASS trailersCount: node=0 haskell=0
-- FAIL similarCount: node=18 haskell=0
+- PASS similarCount: node=18 haskell=18
 - PASS productionCompaniesCount: node=0 haskell=0
 - PASS moreByDirectorCount: node=0 haskell=0
 - PASS aboutCount: node=0 haskell=0
@@ -161,11 +161,11 @@ Generated: 2026-06-07T16:25:38.960Z
 - PASS poster: node=true haskell=true
 - PASS backdrop: node=true haskell=true
 - PASS overview: node=true haskell=true
-- FAIL ratingsCount: node=1 haskell=0
+- PASS ratingsCount: node=1 haskell=1
 - PASS castCount: node=0 haskell=0
 - PASS crewCount: node=0 haskell=0
 - PASS trailersCount: node=0 haskell=0
-- FAIL similarCount: node=18 haskell=0
+- PASS similarCount: node=18 haskell=18
 - PASS productionCompaniesCount: node=0 haskell=0
 - PASS moreByDirectorCount: node=0 haskell=0
 - PASS aboutCount: node=0 haskell=0
@@ -182,11 +182,11 @@ Generated: 2026-06-07T16:25:38.960Z
 - PASS poster: node=true haskell=true
 - PASS backdrop: node=true haskell=true
 - PASS overview: node=true haskell=true
-- FAIL ratingsCount: node=1 haskell=0
+- PASS ratingsCount: node=1 haskell=1
 - PASS castCount: node=0 haskell=0
 - PASS crewCount: node=0 haskell=0
 - PASS trailersCount: node=0 haskell=0
-- FAIL similarCount: node=18 haskell=0
+- PASS similarCount: node=18 haskell=18
 - PASS productionCompaniesCount: node=0 haskell=0
 - PASS moreByDirectorCount: node=0 haskell=0
 - PASS aboutCount: node=0 haskell=0
@@ -203,37 +203,37 @@ Generated: 2026-06-07T16:25:38.960Z
 - PASS poster: node=true haskell=true
 - PASS backdrop: node=true haskell=true
 - PASS overview: node=true haskell=true
-- FAIL ratingsCount: node=1 haskell=0
+- PASS ratingsCount: node=1 haskell=1
 - PASS castCount: node=0 haskell=0
 - PASS crewCount: node=0 haskell=0
 - PASS trailersCount: node=0 haskell=0
-- FAIL similarCount: node=18 haskell=0
+- PASS similarCount: node=18 haskell=18
 - PASS productionCompaniesCount: node=0 haskell=0
 - PASS moreByDirectorCount: node=0 haskell=0
 - PASS aboutCount: node=0 haskell=0
 
 # Summary
 
-PASS: 156
-FAIL: 24
+PASS: 161
+FAIL: 19
 
 ## Failures by field
 
-- title: 1
+- title: 2
 - type: 0
-- year: 2
+- year: 1
 - rating: 1
 - runtime: 1
-- language: 1
-- genre: 1
+- language: 2
+- genre: 2
 - poster: 0
-- backdrop: 1
+- backdrop: 0
 - overview: 0
-- ratingsCount: 5
-- castCount: 1
-- crewCount: 1
+- ratingsCount: 1
+- castCount: 2
+- crewCount: 2
 - trailersCount: 0
-- similarCount: 6
-- productionCompaniesCount: 1
+- similarCount: 0
+- productionCompaniesCount: 2
 - moreByDirectorCount: 1
-- aboutCount: 1
+- aboutCount: 2

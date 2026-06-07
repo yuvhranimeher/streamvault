@@ -1,8 +1,9 @@
 {
-  "generatedAt": "2026-06-07T07:42:53.524Z",
+  "generatedAt": "2026-06-07T08:03:45.809Z",
   "count": 10,
   "items": [
     {
+      "key": "movie:2040 2019",
       "request": {
         "type": "movie",
         "id": "2040 2019",
@@ -13,19 +14,22 @@
       "ok": true,
       "title": "2040 2019",
       "type": "movie",
-      "year": null,
-      "rating": null,
-      "runtime": null,
-      "language": null,
-      "genre": null,
+      "year": "",
+      "rating": "",
+      "runtime": "",
+      "language": "",
+      "genre": "",
       "poster": false,
       "backdrop": false,
       "overview": false,
+      "ratingsCount": 0,
       "castCount": 0,
       "crewCount": 0,
       "trailersCount": 0,
       "similarCount": 18,
       "productionCompaniesCount": 0,
+      "moreByDirectorCount": 0,
+      "aboutCount": 0,
       "topKeys": [
         "about",
         "backdrop",
@@ -84,6 +88,7 @@
       ]
     },
     {
+      "key": "movie:The Hunt for Gollum (2009)",
       "request": {
         "type": "movie",
         "id": "The Hunt for Gollum (2009)",
@@ -95,18 +100,21 @@
       "title": "The Lord of the Rings: The Hunt for Gollum",
       "type": "movie",
       "year": "2027",
-      "rating": null,
-      "runtime": null,
+      "rating": "",
+      "runtime": "",
       "language": "English",
       "genre": "Fantasy, Adventure, Action",
       "poster": true,
       "backdrop": true,
       "overview": true,
+      "ratingsCount": 0,
       "castCount": 7,
       "crewCount": 8,
       "trailersCount": 0,
       "similarCount": 24,
       "productionCompaniesCount": 7,
+      "moreByDirectorCount": 9,
+      "aboutCount": 6,
       "topKeys": [
         "about",
         "backdrop",
@@ -167,6 +175,7 @@
       ]
     },
     {
+      "key": "movie:From the Ashes (Jaras Enzar) (2024)",
       "request": {
         "type": "movie",
         "id": "From the Ashes (Jaras Enzar) (2024)",
@@ -178,18 +187,21 @@
       "title": "From the Ashes (Jaras Enzar) (2024)",
       "type": "movie",
       "year": "2027",
-      "rating": null,
-      "runtime": null,
-      "language": null,
-      "genre": null,
+      "rating": "",
+      "runtime": "",
+      "language": "",
+      "genre": "",
       "poster": true,
       "backdrop": true,
       "overview": true,
+      "ratingsCount": 0,
       "castCount": 0,
       "crewCount": 0,
       "trailersCount": 0,
       "similarCount": 18,
       "productionCompaniesCount": 0,
+      "moreByDirectorCount": 0,
+      "aboutCount": 0,
       "topKeys": [
         "about",
         "backdrop",
@@ -248,6 +260,7 @@
       ]
     },
     {
+      "key": "movie:Hamlet (1996)",
       "request": {
         "type": "movie",
         "id": "Hamlet (1996)",
@@ -266,11 +279,14 @@
       "poster": true,
       "backdrop": true,
       "overview": true,
+      "ratingsCount": 1,
       "castCount": 18,
       "crewCount": 17,
       "trailersCount": 5,
       "similarCount": 24,
       "productionCompaniesCount": 5,
+      "moreByDirectorCount": 8,
+      "aboutCount": 8,
       "topKeys": [
         "about",
         "backdrop",
@@ -331,6 +347,7 @@
       ]
     },
     {
+      "key": "movie:Go (2007)",
       "request": {
         "type": "movie",
         "id": "Go (2007)",
@@ -349,11 +366,14 @@
       "poster": true,
       "backdrop": false,
       "overview": true,
+      "ratingsCount": 1,
       "castCount": 9,
       "crewCount": 4,
       "trailersCount": 0,
       "similarCount": 24,
       "productionCompaniesCount": 1,
+      "moreByDirectorCount": 0,
+      "aboutCount": 7,
       "topKeys": [
         "about",
         "backdrop",
@@ -414,6 +434,7 @@
       ]
     },
     {
+      "key": "movie:Heaven (2022)",
       "request": {
         "type": "movie",
         "id": "Heaven (2022)",
@@ -432,11 +453,14 @@
       "poster": true,
       "backdrop": true,
       "overview": true,
+      "ratingsCount": 1,
       "castCount": 8,
       "crewCount": 4,
       "trailersCount": 0,
       "similarCount": 24,
       "productionCompaniesCount": 3,
+      "moreByDirectorCount": 13,
+      "aboutCount": 7,
       "topKeys": [
         "about",
         "backdrop",
@@ -497,6 +521,7 @@
       ]
     },
     {
+      "key": "tv:A Knight of the Seven Kingdoms (TV Series 2026– ) 1080p [Dual Audio]",
       "request": {
         "type": "tv",
         "id": "A Knight of the Seven Kingdoms (TV Series 2026– ) 1080p [Dual Audio]",
@@ -509,17 +534,20 @@
       "type": "tv",
       "year": "2026",
       "rating": "8.4",
-      "runtime": null,
-      "language": null,
-      "genre": null,
+      "runtime": "",
+      "language": "",
+      "genre": "",
       "poster": true,
       "backdrop": true,
       "overview": true,
+      "ratingsCount": 1,
       "castCount": 0,
       "crewCount": 0,
       "trailersCount": 0,
       "similarCount": 18,
       "productionCompaniesCount": 0,
+      "moreByDirectorCount": 0,
+      "aboutCount": 0,
       "topKeys": [
         "about",
         "backdrop",
@@ -578,6 +606,7 @@
       ]
     },
     {
+      "key": "tv:Agatha Christie's Seven Dials (TV Series 2026– ) 720p [Dual Audio]",
       "request": {
         "type": "tv",
         "id": "Agatha Christie's Seven Dials (TV Series 2026– ) 720p [Dual Audio]",
@@ -590,17 +619,20 @@
       "type": "tv",
       "year": "2026",
       "rating": "6.3",
-      "runtime": null,
-      "language": null,
-      "genre": null,
+      "runtime": "",
+      "language": "",
+      "genre": "",
       "poster": true,
       "backdrop": true,
       "overview": true,
+      "ratingsCount": 1,
       "castCount": 0,
       "crewCount": 0,
       "trailersCount": 0,
       "similarCount": 18,
       "productionCompaniesCount": 0,
+      "moreByDirectorCount": 0,
+      "aboutCount": 0,
       "topKeys": [
         "about",
         "backdrop",
@@ -659,6 +691,7 @@
       ]
     },
     {
+      "key": "tv:Agent from Above (TV Series 2026– ) 720p [Multi Audio]",
       "request": {
         "type": "tv",
         "id": "Agent from Above (TV Series 2026– ) 720p [Multi Audio]",
@@ -671,17 +704,20 @@
       "type": "tv",
       "year": "2026",
       "rating": "7.4",
-      "runtime": null,
-      "language": null,
-      "genre": null,
+      "runtime": "",
+      "language": "",
+      "genre": "",
       "poster": true,
       "backdrop": true,
       "overview": true,
+      "ratingsCount": 1,
       "castCount": 0,
       "crewCount": 0,
       "trailersCount": 0,
       "similarCount": 18,
       "productionCompaniesCount": 0,
+      "moreByDirectorCount": 0,
+      "aboutCount": 0,
       "topKeys": [
         "about",
         "backdrop",
@@ -740,6 +776,7 @@
       ]
     },
     {
+      "key": "tv:Daldal (TV Series 2026– ) 1080p",
       "request": {
         "type": "tv",
         "id": "Daldal (TV Series 2026– ) 1080p",
@@ -752,17 +789,20 @@
       "type": "tv",
       "year": "2026",
       "rating": "6.4",
-      "runtime": null,
-      "language": null,
-      "genre": null,
+      "runtime": "",
+      "language": "",
+      "genre": "",
       "poster": true,
       "backdrop": true,
       "overview": true,
+      "ratingsCount": 1,
       "castCount": 0,
       "crewCount": 0,
       "trailersCount": 0,
       "similarCount": 18,
       "productionCompaniesCount": 0,
+      "moreByDirectorCount": 0,
+      "aboutCount": 0,
       "topKeys": [
         "about",
         "backdrop",

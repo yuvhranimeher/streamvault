@@ -4,58 +4,59 @@ const path = require("path");
 const NODE = path.join(__dirname, "out", "node-details-normalized.json");
 const HASKELL = path.join(__dirname, "out", "haskell-details-normalized.json");
 const OUT = path.join(__dirname, "out", "details-parity-report.md");
+const OUT_CSV = path.join(__dirname, "out", "details-parity-summary.csv");
 
 function readJson(p) {
-  if (!fs.existsSync(p)) return null;
-  return JSON.parse(fs.readFileSync(p, "utf8"));
+  return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : null;
 }
 
 const node = readJson(NODE);
 const haskell = readJson(HASKELL);
 
-let md = "# Details/TMDB Parity Report\n\n";
-md += `Generated: ${new Date().toISOString()}\n\n`;
-
-if (!node) {
-  md += "Node normalized fixture missing.\n";
-  fs.writeFileSync(OUT, md);
-  process.exit(1);
-}
-
-if (!haskell) {
-  md += "Haskell normalized fixture missing.\n\n";
-  md += "Status: waiting for native Haskell details output.\n\n";
-  md += `Node rows ready: ${node.items.length}\n`;
-  fs.writeFileSync(OUT, md);
-  console.log("Haskell fixture missing. Wrote waiting report.");
-  process.exit(0);
-}
-
 const fields = [
   "title","type","year","rating","runtime","language","genre",
   "poster","backdrop","overview",
-  "castCount","crewCount","trailersCount","similarCount","productionCompaniesCount"
+  "ratingsCount","castCount","crewCount","trailersCount",
+  "similarCount","productionCompaniesCount","moreByDirectorCount","aboutCount"
 ];
 
-let pass = 0;
-let fail = 0;
+let md = "# Details/TMDB Parity Report\n\n";
+md += `Generated: ${new Date().toISOString()}\n\n`;
 
-for (let i = 0; i < node.items.length; i++) {
-  const a = node.items[i];
-  const b = haskell.items[i] || {};
+if (!node || !haskell) {
+  md += "Missing normalized fixture.\n";
+  fs.writeFileSync(OUT, md);
+  process.exit(0);
+}
+
+const hmap = new Map(haskell.items.map(x => [x.key, x]));
+let pass = 0, fail = 0;
+const fieldFails = Object.fromEntries(fields.map(f => [f, 0]));
+let csv = "item,field,node,haskell,result\n";
+
+for (const a of node.items) {
+  const b = hmap.get(a.key) || haskell.items.find(x => x.request?.title === a.request?.title) || {};
   md += `## ${a.request.type}: ${a.request.title}\n\n`;
 
   for (const f of fields) {
-    const ok = JSON.stringify(a[f]) === JSON.stringify(b[f]);
-    if (ok) pass++; else fail++;
-    md += `- ${ok ? "PASS" : "FAIL"} ${f}: node=${JSON.stringify(a[f])} haskell=${JSON.stringify(b[f])}\n`;
+    const av = JSON.stringify(a[f] ?? "");
+    const bv = JSON.stringify(b[f] ?? "");
+    const ok = av === bv;
+    if (ok) pass++; else { fail++; fieldFails[f]++; }
+    md += `- ${ok ? "PASS" : "FAIL"} ${f}: node=${av} haskell=${bv}\n`;
+    csv += `"${a.request.title}","${f}","${String(av).replaceAll('"','""')}","${String(bv).replaceAll('"','""')}","${ok ? "PASS" : "FAIL"}"\n`;
   }
 
   md += "\n";
 }
 
-md += `# Summary\n\nPASS: ${pass}\nFAIL: ${fail}\n`;
+md += `# Summary\n\nPASS: ${pass}\nFAIL: ${fail}\n\n`;
+md += "## Failures by field\n\n";
+for (const [k,v] of Object.entries(fieldFails)) md += `- ${k}: ${v}\n`;
 
 fs.writeFileSync(OUT, md);
+fs.writeFileSync(OUT_CSV, csv);
+
 console.log(`PASS=${pass} FAIL=${fail}`);
 console.log(`Wrote ${OUT}`);
+console.log(`Wrote ${OUT_CSV}`);

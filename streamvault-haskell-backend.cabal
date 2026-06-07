@@ -1,4 +1,4 @@
-cabal-version:      3.0
+﻿cabal-version:      3.0
 name:               streamvault-haskell-backend
 version:            0.1.0.0
 build-type:         Simple
@@ -73,3 +73,6 @@ executable details-shadow-native
     , aeson
     , bytestring
     , network
+    , text
+    , vector
+

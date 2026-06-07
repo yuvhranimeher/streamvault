@@ -13,6 +13,18 @@ const BASES = [
   "http://127.0.0.1:3000"
 ].filter(Boolean);
 
+function getText(url) {
+  return new Promise((resolve, reject) => {
+    const req = http.get(url, { timeout: 8000 }, res => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", c => body += c);
+      res.on("end", () => resolve({ status: res.statusCode, url, body }));
+    });
+    req.on("timeout", () => req.destroy(new Error("timeout")));
+    req.on("error", reject);
+  });
+}
 function getJson(url) {
   return new Promise((resolve, reject) => {
     const req = http.get(url, { timeout: 8000 }, res => {
@@ -72,11 +84,11 @@ function pickSamples(catalog) {
 async function detectBase() {
   for (const base of BASES) {
     try {
-      await getJson(`${base}/api/health`);
-      return base;
+      const r = await getText(`${base}/`);
+      if (r.status >= 200 && r.status < 500) return base;
     } catch {}
     try {
-      const r = await getJson(`${base}/api/home-feed`);
+      const r = await getText(`${base}/api/health`);
       if (r.status >= 200 && r.status < 500) return base;
     } catch {}
   }
@@ -133,4 +145,5 @@ main().catch(e => {
   console.error(e.message);
   process.exit(1);
 });
+
 

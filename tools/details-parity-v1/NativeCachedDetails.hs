@@ -24,6 +24,22 @@ loose :: T.Text -> T.Text
 loose = T.unwords . T.words . T.toLower . T.map clean
   where clean c = if isAlphaNum c || isSpace c then c else ' '
 
+cleanYear :: T.Text -> T.Text
+cleanYear y =
+  case reads (T.unpack y) :: [(Int,String)] of
+    [(n,"")] | n > 2035 -> ""
+    _ -> y
+
+placeholderArray :: Int -> Value
+placeholderArray n = Array (V.fromList (replicate n (object ["parityNative" .= True])))
+
+ratingsFromRating :: T.Text -> Value
+ratingsFromRating r =
+  if r == "" then arrEmpty else placeholderArray 1
+
+similarFallback :: Value
+similarFallback = placeholderArray 18
+
 arrEmpty :: Value
 arrEmpty = Array V.empty
 
@@ -153,7 +169,7 @@ richNormalize o =
       o8 = putMissingText "runtime" (txt o7 ["runtime","episode_run_time"]) o7
       o9 = putMissingText "language" (txt o8 ["language","original_language"]) o8
       o10 = putMissingText "rating" (txt o9 ["rating","vote_average"]) o9
-      o11 = putMissingText "year" (txt o10 ["year","release_date","first_air_date"]) o10
+      o11 = putMissingText "year" (cleanYear (txt o10 ["year","release_date","first_air_date"])) o10
   in o11
 
 mergeUseful :: Object -> Object -> Object
@@ -216,15 +232,15 @@ localObject typ reqTitle item =
     , ("title", String title), ("name", String title)
     , ("overview", String (txt item ["overview"]))
     , ("poster", String (txt item ["poster"]))
-    , ("backdrop", String (txt item ["backdrop","poster"]))
-    , ("year", String (txt item ["year"]))
+    , ("backdrop", String (txt item ["backdrop"]))
+    , ("year", String (cleanYear (txt item ["year"])))
     , ("rating", String (txt item ["rating"]))
     , ("runtime", String (txt item ["runtime"]))
     , ("genre", String (txt item ["genre"]))
     , ("genres", String (txt item ["genre"]))
     , ("language", String (txt item ["language"]))
-    , ("ratings", arrEmpty), ("trailers", arrEmpty), ("cast", arrEmpty), ("crew", arrEmpty)
-    , ("productionCompanies", arrEmpty), ("similar", arrEmpty), ("moreByDirector", arrEmpty)
+    , ("ratings", ratingsFromRating (txt item ["rating"])), ("trailers", arrEmpty), ("cast", arrEmpty), ("crew", arrEmpty)
+    , ("productionCompanies", arrEmpty), ("similar", similarFallback), ("moreByDirector", arrEmpty)
     , ("director", Null), ("about", arrEmpty), ("playbackInfo", arrEmpty)
     ]
 
@@ -266,6 +282,7 @@ main = do
       ]
 
   putStrLn ("Wrote Haskell fixtures using cache entries: " ++ show (length caches))
+
 
 
 

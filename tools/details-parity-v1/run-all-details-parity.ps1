@@ -7,6 +7,7 @@ node "tools\details-parity-v1\collect-node-details-fixtures.js"
 
 Step "Run Cabal Haskell details generator"
 cabal run details-parity-native
+Copy-Item "tools\details-parity-v1\out\haskell-details-fixtures.json" "tools\details-parity-v1\out\haskell-details-fixtures-native-raw.json" -Force
 
 Step "Normalize + compare"
 node "tools\details-parity-v1\shape-node-details.js"
@@ -15,6 +16,7 @@ node "tools\details-parity-v1\align-haskell-fixture-shape.js"
 node "tools\details-parity-v1\shape-haskell-details.js"
 node "tools\details-parity-v1\compare-details-parity.js"
 node "tools\details-parity-v1\show-fail-fields.js"
+node "tools\details-parity-v1\native-value-gap-report.js"
 
 Step "Commit"
 git add -A "tools\details-parity-v1" "*.cabal"
@@ -25,5 +27,6 @@ if ($changes) {
 } else {
   Write-Host "No changes to commit."
 }
+
 
 

@@ -1,6 +1,6 @@
 # Details/TMDB Parity Report
 
-Generated: 2026-06-07T07:42:53.910Z
+Generated: 2026-06-07T07:46:26.957Z
 
 Haskell normalized fixture missing.
 

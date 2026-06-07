@@ -14,11 +14,11 @@ Rows: 10
 ## movie: The Hunt for Gollum (2009)
 
 - ok: true
-- title: The Hunt for Gollum (2009)
+- title: Go
 - type: movie
-- genre: 
-- poster/backdrop/overview: false/false/false
-- ratings/cast/crew/trailers/similar/companies/about: 0/0/0/0/0/0/0
+- genre: Crime, Romance
+- poster/backdrop/overview: true/true/true
+- ratings/cast/crew/trailers/similar/companies/about: 1/9/4/0/24/1/7
 
 ## movie: From the Ashes (Jaras Enzar) (2024)
 
@@ -26,35 +26,35 @@ Rows: 10
 - title: From the Ashes (Jaras Enzar) (2024)
 - type: movie
 - genre: 
-- poster/backdrop/overview: false/false/false
+- poster/backdrop/overview: true/true/true
 - ratings/cast/crew/trailers/similar/companies/about: 0/0/0/0/0/0/0
 
 ## movie: Hamlet (1996)
 
 - ok: true
-- title: Hamlet (1996)
+- title: Hamlet
 - type: movie
-- genre: 
-- poster/backdrop/overview: false/false/false
-- ratings/cast/crew/trailers/similar/companies/about: 0/0/0/0/0/0/0
+- genre: Drama
+- poster/backdrop/overview: true/true/true
+- ratings/cast/crew/trailers/similar/companies/about: 1/18/17/5/24/5/8
 
 ## movie: Go (2007)
 
 - ok: true
-- title: Go (2007)
+- title: Go
 - type: movie
-- genre: 
-- poster/backdrop/overview: false/false/false
-- ratings/cast/crew/trailers/similar/companies/about: 0/0/0/0/0/0/0
+- genre: Crime, Romance
+- poster/backdrop/overview: true/true/true
+- ratings/cast/crew/trailers/similar/companies/about: 1/9/4/0/24/1/7
 
 ## movie: Heaven (2022)
 
 - ok: true
-- title: Heaven (2022)
+- title: My Heaven, Your Hell
 - type: movie
-- genre: 
-- poster/backdrop/overview: false/false/false
-- ratings/cast/crew/trailers/similar/companies/about: 0/0/0/0/0/0/0
+- genre: Romance, Drama, Thriller
+- poster/backdrop/overview: true/true/true
+- ratings/cast/crew/trailers/similar/companies/about: 1/8/4/0/24/3/7
 
 ## tv: A Knight of the Seven Kingdoms (TV Series 2026– ) 1080p [Dual Audio]
 
@@ -62,7 +62,7 @@ Rows: 10
 - title: A Knight of the Seven Kingdoms (TV Series 2026– ) 1080p [Dual Audio]
 - type: tv
 - genre: 
-- poster/backdrop/overview: false/false/false
+- poster/backdrop/overview: true/true/true
 - ratings/cast/crew/trailers/similar/companies/about: 0/0/0/0/0/0/0
 
 ## tv: Agatha Christie's Seven Dials (TV Series 2026– ) 720p [Dual Audio]
@@ -71,7 +71,7 @@ Rows: 10
 - title: Agatha Christie's Seven Dials (TV Series 2026– ) 720p [Dual Audio]
 - type: tv
 - genre: 
-- poster/backdrop/overview: false/false/false
+- poster/backdrop/overview: true/true/true
 - ratings/cast/crew/trailers/similar/companies/about: 0/0/0/0/0/0/0
 
 ## tv: Agent from Above (TV Series 2026– ) 720p [Multi Audio]
@@ -80,7 +80,7 @@ Rows: 10
 - title: Agent from Above (TV Series 2026– ) 720p [Multi Audio]
 - type: tv
 - genre: 
-- poster/backdrop/overview: false/false/false
+- poster/backdrop/overview: true/true/true
 - ratings/cast/crew/trailers/similar/companies/about: 0/0/0/0/0/0/0
 
 ## tv: Daldal (TV Series 2026– ) 1080p
@@ -89,6 +89,6 @@ Rows: 10
 - title: Daldal (TV Series 2026– ) 1080p
 - type: tv
 - genre: 
-- poster/backdrop/overview: false/false/false
+- poster/backdrop/overview: true/true/true
 - ratings/cast/crew/trailers/similar/companies/about: 0/0/0/0/0/0/0
 

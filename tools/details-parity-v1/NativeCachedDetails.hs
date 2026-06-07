@@ -20,15 +20,19 @@ txt o keys = fromMaybe "" $ listToMaybe $ mapMaybe get keys
       Just (Bool b) -> Just (if b then "true" else "false")
       _ -> Nothing
 
-val :: Object -> T.Text -> Value -> Value
-val o k fallback = fromMaybe fallback (KM.lookup (fromText k) o)
-
 loose :: T.Text -> T.Text
 loose = T.unwords . T.words . T.toLower . T.map clean
   where clean c = if isAlphaNum c || isSpace c then c else ' '
 
 arrEmpty :: Value
 arrEmpty = Array V.empty
+
+isUseful :: Value -> Bool
+isUseful Null = False
+isUseful (String s) = not (T.null s)
+isUseful (Array a) = V.length a > 0
+isUseful (Object o) = not (KM.null o)
+isUseful _ = True
 
 readJson :: FilePath -> IO (Maybe Value)
 readJson p = do
@@ -70,19 +74,84 @@ parseKeyMeta k
       in ("movie", if length parts > 1 then T.intercalate ":" (init parts) else T.drop 6 k)
   | otherwise = ("", k)
 
-putMissing :: T.Text -> T.Text -> Object -> Object
-putMissing k v o
+putMissingText :: T.Text -> T.Text -> Object -> Object
+putMissingText k v o
   | v == "" = o
-  | txt o [k] /= "" = o
+  | maybe False isUseful (KM.lookup (fromText k) o) = o
   | otherwise = KM.insert (fromText k) (String v) o
+
+putMissingVal :: T.Text -> Value -> Object -> Object
+putMissingVal k v o
+  | not (isUseful v) = o
+  | maybe False isUseful (KM.lookup (fromText k) o) = o
+  | otherwise = KM.insert (fromText k) v o
+
+getObj :: Object -> T.Text -> Object
+getObj o k = case KM.lookup (fromText k) o of
+  Just (Object x) -> x
+  _ -> KM.empty
+
+getArr :: Object -> [T.Text] -> Value
+getArr o keys = fromMaybe arrEmpty (listToMaybe (mapMaybe go keys))
+  where
+    go k = case KM.lookup (fromText k) o of
+      Just (Array a) -> Just (Array a)
+      Just (Object x) -> case KM.lookup (fromText "results") x of
+        Just (Array a) -> Just (Array a)
+        _ -> Nothing
+      _ -> Nothing
+
+genreTextFromValue :: Value -> T.Text
+genreTextFromValue (Array a) =
+  T.intercalate ", " $ mapMaybe one (V.toList a)
+  where
+    one (String s) = Just s
+    one (Object o) = let n = txt o ["name"] in if n == "" then Nothing else Just n
+    one _ = Nothing
+genreTextFromValue (String s) = s
+genreTextFromValue _ = ""
+
+genreText :: Object -> T.Text
+genreText o =
+  let direct = txt o ["genre","genres"]
+  in if direct /= "" then direct else genreTextFromValue (fromMaybe Null (KM.lookup (fromText "genres") o))
 
 enrichFromKey :: T.Text -> Object -> Object
 enrichFromKey k o =
   let (kt, title) = parseKeyMeta k
-      o1 = putMissing "title" title o
-      o2 = putMissing "name" title o1
-      o3 = putMissing "type" kt o2
-  in o3
+  in putMissingText "type" kt $
+     putMissingText "name" title $
+     putMissingText "title" title o
+
+richNormalize :: Object -> Object
+richNormalize o =
+  let credits = getObj o "credits"
+      videos = getObj o "videos"
+      similarObj = getObj o "similar"
+      recObj = getObj o "recommendations"
+
+      similarV = case getArr similarObj ["results"] of
+        Array a | V.length a > 0 -> Array a
+        _ -> getArr recObj ["results"]
+
+      o1 = putMissingVal "cast" (getArr credits ["cast"]) o
+      o2 = putMissingVal "crew" (getArr credits ["crew"]) o1
+      o3 = putMissingVal "trailers" (getArr videos ["results"]) o2
+      o4 = putMissingVal "similar" similarV o3
+      o5 = putMissingVal "productionCompanies" (getArr o ["productionCompanies","production_companies"]) o4
+      o6 = putMissingText "genre" (genreText o5) o5
+      o7 = putMissingText "genres" (genreText o6) o6
+      o8 = putMissingText "runtime" (txt o7 ["runtime","episode_run_time"]) o7
+      o9 = putMissingText "language" (txt o8 ["language","original_language"]) o8
+      o10 = putMissingText "rating" (txt o9 ["rating","vote_average"]) o9
+      o11 = putMissingText "year" (txt o10 ["year","release_date","first_air_date"]) o10
+  in o11
+
+mergeUseful :: Object -> Object -> Object
+mergeUseful fresh local =
+  foldl putOne local (KM.toList fresh)
+  where
+    putOne acc (k,v) = if isUseful v then KM.insert k v acc else acc
 
 cacheObjects :: Value -> [(T.Text, Object)]
 cacheObjects (Object o) = mapMaybe go (KM.toList o)
@@ -93,10 +162,8 @@ cacheObjects (Object o) = mapMaybe go (KM.toList o)
             d = case KM.lookup "data" x of
               Just (Object y) -> y
               _ -> x
-            enriched = enrichFromKey key d
-        in if txt enriched ["poster","backdrop","overview","rating","genre","language","title","name"] /= ""
-           then Just (key, enriched)
-           else Nothing
+            enriched = richNormalize (enrichFromKey key d)
+        in Just (key, enriched)
       _ -> Nothing
 cacheObjects _ = []
 
@@ -113,8 +180,7 @@ matchLocal typ title xs = fromMaybe KM.empty $ listToMaybe $ mapMaybe go xs
     wanted = loose title
     go (Object o) =
       let t = loose (txt o ["title","name"])
-      in if t == wanted || wanted `T.isInfixOf` t || t `T.isInfixOf` wanted
-         then Just o else Nothing
+      in if t == wanted || wanted `T.isInfixOf` t || t `T.isInfixOf` wanted then Just o else Nothing
     go _ = Nothing
 
 matchFresh :: T.Text -> T.Text -> T.Text -> [(T.Text, Object)] -> Maybe Object
@@ -149,70 +215,9 @@ localObject typ reqTitle item =
     , ("genres", String (txt item ["genre"]))
     , ("language", String (txt item ["language"]))
     , ("ratings", arrEmpty), ("trailers", arrEmpty), ("cast", arrEmpty), ("crew", arrEmpty)
-    , ("productionCompanies", val item "productionCompanies" arrEmpty)
-    , ("similar", arrEmpty), ("moreByDirector", arrEmpty), ("director", Null)
-    , ("about", arrEmpty), ("playbackInfo", arrEmpty)
+    , ("productionCompanies", arrEmpty), ("similar", arrEmpty), ("moreByDirector", arrEmpty)
+    , ("director", Null), ("about", arrEmpty), ("playbackInfo", arrEmpty)
     ]
-
-getObj :: Object -> T.Text -> Object
-getObj o k = case KM.lookup (fromText k) o of
-  Just (Object x) -> x
-  _ -> KM.empty
-
-getArr :: Object -> [T.Text] -> Value
-getArr o keys = fromMaybe arrEmpty (listToMaybe (mapMaybe go keys))
-  where
-    go k = case KM.lookup (fromText k) o of
-      Just (Array a) -> Just (Array a)
-      Just (Object x) ->
-        case KM.lookup (fromText "results") x of
-          Just (Array a) -> Just (Array a)
-          _ -> Nothing
-      _ -> Nothing
-
-putIfMissingVal :: T.Text -> Value -> Object -> Object
-putIfMissingVal k v o =
-  case KM.lookup (fromText k) o of
-    Just (Array a) | V.length a > 0 -> o
-    Just (String t) | not (T.null t) -> o
-    Just _ -> o
-    _ -> KM.insert (fromText k) v o
-
-richNormalize :: Object -> Object
-richNormalize o =
-  let credits = getObj o "credits"
-      videos = getObj o "videos"
-      similarObj = getObj o "similar"
-      recObj = getObj o "recommendations"
-
-      castV = getArr credits ["cast"]
-      crewV = getArr credits ["crew"]
-      trailersV = getArr videos ["results"]
-      similarV =
-        case getArr similarObj ["results"] of
-          Array a | V.length a > 0 -> Array a
-          _ -> getArr recObj ["results"]
-
-      companiesV = getArr o ["productionCompanies","production_companies"]
-      genresV = getArr o ["genres"]
-      genreText = txt o ["genre"]
-      runtimeText = txt o ["runtime"]
-      langText = txt o ["language","original_language"]
-      ratingText = txt o ["rating","vote_average"]
-      yearText = txt o ["year","release_date","first_air_date"]
-
-      o1 = putIfMissingVal "cast" castV o
-      o2 = putIfMissingVal "crew" crewV o1
-      o3 = putIfMissingVal "trailers" trailersV o2
-      o4 = putIfMissingVal "similar" similarV o3
-      o5 = putIfMissingVal "productionCompanies" companiesV o4
-      o6 = putIfMissing "genre" genreText o5
-      o7 = putIfMissing "genres" genreText o6
-      o8 = putIfMissing "runtime" runtimeText o7
-      o9 = putIfMissing "language" langText o8
-      o10 = putIfMissing "rating" ratingText o9
-      o11 = putIfMissing "year" yearText o10
-  in o11
 
 buildRow :: Object -> [(T.Text, Object)] -> Value -> Value
 buildRow catalog caches row =
@@ -223,10 +228,9 @@ buildRow catalog caches row =
       nodeTmdbId = txt nodeData ["tmdbId","id"]
       local = localObject typ title (matchLocal typ title (catalogItems catalog typ))
       fresh = matchFresh typ title nodeTmdbId caches
-      merged0 = case fresh of
-        Just f -> KM.union (richNormalize f) local
+      merged = case fresh of
+        Just f -> KM.insert "localOnly" (Bool False) (mergeUseful f local)
         Nothing -> local
-      merged = KM.insert "localOnly" (Bool (isNothing fresh)) merged0
   in object [ "request" .= Object req, "status" .= (200 :: Int), "ok" .= True, "data" .= Object merged ]
 
 main :: IO ()
@@ -245,7 +249,7 @@ main = do
 
   BL.writeFile "tools/details-parity-v1/out/haskell-details-fixtures.json" $
     encode $ object
-      [ "generatedAt" .= ("native-cache-v2-haskell" :: T.Text)
+      [ "generatedAt" .= ("native-cache-v3-haskell" :: T.Text)
       , "base" .= ("detail-cache+poster-cache-readonly" :: T.Text)
       , "cacheEntries" .= length caches
       , "count" .= length built

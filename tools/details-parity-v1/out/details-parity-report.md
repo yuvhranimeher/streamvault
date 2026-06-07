@@ -1,6 +1,6 @@
 # Details/TMDB Parity Report
 
-Generated: 2026-06-07T16:37:00.105Z
+Generated: 2026-06-07T17:24:52.893Z
 
 ## movie: 2040 2019
 

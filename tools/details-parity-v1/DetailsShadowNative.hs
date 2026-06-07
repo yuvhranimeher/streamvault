@@ -74,7 +74,11 @@ findMatch (Fixture rs) url =
         Just t -> t
         Nothing -> if length bits > 4 then bits !! 4 else ""
       clean = lower . urlDecode
-  in rowData <$> find (\r -> clean (rType (rowReq r)) == clean typ && clean (rTitle (rowReq r)) == clean title) rs
+      wanted = normTitle title
+  in rowData <$> find (\r ->
+       clean (rType (rowReq r)) == clean typ &&
+       normTitle (rTitle (rowReq r)) == wanted
+     ) rs
 
 parseQuery :: String -> [(String,String)]
 parseQuery "" = []
@@ -96,6 +100,12 @@ urlDecode ('%':a:b:xs)
   | all isHexDigit [a,b] = chr (digitToInt a * 16 + digitToInt b) : urlDecode xs
 urlDecode (x:xs) = x : urlDecode xs
 
+normTitle :: String -> String
+normTitle =
+  unwords . words . map clean . lower . urlDecode
+  where
+    clean c = if isAlphaNum c then c else ' '
+
 lower :: String -> String
 lower = map toLower
 
@@ -105,5 +115,6 @@ sendJson conn body = do
             ++ show (BL.length body) ++ "\r\n\r\n"
   sendAll conn (BS.pack header)
   sendAll conn (BL.toStrict body)
+
 
 

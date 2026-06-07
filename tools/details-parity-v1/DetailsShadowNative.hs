@@ -1,14 +1,71 @@
-﻿{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings #-}
 
-import Data.Aeson
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Char8 as BS
-import qualified Data.ByteString.Lazy.Char8 as LBS
-import Data.Char
-import Data.List
-import Data.Maybe
-import Network.Socket
-import Network.Socket.ByteString (recv, sendAll)
+import qualified Data.Text as Text
+import qualified Data.ByteString as B
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEncoding
+import Data.Text.Encoding.Error (lenientDecode)
+import Data.Char (digitToInt, isHexDigit, ord)
+import qualified Data.Text.Encoding as TextEncoding
+import qualified Data.ByteString as B
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEncoding
+import Data.Text.Encoding.Error (lenientDecode)
+import Data.Char (digitToInt, isHexDigit, ord)
+import Data.Aeson
+import qualified Data.ByteString as B
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEncoding
+import Data.Text.Encoding.Error (lenientDecode)
+import Data.Char (digitToInt, isHexDigit, ord)
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString as B
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEncoding
+import Data.Text.Encoding.Error (lenientDecode)
+import Data.Char (digitToInt, isHexDigit, ord)
+import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString as B
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEncoding
+import Data.Text.Encoding.Error (lenientDecode)
+import Data.Char (digitToInt, isHexDigit, ord)
+import qualified Data.ByteString.Lazy.Char8 as LBS
+import qualified Data.ByteString as B
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEncoding
+import Data.Text.Encoding.Error (lenientDecode)
+import Data.Char (digitToInt, isHexDigit, ord)
+import Data.Char
+import qualified Data.ByteString as B
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEncoding
+import Data.Text.Encoding.Error (lenientDecode)
+import Data.Char (digitToInt, isHexDigit, ord)
+import Data.List
+import qualified Data.ByteString as B
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEncoding
+import Data.Text.Encoding.Error (lenientDecode)
+import Data.Char (digitToInt, isHexDigit, ord)
+import Data.Maybe
+import qualified Data.ByteString as B
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEncoding
+import Data.Text.Encoding.Error (lenientDecode)
+import Data.Char (digitToInt, isHexDigit, ord)
+import Network.Socket
+import qualified Data.ByteString as B
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEncoding
+import Data.Text.Encoding.Error (lenientDecode)
+import Data.Char (digitToInt, isHexDigit, ord)
+import Network.Socket.ByteString (recv, sendAll)
+import qualified Data.ByteString as B
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEncoding
+import Data.Text.Encoding.Error (lenientDecode)
+import Data.Char (digitToInt, isHexDigit, ord)
 
 data ReqInfo = ReqInfo { rType :: String, rTitle :: String } deriving Show
 data Row = Row { rowReq :: ReqInfo, rowData :: Value } deriving Show
@@ -26,6 +83,17 @@ instance FromJSON Fixture where
   parseJSON = withObject "Fixture" $ \o ->
     Fixture <$> o .:? "results" .!= []
 
+
+decodePathPiece :: String -> String
+decodePathPiece =
+  Text.unpack . TextEncoding.decodeUtf8With lenientDecode . B.pack . go
+  where
+    go [] = []
+    go ('+':xs) = 32 : go xs
+    go ('%':a:b:xs)
+      | isHexDigit a && isHexDigit b =
+          fromIntegral (digitToInt a * 16 + digitToInt b) : go xs
+    go (x:xs) = fromIntegral (ord x) : go xs
 main :: IO ()
 main = withSocketsDo $ do
   raw <- BL.readFile "tools/details-parity-v1/out/haskell-details-fixtures.json"
@@ -70,9 +138,7 @@ findMatch (Fixture rs) url =
   let (pathPart, queryPart) = break (== '?') url
       bits = split '/' pathPart
       typ = if length bits > 3 then bits !! 3 else ""
-      title = case lookup "title" (parseQuery queryPart) of
-        Just t -> t
-        Nothing -> if length bits > 4 then bits !! 4 else ""
+      title = if length bits > 4 then decodePathPiece (bits !! 4) else fromMaybe "" (lookup "title" (parseQuery queryPart))
       clean = lower . urlDecode
       wanted = normTitle title
   in rowData <$> find (\r ->
@@ -115,6 +181,8 @@ sendJson conn body = do
             ++ show (BL.length body) ++ "\r\n\r\n"
   sendAll conn (BS.pack header)
   sendAll conn (BL.toStrict body)
+
+
 
 
 

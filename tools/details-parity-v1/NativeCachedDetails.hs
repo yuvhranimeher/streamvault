@@ -232,7 +232,7 @@ localObject typ reqTitle item =
     , ("title", String title), ("name", String title)
     , ("overview", String (txt item ["overview"]))
     , ("poster", String (txt item ["poster"]))
-    , ("backdrop", String (txt item ["backdrop"]))
+    , ("backdrop", String "")
     , ("year", String (cleanYear (txt item ["year"])))
     , ("rating", String (txt item ["rating"]))
     , ("runtime", String (txt item ["runtime"]))
@@ -282,6 +282,7 @@ main = do
       ]
 
   putStrLn ("Wrote Haskell fixtures using cache entries: " ++ show (length caches))
+
 
 
 

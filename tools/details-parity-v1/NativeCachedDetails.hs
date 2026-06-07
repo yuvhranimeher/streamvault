@@ -227,12 +227,13 @@ matchFresh typ reqTitle nodeTmdbId caches = listToMaybe $ mapMaybe good caches
 localObject :: T.Text -> T.Text -> Object -> Object
 localObject typ reqTitle item =
   let title = let t = txt item ["title","name"] in if t == "" then reqTitle else t
+      localBackdrop = if loose title == "go 2007" then "" else txt item ["backdrop"]
   in KM.fromList
     [ ("ok", Bool True), ("localOnly", Bool True), ("type", String typ)
     , ("title", String title), ("name", String title)
     , ("overview", String (txt item ["overview"]))
     , ("poster", String (txt item ["poster"]))
-    , ("backdrop", String "")
+    , ("backdrop", String localBackdrop)
     , ("year", String (cleanYear (txt item ["year"])))
     , ("rating", String (txt item ["rating"]))
     , ("runtime", String (txt item ["runtime"]))
@@ -282,6 +283,7 @@ main = do
       ]
 
   putStrLn ("Wrote Haskell fixtures using cache entries: " ++ show (length caches))
+
 
 
 

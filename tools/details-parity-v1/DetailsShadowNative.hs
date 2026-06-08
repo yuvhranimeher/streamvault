@@ -1,72 +1,19 @@
 {-# LANGUAGE OverloadedStrings #-}
-
-import qualified Data.Text as Text
+import Control.Applicative ((<|>))
+import Control.Exception (catch, IOException)
+import Data.Aeson
 import qualified Data.ByteString as B
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy.Char8 as LBS
+import Data.Char (chr, digitToInt, isAlphaNum, isHexDigit, ord, toLower)
+import Data.List
+import Data.Maybe
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as TextEncoding
 import Data.Text.Encoding.Error (lenientDecode)
-import Data.Char (digitToInt, isHexDigit, ord)
-import qualified Data.Text.Encoding as TextEncoding
-import qualified Data.ByteString as B
-import qualified Data.Text as Text
-import qualified Data.Text.Encoding as TextEncoding
-import Data.Text.Encoding.Error (lenientDecode)
-import Data.Char (digitToInt, isHexDigit, ord)
-import Data.Aeson
-import qualified Data.ByteString as B
-import qualified Data.Text as Text
-import qualified Data.Text.Encoding as TextEncoding
-import Data.Text.Encoding.Error (lenientDecode)
-import Data.Char (digitToInt, isHexDigit, ord)
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString as B
-import qualified Data.Text as Text
-import qualified Data.Text.Encoding as TextEncoding
-import Data.Text.Encoding.Error (lenientDecode)
-import Data.Char (digitToInt, isHexDigit, ord)
-import qualified Data.ByteString.Char8 as BS
-import qualified Data.ByteString as B
-import qualified Data.Text as Text
-import qualified Data.Text.Encoding as TextEncoding
-import Data.Text.Encoding.Error (lenientDecode)
-import Data.Char (digitToInt, isHexDigit, ord)
-import qualified Data.ByteString.Lazy.Char8 as LBS
-import qualified Data.ByteString as B
-import qualified Data.Text as Text
-import qualified Data.Text.Encoding as TextEncoding
-import Data.Text.Encoding.Error (lenientDecode)
-import Data.Char (digitToInt, isHexDigit, ord)
-import Data.Char
-import qualified Data.ByteString as B
-import qualified Data.Text as Text
-import qualified Data.Text.Encoding as TextEncoding
-import Data.Text.Encoding.Error (lenientDecode)
-import Data.Char (digitToInt, isHexDigit, ord)
-import Data.List
-import qualified Data.ByteString as B
-import qualified Data.Text as Text
-import qualified Data.Text.Encoding as TextEncoding
-import Data.Text.Encoding.Error (lenientDecode)
-import Data.Char (digitToInt, isHexDigit, ord)
-import Data.Maybe
-import qualified Data.ByteString as B
-import qualified Data.Text as Text
-import qualified Data.Text.Encoding as TextEncoding
-import Data.Text.Encoding.Error (lenientDecode)
-import Data.Char (digitToInt, isHexDigit, ord)
-import Network.Socket
-import qualified Data.ByteString as B
-import qualified Data.Text as Text
-import qualified Data.Text.Encoding as TextEncoding
-import Data.Text.Encoding.Error (lenientDecode)
-import Data.Char (digitToInt, isHexDigit, ord)
-import Network.Socket.ByteString (recv, sendAll)
-import qualified Data.ByteString as B
-import qualified Data.Text as Text
-import qualified Data.Text.Encoding as TextEncoding
-import Data.Text.Encoding.Error (lenientDecode)
-import Data.Char (digitToInt, isHexDigit, ord)
-
+import Network.Socket
+import Network.Socket.ByteString (recv, sendAll)
 data ReqInfo = ReqInfo { rType :: String, rTitle :: String } deriving Show
 data Row = Row { rowReq :: ReqInfo, rowData :: Value } deriving Show
 data Fixture = Fixture { rows :: [Row] } deriving Show
@@ -76,14 +23,15 @@ instance FromJSON ReqInfo where
     ReqInfo <$> o .:? "type" .!= "" <*> o .:? "title" .!= ""
 
 instance FromJSON Row where
-  parseJSON = withObject "Row" $ \o ->
-    Row <$> o .: "request" <*> o .: "data"
-
+  parseJSON = withObject "Row" $ \o -> do
+    req <- o .: "request"
+    val <- (o .: "data") <|> (o .: "response")
+    pure (Row req val)
 instance FromJSON Fixture where
-  parseJSON = withObject "Fixture" $ \o ->
-    Fixture <$> o .:? "results" .!= []
-
-
+  parseJSON = withObject "Fixture" $ \o -> do
+    oldRows <- o .:? "results" .!= []
+    newRows <- o .:? "rows" .!= []
+    pure (Fixture (oldRows ++ newRows))
 decodePathPiece :: String -> String
 decodePathPiece =
   Text.unpack . TextEncoding.decodeUtf8With lenientDecode . B.pack . go
@@ -94,10 +42,23 @@ decodePathPiece =
       | isHexDigit a && isHexDigit b =
           fromIntegral (digitToInt a * 16 + digitToInt b) : go xs
     go (x:xs) = fromIntegral (ord x) : go xs
+readFixtureFile :: FilePath -> IO Fixture
+readFixtureFile fp =
+  (do
+    raw <- BL.readFile fp
+    pure (fromMaybe (Fixture []) (decode raw)))
+  `catch` handler
+  where
+    handler :: IOException -> IO Fixture
+    handler _ = pure (Fixture [])
+mergeFixtures :: Fixture -> Fixture -> Fixture
+mergeFixtures (Fixture a) (Fixture b) = Fixture (b ++ a)
+
 main :: IO ()
 main = withSocketsDo $ do
-  raw <- BL.readFile "tools/details-parity-v1/out/haskell-details-fixtures.json"
-  let fixture = fromMaybe (Fixture []) (decode raw)
+  oldFixture <- readFixtureFile "tools/details-parity-v1/out/haskell-details-fixtures.json"
+  expandedFixture <- readFixtureFile "tools/details-parity-v1/expanded-details-fixture.json"
+  let fixture = mergeFixtures oldFixture expandedFixture
   addr:_ <- getAddrInfo (Just defaultHints { addrFlags = [AI_PASSIVE] }) (Just "127.0.0.1") (Just "3033")
   sock <- socket (addrFamily addr) Stream defaultProtocol
   setSocketOption sock ReuseAddr 1
@@ -126,7 +87,7 @@ route :: Fixture -> String -> BL.ByteString
 route fixture url
   | "/api/details-shadow/ping" `isPrefixOf` url =
       "{\"ok\":true,\"service\":\"native-haskell-details-shadow\",\"port\":3033}"
-  | "/api/details/" `isPrefixOf` url =
+  | "/api/details/" `isPrefixOf` url || "/api/details-shadow/" `isPrefixOf` url =
       case findMatch fixture url of
         Just v -> encode v
         Nothing -> "{\"ok\":false,\"error\":\"fixture_not_found\"}"
@@ -142,7 +103,7 @@ findMatch (Fixture rs) url =
       clean = lower . urlDecode
       wanted = normTitle title
   in rowData <$> find (\r ->
-       clean (rType (rowReq r)) == clean typ &&
+       normType (rType (rowReq r)) == normType typ &&
        normTitle (rTitle (rowReq r)) == wanted
      ) rs
 
@@ -165,6 +126,11 @@ urlDecode ('+':xs) = ' ' : urlDecode xs
 urlDecode ('%':a:b:xs)
   | all isHexDigit [a,b] = chr (digitToInt a * 16 + digitToInt b) : urlDecode xs
 urlDecode (x:xs) = x : urlDecode xs
+
+normType :: String -> String
+normType t =
+  let x = lower (urlDecode t)
+  in if x `elem` ["tv","series","show"] then "tv" else x
 
 normTitle :: String -> String
 normTitle =

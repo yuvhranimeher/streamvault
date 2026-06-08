@@ -24,3 +24,8 @@ sv-build-home-sections-v5.js
 dist-newstyle/
 *.bak*
 
+
+# Details parity generated outputs
+tools/details-parity-v1/out/
+tools/details-parity-v1/*.tmp
+tools/details-parity-v1/*-tmp.json

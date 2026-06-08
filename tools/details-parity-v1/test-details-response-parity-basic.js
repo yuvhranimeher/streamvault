@@ -1,7 +1,7 @@
 ﻿const fs = require("fs");
 const path = require("path");
 
-const fixture = path.join("tools", "details-parity-v1", "expanded-details-fixture.json");
+const fixture = process.argv[2] || path.join("tools", "details-parity-v1", "expanded-details-fixture.json");
 const rows = JSON.parse(fs.readFileSync(fixture, "utf8"));
 
 let bad = 0;
@@ -9,13 +9,11 @@ let checked = 0;
 
 function clean(v){ return String(v ?? "").trim(); }
 
-for (const r of rows) {
-  checked++;
-
-  const response = {
-    ok: true,
-    status: r.status,
-    type: r.type,
+function buildResponse(r){
+  return {
+    ok: r.status === "hit",
+    status: clean(r.status),
+    type: clean(r.type),
     title: clean(r.title || r.name),
     name: clean(r.name || r.title),
     year: clean(r.year),
@@ -28,14 +26,24 @@ for (const r of rows) {
     overview: clean(r.overview),
     streamUrl: clean(r.streamUrl)
   };
+}
 
-  const required = ["ok","status","type","title","name","year","poster","overview","streamUrl"];
+const required = ["ok","status","type","title","name","year","poster","overview","streamUrl"];
+
+for (const r of rows) {
+  checked++;
+  const response = buildResponse(r);
 
   for (const k of required) {
     if (!(k in response)) {
       console.error("RESPONSE_PARITY_FAIL missing field:", k, r.key);
       bad++;
     }
+  }
+
+  if (typeof response.ok !== "boolean") {
+    console.error("RESPONSE_PARITY_FAIL ok must be boolean:", r.key);
+    bad++;
   }
 
   if (response.status === "hit" && !response.title) {

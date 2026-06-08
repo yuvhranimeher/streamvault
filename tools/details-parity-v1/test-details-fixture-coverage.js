@@ -1,10 +1,9 @@
 ﻿const fs = require("fs");
 const path = require("path");
 
-const fixture = path.join("tools", "details-parity-v1", "expanded-details-fixture.json");
+const fixture = process.argv[2] || path.join("tools", "details-parity-v1", "expanded-details-fixture.json");
 const rows = JSON.parse(fs.readFileSync(fixture, "utf8"));
 
-const types = new Set(rows.map(r => r.type));
 const requiredFields = ["key","status","type","title","name","year","rating","genre","runtime","language","poster","backdrop","overview","streamUrl"];
 
 let bad = 0;

@@ -1,6 +1,6 @@
 ﻿$ErrorActionPreference = "Stop"
 
-$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "....")
+$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $repoRoot
 
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"

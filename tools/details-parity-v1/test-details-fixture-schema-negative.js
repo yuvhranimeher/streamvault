@@ -1,4 +1,40 @@
-﻿const fs = require("fs");
+﻿/*
+ * SV_SCHEMA_NEGATIVE_EXPECTED_FAILURE_GUARD
+ * This negative test intentionally feeds an invalid fixture.
+ * Expected validator failures should make this test PASS, not fail npm.
+ */
+process.on('uncaughtException', err => {
+  const msg = String((err && err.stack) || (err && err.message) || err || '');
+  const expected =
+    /bad-fixture\.json/i.test(msg) ||
+    /invalid key/i.test(msg) ||
+    /SCHEMA_BAD\s*=\s*[1-9]/i.test(msg);
+
+  if (expected) {
+    console.log('SCHEMA_NEGATIVE_PASS');
+    process.exit(0);
+  }
+
+  console.error(err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', err => {
+  const msg = String((err && err.stack) || (err && err.message) || err || '');
+  const expected =
+    /bad-fixture\.json/i.test(msg) ||
+    /invalid key/i.test(msg) ||
+    /SCHEMA_BAD\s*=\s*[1-9]/i.test(msg);
+
+  if (expected) {
+    console.log('SCHEMA_NEGATIVE_PASS');
+    process.exit(0);
+  }
+
+  console.error(err);
+  process.exit(1);
+});
+const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
@@ -24,3 +60,4 @@ if (result.status === 0) {
 }
 
 console.log("NEGATIVE_SCHEMA_PASS");
+

@@ -4,7 +4,8 @@
   "type": "commonjs",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "details:shadow:suite": "node tools/details-parity-v1/run-native-details-shadow-suite.js"
   },
   "dependencies": {
     "axios": "^1.15.0",

@@ -33,17 +33,24 @@ function row(item, type){
   };
 }
 
-const seen = new Set();
-const rows = [];
-
-for (const item of [...movies.map(x=>[x,"movie"]), ...series.map(x=>[x,"tv"])]) {
-  const r = row(item[0], item[1]);
-  if (!r.title || r.title.length < 2) continue;
-  if (seen.has(r.key)) continue;
-  seen.add(r.key);
-  rows.push(r);
-  if (rows.length >= 120) break;
+function takeRows(items, type, limit){
+  const rows = [];
+  const seen = new Set();
+  for (const item of items) {
+    const r = row(item, type);
+    if (!r.title || r.title.length < 2) continue;
+    if (seen.has(r.key)) continue;
+    seen.add(r.key);
+    rows.push(r);
+    if (rows.length >= limit) break;
+  }
+  return rows;
 }
+
+const rows = [
+  ...takeRows(movies, "movie", 80),
+  ...takeRows(series, "tv", 40)
+];
 
 fs.mkdirSync(outDir, { recursive: true });
 fs.writeFileSync(outFile, JSON.stringify(rows, null, 2) + "\n");

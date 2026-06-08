@@ -6,8 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "details:shadow:audit": "node tools/details-parity-v1/audit-details-fixtures.js",
+    "details:shadow:schema": "node tools/details-parity-v1/validate-details-fixture-schema.js",
     "details:shadow:suite": "node tools/details-parity-v1/test-native-details-shadow.js",
-    "details:shadow:all": "npm run details:shadow:audit && npm run details:shadow:suite"
+    "details:shadow:all": "npm run details:shadow:audit && npm run details:shadow:schema && npm run details:shadow:suite"
   },
   "dependencies": {
     "axios": "^1.15.0",

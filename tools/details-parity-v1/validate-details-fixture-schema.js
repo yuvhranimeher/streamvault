@@ -1,10 +1,12 @@
 ﻿const fs = require("fs");
 const path = require("path");
 
-const fixtureFiles = [
+const defaultFixtureFiles = [
   path.join("tools", "details-parity-v1", "out", "haskell-details-fixtures.json"),
   path.join("tools", "details-parity-v1", "expanded-details-fixture.json")
 ];
+
+const fixtureFiles = process.argv.slice(2).length ? process.argv.slice(2) : defaultFixtureFiles;
 
 const allowedTypes = new Set(["movie", "tv", "series"]);
 const allowedStatus = new Set(["hit", "miss"]);
@@ -22,16 +24,16 @@ for (const file of fixtureFiles) {
   const rows = JSON.parse(fs.readFileSync(file, "utf8"));
   if (!Array.isArray(rows)) {
     bad++;
-    problems.push(`${file}: fixture root must be an array`);
+    problems.push(file + ": fixture root must be an array");
     continue;
   }
 
   rows.forEach((r, i) => {
     total++;
-    const prefix = `${file}[${i}]`;
+    const prefix = file + "[" + i + "]";
 
     if (!r || typeof r !== "object" || Array.isArray(r)) {
-      bad++; problems.push(`${prefix}: row must be object`); return;
+      bad++; problems.push(prefix + ": row must be object"); return;
     }
 
     const title = r.title || r.name;
@@ -46,26 +48,26 @@ for (const file of fixtureFiles) {
     for (const [field, ok] of checks) {
       if (!ok) {
         bad++;
-        problems.push(`${prefix}: invalid ${field}`);
+        problems.push(prefix + ": invalid " + field);
       }
     }
 
     if (r.status === "hit") {
       if (!hasText(r.year)) {
         bad++;
-        problems.push(`${prefix}: hit row missing year`);
+        problems.push(prefix + ": hit row missing year");
       }
       if ("poster" in r && !isString(r.poster)) {
         bad++;
-        problems.push(`${prefix}: poster must be string`);
+        problems.push(prefix + ": poster must be string");
       }
       if ("backdrop" in r && !isString(r.backdrop)) {
         bad++;
-        problems.push(`${prefix}: backdrop must be string`);
+        problems.push(prefix + ": backdrop must be string");
       }
       if ("overview" in r && !isString(r.overview)) {
         bad++;
-        problems.push(`${prefix}: overview must be string`);
+        problems.push(prefix + ": overview must be string");
       }
     }
   });
@@ -74,11 +76,9 @@ for (const file of fixtureFiles) {
 console.log("SCHEMA_TOTAL=" + total);
 console.log("SCHEMA_BAD=" + bad);
 
-if (problems.length) {
-  console.error(problems.slice(0, 25).join("\n"));
-}
+if (problems.length) console.error(problems.slice(0, 25).join("\n"));
 
-if (total < 100) {
+if (total < 100 && fixtureFiles.length === defaultFixtureFiles.length) {
   console.error("SCHEMA_FAIL: expected at least 100 rows");
   process.exit(1);
 }

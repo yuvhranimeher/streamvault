@@ -1,10 +1,13 @@
-{
+﻿{
   "name": "streamvault",
   "version": "1.0.0",
   "type": "commonjs",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "details:shadow:audit": "node tools/details-parity-v1/audit-details-fixtures.js",
+    "details:shadow:suite": "node tools/details-parity-v1/test-native-details-shadow.js",
+    "details:shadow:all": "npm run details:shadow:audit && npm run details:shadow:suite"
   },
   "dependencies": {
     "axios": "^1.15.0",

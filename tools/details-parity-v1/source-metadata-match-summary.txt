@@ -1,0 +1,11 @@
+﻿Status: source metadata matcher dry-run only
+Runtime/frontend/playback files changed: no
+expanded-details-fixture.json mutated: no
+
+fixture rows: 0
+source candidates: 0
+useful source candidates: 0
+
+Decision:
+Source metadata exists, but exact fixture matching still needs a safer matcher runner.
+Next task should move matcher into npm script/test or implement guarded enrichment directly.

@@ -1,0 +1,641 @@
+{
+  "generatedAt": "2026-06-09T06:55:38.466Z",
+  "scannedFiles": 6,
+  "scannedObjects": 480,
+  "unreadableFiles": [
+    {
+      "file": "C:\\Users\\Mac Mini\\Desktop\\Website Host\\Streaming_Website\\streamvault\\tools\\details-parity-v1\\out\\fixture-enrichment-candidates-8m.json",
+      "error": "Unexpected token '﻿', \"﻿[]\r\n\" is not valid JSON"
+    },
+    {
+      "file": "C:\\Users\\Mac Mini\\Desktop\\Website Host\\Streaming_Website\\streamvault\\tools\\details-parity-v1\\source-metadata-match-report.json",
+      "error": "Unexpected token '﻿', \"﻿{\"status\"\"... is not valid JSON"
+    }
+  ],
+  "suspicious": [
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "80",
+      "title": "A Knight of the Seven Kingdoms (TV Series 2026– ) 1080p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "81",
+      "title": "Agatha Christie's Seven Dials (TV Series 2026– ) 720p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "82",
+      "title": "Agent from Above (TV Series 2026– ) 720p [Multi Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "83",
+      "title": "Daldal (TV Series 2026– ) 1080p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "84",
+      "title": "Detective Hole (TV Series 2026– ) 720p [Multi Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "85",
+      "title": "His & Hers (TV Mini Series 2026) 1080p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "86",
+      "title": "Marshals (TV Series 2026– ) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "87",
+      "title": "North of North (TV Series 2025– ) 720p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "88",
+      "title": "Ponies (TV Series 2026– ) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "89",
+      "title": "Run Away (TV Mini Series 2026) 720p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "90",
+      "title": "Star Trek-Starfleet Academy (TV Series 2026– ) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "91",
+      "title": "Taskaree-The Smuggler's Web (TV Series 2026– ) 1080p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "92",
+      "title": "The Madison (TV Series 2026– ) 1080p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "93",
+      "title": "The Pendragon Cycle-Rise of the Merlin (TV Series 2026– ) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "94",
+      "title": "Unfamiliar (TV Series 2026– ) 720p [Multi Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "95",
+      "title": "Wonder Man (TV Mini Series 2026) 1080p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "96",
+      "title": "Young Sherlock (TV Series 2026– ) 1080p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "98",
+      "title": "13th-Some Lessons Aren't Taught in Classrooms (TV Series 2025– ) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "99",
+      "title": "Adolescence (TV Mini Series 2025) 1080p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "100",
+      "title": "Alien-Earth (TV Series 2025– ) 1080p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "101",
+      "title": "American Primeval (TV Mini Series 2025) 1080p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "102",
+      "title": "Andhera (TV Series 2025– ) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "103",
+      "title": "Apple Cider Vinegar (TV Mini Series 2025) 720p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "104",
+      "title": "Bada Naam Karenge (TV Series 2025– ) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "105",
+      "title": "Bakaiti (TV Series 2025) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "106",
+      "title": "Ballard (TV Series 2025– ) 1080p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "107",
+      "title": "Bhay-The Gaurav Tiwari Mystery (TV Series 2025– ) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "108",
+      "title": "Billionaires' Bunker (TV Series 2025) 720p [Multi Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "109",
+      "title": "Black Rabbit (TV Mini Series 2025) 720p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "110",
+      "title": "Black Warrant (TV Series 2025– ) 1080p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "111",
+      "title": "Black, White & Gray-Love Kills (TV Series 2025– ) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "112",
+      "title": "Butterfly (TV Series 2025– ) 720p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "113",
+      "title": "Carême (TV Series 2025– ) 720p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "114",
+      "title": "Cassandra (TV Series 2025) 720p [Multi Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "115",
+      "title": "Chief of War (TV Mini Series 2025– ) 1080p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "116",
+      "title": "City of Shadows (TV Mini Series 2025) 720p [Multi Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "117",
+      "title": "Countdown (TV Series 2025– ) 720p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "118",
+      "title": "Criminal Justice-A Family Matter (TV Series 2025– ) 1080p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\expanded-details-fixture.json",
+      "key": "119",
+      "title": "Dabba Cartel (TV Series 2025– ) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "80",
+      "title": "A Knight of the Seven Kingdoms (TV Series 2026– ) 1080p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "81",
+      "title": "Agatha Christie's Seven Dials (TV Series 2026– ) 720p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "82",
+      "title": "Agent from Above (TV Series 2026– ) 720p [Multi Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "83",
+      "title": "Daldal (TV Series 2026– ) 1080p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "84",
+      "title": "Detective Hole (TV Series 2026– ) 720p [Multi Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "85",
+      "title": "His & Hers (TV Mini Series 2026) 1080p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "86",
+      "title": "Marshals (TV Series 2026– ) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "87",
+      "title": "North of North (TV Series 2025– ) 720p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "88",
+      "title": "Ponies (TV Series 2026– ) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "89",
+      "title": "Run Away (TV Mini Series 2026) 720p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "90",
+      "title": "Star Trek-Starfleet Academy (TV Series 2026– ) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "91",
+      "title": "Taskaree-The Smuggler's Web (TV Series 2026– ) 1080p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "92",
+      "title": "The Madison (TV Series 2026– ) 1080p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "93",
+      "title": "The Pendragon Cycle-Rise of the Merlin (TV Series 2026– ) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "94",
+      "title": "Unfamiliar (TV Series 2026– ) 720p [Multi Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "95",
+      "title": "Wonder Man (TV Mini Series 2026) 1080p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "96",
+      "title": "Young Sherlock (TV Series 2026– ) 1080p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "98",
+      "title": "13th-Some Lessons Aren't Taught in Classrooms (TV Series 2025– ) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "99",
+      "title": "Adolescence (TV Mini Series 2025) 1080p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "100",
+      "title": "Alien-Earth (TV Series 2025– ) 1080p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "101",
+      "title": "American Primeval (TV Mini Series 2025) 1080p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "102",
+      "title": "Andhera (TV Series 2025– ) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "103",
+      "title": "Apple Cider Vinegar (TV Mini Series 2025) 720p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "104",
+      "title": "Bada Naam Karenge (TV Series 2025– ) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "105",
+      "title": "Bakaiti (TV Series 2025) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "106",
+      "title": "Ballard (TV Series 2025– ) 1080p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "107",
+      "title": "Bhay-The Gaurav Tiwari Mystery (TV Series 2025– ) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "108",
+      "title": "Billionaires' Bunker (TV Series 2025) 720p [Multi Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "109",
+      "title": "Black Rabbit (TV Mini Series 2025) 720p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "110",
+      "title": "Black Warrant (TV Series 2025– ) 1080p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "111",
+      "title": "Black, White & Gray-Love Kills (TV Series 2025– ) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "112",
+      "title": "Butterfly (TV Series 2025– ) 720p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "113",
+      "title": "Carême (TV Series 2025– ) 720p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "114",
+      "title": "Cassandra (TV Series 2025) 720p [Multi Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "115",
+      "title": "Chief of War (TV Mini Series 2025– ) 1080p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "116",
+      "title": "City of Shadows (TV Mini Series 2025) 720p [Multi Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "117",
+      "title": "Countdown (TV Series 2025– ) 720p [Dual Audio]",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "118",
+      "title": "Criminal Justice-A Family Matter (TV Series 2025– ) 1080p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    },
+    {
+      "file": "tools\\details-parity-v1\\out\\details-route-snapshot.json",
+      "key": "119",
+      "title": "Dabba Cartel (TV Series 2025– ) 720p",
+      "issues": [
+        "title_contains_release_junk"
+      ]
+    }
+  ]
+}

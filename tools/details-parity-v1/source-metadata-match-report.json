@@ -1,1 +1,9 @@
-﻿{"status":"fallback report created","note":"node did not emit report"}
+﻿{
+    "status":  "source metadata matcher dry-run only",
+    "runtimeFrontendPlaybackFilesChanged":  false,
+    "expandedDetailsFixtureMutated":  false,
+    "fixtureRows":  0,
+    "sourceCandidates":  0,
+    "usefulSourceCandidates":  0,
+    "note":  "PowerShell-generated because local Node execution did not emit report."
+}

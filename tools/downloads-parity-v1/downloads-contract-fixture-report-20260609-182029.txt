@@ -1,0 +1,18 @@
+﻿=== DOWNLOADS CONTRACT FIXTURE REPORT ===
+DATE=2026-06-09 18:20:33
+WORK_BRANCH=haskell-downloads-contract-fixture-20260609-182029
+BASE_BRANCH=haskell-downloads-api-audit-20260609-172350
+MASTER_LEFT_AT=0f9bec0dd6c87fab550968fea1bb9507c98e59cd
+HEAD=7836c2b92a933d434aacbf19ae01c01481971235
+MASTER_NOT_TOUCHED=YES
+
+
+============================================================
+RUN: build downloads fixture
+CMD: node tools\downloads-parity-v1\build-downloads-fixture.js
+============================================================
+DOWNLOADS_FIXTURE_TOTAL=0
+DOWNLOADS_FIXTURE_ROWS=0
+DOWNLOADS_FIXTURE_SOURCES=0
+DOWNLOADS_FIXTURE_EMPTY
+EXIT_CODE=1

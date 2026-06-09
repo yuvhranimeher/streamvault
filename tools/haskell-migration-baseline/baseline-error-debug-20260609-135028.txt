@@ -1,0 +1,56 @@
+﻿=== HASKELL BASELINE ERROR DEBUG ===
+DATE=2026-06-09 13:50:32
+WORK_BRANCH=haskell-baseline-error-debug-20260609-135028
+BASE_BRANCH=haskell-migration-baseline-audit-20260609-133901
+HEAD=e02c88dbc78628df43883a0eb8fdf974ebce51b3
+
+=== GIT STATUS ===
+?? tools/haskell-migration-baseline/baseline-error-debug-20260609-135028.txt
+
+=== CABAL FILES ===
+
+Name                              Length LastWriteTime      
+----                              ------ -------------      
+cabal.project                         13 08/06/2026 16:38:54
+streamvault-haskell-backend.cabal   1139 09/06/2026 13:15:56
+
+
+
+
+=== PACKAGE FILES ===
+
+Name              Length LastWriteTime      
+----              ------ -------------      
+package.json        1774 09/06/2026 12:57:08
+package-lock.json  46568 22/05/2026 22:01:34
+
+
+
+
+============================================================
+RUN: node snapshot test full error
+============================================================
+POWERSHELL_ERROR=node:internal/modules/cjs/loader:1210
+EXIT_CODE=-1
+
+============================================================
+RUN: cabal build all full error
+============================================================
+POWERSHELL_ERROR=Configuration is affected by the following files:
+EXIT_CODE=-1
+
+=== TRY CABAL CLEAN THEN BUILD ===
+
+============================================================
+RUN: cabal clean
+============================================================
+EXIT_CODE=0
+
+============================================================
+RUN: cabal build all after clean
+============================================================
+POWERSHELL_ERROR=Configuration is affected by the following files:
+EXIT_CODE=-1
+
+=== FINAL STATUS ===
+?? tools/haskell-migration-baseline/baseline-error-debug-20260609-135028.txt

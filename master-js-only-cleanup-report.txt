@@ -1,0 +1,17 @@
+﻿MASTER_JS_ONLY_CLEANUP_REPORT
+BRANCH=restore-master-js-only-no-haskell-20260609-130812
+BASE_MASTER_BEFORE_CLEANUP=1d25cf02a191a50eb25c90782ba979357a219f2c
+INITIAL_COMMIT=78ca86ca045bf8796cac74a893c1f5c691b538a4
+
+RESTORED:
+public/index.html from initial commit
+
+REMOVED:
+app/
+streamvault-haskell-backend.cabal
+tools/details-parity-v1/
+tools/haskell-*/
+
+NOTE:
+This branch removes Haskell pollution from master content.
+Original JS files remain in public/.

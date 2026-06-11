@@ -1,0 +1,92 @@
+BRANCH=haskell-next-parity-batch-20260612-001656
+BASE=master
+DATE=2026-06-12
+MODE=read-only migration status audit
+
+=== MASTER BASELINE ===
+origin/master was pulled before this branch was created and was already up to date.
+Current master contains the production JavaScript runtime files and cabal.project.
+Current master does not contain app/ or tools/ Haskell migration directories.
+No runtime server, frontend playback, package, or dependency behavior was changed.
+
+=== CURRENT MASTER FILE SIGNALS ===
+JS runtime entrypoints:
+- server.js
+- public/app.js
+- public/boot.js
+- public/details.js
+- public/home.js
+- public/livetv.js
+- public/player.js
+
+Data/config inputs:
+- catalog.json
+- section-catalog.json
+- channels.json
+- detail-cache.json
+- episode-title-cache.json
+- poster-cache.json
+
+Haskell package signal:
+- cabal.project exists
+- streamvault-haskell-backend.cabal is not present on master
+- app/CatalogApi.hs and app/Main.hs are not present on master
+
+=== COMPLETED PARITY AREAS ON TOPIC BRANCHES ===
+downloads:
+- origin/haskell-downloads-api-audit-20260609-172350
+- origin/haskell-downloads-contract-fixture-20260609-182029
+- Status: audit and contract-fixture artifacts exist on topic branches.
+
+movies:
+- origin/haskell-movies-api-audit-clean-20260610-115824
+- origin/haskell-movies-contract-fixture-20260610-120142
+- origin/haskell-movies-route-readiness-audit-20260610-132901
+- origin/haskell-movies-shadow-pager-20260610-152423
+- Status: API audit, fixture, route-readiness, and shadow-pager artifacts exist on topic branches.
+
+home-feed:
+- origin/haskell-home-feed-api-audit-20260610-170229
+- origin/haskell-home-feed-contract-fixture-20260610-170751
+- origin/haskell-home-feed-route-readiness-audit-20260610-180550
+- origin/haskell-home-feed-shadow-pager-20260610-180836
+- Status: API audit, fixture, route-readiness, and shadow-pager artifacts exist on topic branches.
+
+series:
+- origin/haskell-series-api-audit-20260610-181146
+- origin/haskell-series-contract-fixture-20260610-181514
+- origin/haskell-series-contract-reader-ghc-20260610-181838
+- origin/haskell-series-route-readiness-audit-20260610-194808
+- origin/haskell-series-shadow-pager-20260610-214325
+- origin/haskell-series-shadow-pager-gate-20260610-222257
+- Status: API audit, fixture, reader, route-readiness, shadow-pager, and smoke gate artifacts exist on topic branches.
+
+search:
+- origin/haskell-search-api-audit-20260610-222434
+- origin/haskell-search-shadow-reader-20260610-222610
+- origin/haskell-search-shadow-reader-gate-20260610-222904
+- Status: API audit, shadow reader, and smoke gate artifacts exist on topic branches.
+
+sections:
+- origin/haskell-sections-api-audit-20260610-223050
+- origin/haskell-sections-shadow-classifier-20260610-223224
+- Status: API audit and corrected section classifier contract artifacts exist on topic branches.
+
+=== NEXT SAFE GAPS ===
+details/TMDB:
+- Current package.json references details parity scripts, but tools/details-parity-v1 is not present on master.
+- Existing details/TMDB work appears branch-scoped under haskell-details-* and test-haskell-details-* branches.
+- Next safe step: add a read-only details parity readiness gate on this batch branch that checks the current JS details contract inputs and records missing branch-scoped tooling without changing production routes.
+
+live TV:
+- channels.json, public/livetv.js, and server.js are present on master.
+- No Haskell live TV route/audit folder is present on master.
+- Next safe step: add a read-only live TV contract audit for channel identity/display/url fields.
+
+playback planning:
+- public/player.js, public/app.js, public/boot.js, and server.js are present on master.
+- Playback migration must preserve desktop direct-play of original FTP URLs and mobile HLS only when required.
+- Next safe step: add a read-only playback readiness report; do not modify production playback routes.
+
+=== PHASE 1 RESULT ===
+PASS

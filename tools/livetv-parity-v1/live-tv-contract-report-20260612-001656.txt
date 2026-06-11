@@ -1,0 +1,13 @@
+Status: PASS
+mode: read-only live TV channel contract audit
+server_started: no
+stream_urls_modified: no
+channel_count: 15
+url_count: 15
+missing_logo_count: 15
+category_count: 5
+categories: {'Entertainment': 3, 'Kids': 1, 'Movies': 1, 'News': 7, 'Sports': 3}
+failures: []
+warnings: []
+logo_contract: optional; current frontend uses initials when logo is absent
+url_contract: required for playable live channels and preserved verbatim

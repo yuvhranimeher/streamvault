@@ -1,0 +1,50 @@
+Status: PASS
+mode: read-only details/TMDB readiness gate
+server_started: no
+tmdb_network_calls: no
+node_available: false
+ghc_available: false
+cabal_available: false
+details_package_scripts: 11
+missing_package_script_targets: 10
+details_topic_branches_seen: 44
+missing_server_tokens: []
+missing_response_fields: []
+missing_frontend_tokens: []
+next_safe_gap: package.json references details parity gates, but master does not carry those tools; keep adding read-only contract gates before route changes.
+missing_package_script_target_list:
+- details:shadow:audit -> tools/details-parity-v1/audit-details-fixtures.js
+- details:shadow:schema -> tools/details-parity-v1/validate-details-fixture-schema.js
+- details:shadow:schema:negative -> tools/details-parity-v1/test-details-fixture-schema-negative.js
+- details:shadow:fixture:determinism -> tools/details-parity-v1/test-details-fixture-builder-determinism.js
+- details:shadow:fixture:coverage -> tools/details-parity-v1/test-details-fixture-coverage.js
+- details:shadow:fixture:coverage:negative -> tools/details-parity-v1/test-details-fixture-coverage-negative.js
+- details:shadow:suite -> tools/details-parity-v1/test-native-details-shadow.js
+- details:shadow:fixture:gaps -> tools/details-parity-v1/audit-details-fixture-gaps.js
+- details:shadow:all:pssafe -> tools/details-parity-v1/run-details-shadow-all-powershell-safe.ps1
+- details:shadow:summary -> tools/details-parity-v1/summarize-details-shadow-output.js
+details_topic_branch_list:
+- haskell-details-7f-response-contract
+- haskell-details-7f-response-snapshot
+- haskell-details-7o-clean-fixture-sanity-gate-20260609-125536
+- haskell-details-8a-poster-cache-metadata-inventory-20260608-231547
+- haskell-details-8n-source-metadata-dryrun-20260609-112028
+- haskell-details-8o-source-report-gate-20260609-120024
+- haskell-details-8p-fixture-shape-audit-20260609-124609
+- haskell-details-8p-fixture-shape-audit-20260609-124643
+- haskell-details-8p-fixture-shape-audit-20260609-124744
+- haskell-details-8p-fixture-shape-audit-20260609-124819
+- haskell-details-cache-miss-shadow
+- haskell-details-expanded-parity
+- haskell-details-shadow-hardening
+- test-haskell-details-cache-key-scanner
+- test-haskell-details-cache-lookup-v2-fast
+- test-haskell-details-cache-reader
+- test-haskell-details-catalog-cache-mapper
+- test-haskell-details-catalog-cache-mapper-v2
+- test-haskell-details-catalog-cache-mapper-v3
+- test-haskell-details-tmdb-audit-v2
+- test-haskell-details-tmdb-contract
+- test-haskell-details-tmdb-scaffold
+- remotes/origin/haskell-details-7f-response-contract
+- remotes/origin/haskell-details-7f-response-snapshot

@@ -1,0 +1,20 @@
+Status: PASS
+mode: read-only playback migration readiness audit
+server_started: no
+media_sources_called: no
+production_playback_routes_changed: no
+desktop_direct_play_original_ftp: preserve
+mobile_hls_only_when_required: preserve
+automatic_desktop_transcoding: forbidden
+desktop_extra_audio_track_transcoding: forbidden
+runtime_change_scope: none; audit/report only
+node_available: false
+ghc_available: false
+cabal_available: false
+missing_frontend_tokens: []
+missing_server_tokens: []
+migration_notes:
+- Haskell playback planning must not force desktop FTP URLs through HLS or FFmpeg.
+- Desktop should keep original FTP/HTTP media via raw/proxy direct-play paths.
+- Mobile may use HLS/remux/transcode only when browser compatibility requires it.
+- Live TV playlist and segment proxy behavior is out of scope for route changes in this batch.

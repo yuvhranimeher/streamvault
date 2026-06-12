@@ -1,0 +1,50 @@
+Status: PASS
+mode: read-only Haskell playback planner contract report
+server_started: no
+media_sources_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+
+fixture_source:
+- tools/playback-parity-v1/playback-planner-fixtures.json
+
+schema_source:
+- tools/playback-parity-v1/playback_planner_fixture_schema.py
+
+fixture_cases:
+- desktop_movie_direct_ftp: expected valid; desktop movie; streamUrl present; playbackMode direct; requiresTranscode false; shouldUseFfmpeg false.
+- mobile_movie_hls_required: expected valid; mobile movie; streamUrl present; playbackMode hls; requiresTranscode true; shouldUseFfmpeg true for mobile compatibility HLS only.
+- series_episode_direct: expected valid; desktop series episode; streamUrl present; playbackMode direct; requiresTranscode false; shouldUseFfmpeg false.
+- live_tv_hls_m3u8: expected valid; live source; streamUrl is .m3u8; playbackMode live; requiresTranscode false; shouldUseFfmpeg false.
+- invalid_missing_streamUrl: expected invalid; missing streamUrl; expectedFailureBucket missing_streamUrl.
+
+required_shadow_output_fields:
+- inputId or fixture name
+- sourceType
+- clientType
+- playbackMode
+- requiresTranscode
+- shouldUseFfmpeg
+- streamUrl
+- reason
+- ok
+
+planner_decision_contract:
+- Missing streamUrl must produce ok=false and playbackMode=invalid.
+- Live sources with .m3u8 should produce ok=true and playbackMode=live.
+- Mobile movie fixture requiring HLS should produce ok=true, playbackMode=hls, requiresTranscode=true, shouldUseFfmpeg=true.
+- Desktop movie with streamUrl should produce ok=true, playbackMode=direct, requiresTranscode=false, shouldUseFfmpeg=false.
+- Desktop series episode with streamUrl should produce ok=true, playbackMode=direct, requiresTranscode=false, shouldUseFfmpeg=false.
+
+absolute_safety_rules:
+- Do not start Node or any HTTP server.
+- Do not add HTTP playback routes.
+- Do not call FTP, HTTP, live, or poster URLs.
+- Do not run FFmpeg.
+- Do not modify public/app.js, server.js, live TV routes, playback APIs, package files, or production runtime behavior.
+- Preserve desktop direct-play original FTP.
+- Preserve mobile HLS only when required.
+- Preserve no automatic desktop transcoding.
+
+phase_1_result:
+- PASS

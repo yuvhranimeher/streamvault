@@ -1,0 +1,23 @@
+Status: PASS
+mode: read-only playback shadow planner parity gate
+server_started: no
+media_sources_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+ghc_available: false
+compiled_validation: skipped: ghc unavailable
+expected_output_compare: skipped: expected output fixture not present
+fixture_count: 5
+missing_source_tokens: []
+forbidden_source_tokens: []
+fixture_failures: []
+compiled_failures: []
+output_failures: []
+expected_compare_failures: []
+expected_decisions:
+- desktop_movie_direct_ftp: playbackMode=direct ok=True requiresTranscode=False shouldUseFfmpeg=False
+- mobile_movie_hls_required: playbackMode=hls ok=True requiresTranscode=True shouldUseFfmpeg=True
+- series_episode_direct: playbackMode=direct ok=True requiresTranscode=False shouldUseFfmpeg=False
+- live_tv_hls_m3u8: playbackMode=live ok=True requiresTranscode=False shouldUseFfmpeg=False
+- invalid_missing_streamUrl: playbackMode=invalid ok=False requiresTranscode=False shouldUseFfmpeg=False
+failure_summary: []

@@ -1,71 +1,3 @@
-Status: PASS
-mode: read-only playback shadow review pack runner
-server_started: no
-network_called: no
-ffmpeg_started: no
-runtime_playback_changed: no
-active_routes_added: no
-command_count: 3
-failed_commands: []
-command_summary:
-- playback_shadow_ci: exit_code=0 Status: PASS
-- workflow_safety_audit: exit_code=0 Status: PASS
-- pr_summary: exit_code=0 Status: PASS
-
-[playback_shadow_ci]
-exit_code: 0
-stdout:
-report_path: tools/playback-parity-v1/playback-shadow-ci-report-20260612-194737.txt
-Status: PASS
-mode: read-only playback shadow local CI runner
-server_started: no
-network_called: no
-ffmpeg_started: no
-runtime_playback_changed: no
-active_routes_added: no
-gate_count: 8
-failed_gates: []
-gate_summary:
-- planner_fixture_schema: exit_code=0 Status: PASS
-- shadow_planner_gate: exit_code=0 Status: PASS
-- js_vs_haskell_shadow_compare: exit_code=0 Status: PASS
-- route_inventory_schema_gate: exit_code=0 Status: PASS
-- route_fixture_schema_gate: exit_code=0 Status: PASS
-- route_contract_crosscheck: exit_code=0 Status: PASS
-- route_contract_js_vs_hs_compare: exit_code=0 Status: PASS
-- route_shadow_full_gate: exit_code=0 Status: PASS
-stderr:
-(empty)
-
-[workflow_safety_audit]
-exit_code: 0
-stdout:
-report_path: tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-194737.txt
-Status: PASS
-mode: read-only playback shadow workflow safety audit
-server_started: no
-network_called: no
-ffmpeg_started: no
-runtime_playback_changed: no
-active_routes_added: no
-workflow_path: .github/workflows/playback-shadow-ci.yml
-triggers: ['pull_request', 'workflow_dispatch']
-required_permissions: contents: read
-workflow_must_not_deploy: true
-workflow_must_not_start_server: true
-workflow_must_not_use_secrets: true
-upload_artifact_allowed: true
-github_step_summary_allowed: true
-pr_comments_avoided: true
-forbidden_hits: {}
-failures: []
-stderr:
-(empty)
-
-[pr_summary]
-exit_code: 0
-stdout:
-report_path: tools/playback-parity-v1/playback-shadow-pr-summary-20260612-194737.md
 # Playback Shadow PR Summary
 
 Status: PASS
@@ -73,8 +5,8 @@ Status: PASS
 ## Branch Context
 
 - Base branch: `haskell-playback-shadow-github-actions-20260612-190632`
-- Current branch: `haskell-playback-shadow-artifact-docs-20260612-194535`
-- HEAD: `3edba2b`
+- Current branch: `haskell-playback-shadow-readiness-index-20260612-195110`
+- HEAD: `ad85e78`
 
 ## Gate List
 
@@ -98,10 +30,10 @@ Status: PASS
 
 ## Latest Reports
 
-- ci_gate: `tools/playback-parity-v1/playback-shadow-ci-report-20260612-194737.txt`
+- ci_gate: `tools/playback-parity-v1/playback-shadow-ci-report-20260612-195356.txt`
 - js_haskell_planner: `tools/playback-parity-v1/playback-js-vs-hs-shadow-compare-report-20260612-181036.txt`
 - route_comparator: `tools/playback-parity-v1/playback-route-contract-js-vs-hs-report-20260612-182035.txt`
-- workflow_safety: `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-194737.txt`
+- workflow_safety: `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-195356.txt`
 
 ## Changed Files
 
@@ -110,10 +42,15 @@ Status: PASS
 - `tools/playback-parity-v1/.playback-shadow-artifacts/manifest.txt`
 - `tools/playback-parity-v1/.playback-shadow-artifacts/playback-js-vs-hs-shadow-compare-report-20260612-181036.txt`
 - `tools/playback-parity-v1/.playback-shadow-artifacts/playback-route-contract-js-vs-hs-report-20260612-182035.txt`
-- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-ci-report-20260612-194219.txt`
-- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-pr-summary-20260612-194302.md`
-- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-review-pack-report-20260612-194219.txt`
-- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-workflow-safety-report-20260612-194219.txt`
+- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-ci-report-20260612-194737.txt`
+- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-ci-report-20260612-194759.txt`
+- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-pr-summary-20260612-194737.md`
+- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-pr-summary-20260612-194759.md`
+- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-review-pack-report-20260612-194737.txt`
+- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-review-pack-report-20260612-194759.txt`
+- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-workflow-safety-report-20260612-194737.txt`
+- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-workflow-safety-report-20260612-194759.txt`
+- `tools/playback-parity-v1/README.md`
 - `tools/playback-parity-v1/collect_playback_shadow_artifacts.py`
 - `tools/playback-parity-v1/playback-route-contract-crosscheck-report-20260612-193421.txt`
 - `tools/playback-parity-v1/playback-route-fixture-schema-report-20260612-193421.txt`
@@ -122,6 +59,8 @@ Status: PASS
 - `tools/playback-parity-v1/playback-shadow-artifact-inspection.md`
 - `tools/playback-parity-v1/playback-shadow-artifact-manifest-report-20260612-194646.txt`
 - `tools/playback-parity-v1/playback-shadow-artifact-manifest-report-20260612-194716.txt`
+- `tools/playback-parity-v1/playback-shadow-artifact-manifest-report-20260612-194738.txt`
+- `tools/playback-parity-v1/playback-shadow-artifact-manifest-report-20260612-195337.txt`
 - `tools/playback-parity-v1/playback-shadow-ci-report-20260612-193225.txt`
 - `tools/playback-parity-v1/playback-shadow-ci-report-20260612-193314.txt`
 - `tools/playback-parity-v1/playback-shadow-ci-report-20260612-193334.txt`
@@ -136,6 +75,10 @@ Status: PASS
 - `tools/playback-parity-v1/playback-shadow-ci-report-20260612-194219.txt`
 - `tools/playback-parity-v1/playback-shadow-ci-report-20260612-194727.txt`
 - `tools/playback-parity-v1/playback-shadow-ci-report-20260612-194737.txt`
+- `tools/playback-parity-v1/playback-shadow-ci-report-20260612-194748.txt`
+- `tools/playback-parity-v1/playback-shadow-ci-report-20260612-194759.txt`
+- `tools/playback-parity-v1/playback-shadow-ci-report-20260612-195347.txt`
+- `tools/playback-parity-v1/playback-shadow-ci-report-20260612-195356.txt`
 - `tools/playback-parity-v1/playback-shadow-pr-summary-20260612-193121.md`
 - `tools/playback-parity-v1/playback-shadow-pr-summary-20260612-193225.md`
 - `tools/playback-parity-v1/playback-shadow-pr-summary-20260612-193258.md`
@@ -148,6 +91,9 @@ Status: PASS
 - `tools/playback-parity-v1/playback-shadow-pr-summary-20260612-194219.md`
 - `tools/playback-parity-v1/playback-shadow-pr-summary-20260612-194220.md`
 - `tools/playback-parity-v1/playback-shadow-pr-summary-20260612-194302.md`
+- `tools/playback-parity-v1/playback-shadow-pr-summary-20260612-194737.md`
+- `tools/playback-parity-v1/playback-shadow-pr-summary-20260612-194759.md`
+- `tools/playback-parity-v1/playback-shadow-readiness-index-20260612-195337.txt`
 - `tools/playback-parity-v1/playback-shadow-review-checklist.md`
 - `tools/playback-parity-v1/playback-shadow-review-pack-report-20260612-193225.txt`
 - `tools/playback-parity-v1/playback-shadow-review-pack-report-20260612-193315.txt`
@@ -156,6 +102,8 @@ Status: PASS
 - `tools/playback-parity-v1/playback-shadow-review-pack-report-20260612-193513.txt`
 - `tools/playback-parity-v1/playback-shadow-review-pack-report-20260612-194156.txt`
 - `tools/playback-parity-v1/playback-shadow-review-pack-report-20260612-194219.txt`
+- `tools/playback-parity-v1/playback-shadow-review-pack-report-20260612-194737.txt`
+- `tools/playback-parity-v1/playback-shadow-review-pack-report-20260612-194759.txt`
 - `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-193225.txt`
 - `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-193314.txt`
 - `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-193334.txt`
@@ -166,8 +114,11 @@ Status: PASS
 - `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-194156.txt`
 - `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-194219.txt`
 - `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-194737.txt`
+- `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-194759.txt`
+- `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-195356.txt`
 - `tools/playback-parity-v1/playback_shadow_artifact_manifest.py`
 - `tools/playback-parity-v1/playback_shadow_pr_summary.py`
+- `tools/playback-parity-v1/playback_shadow_readiness_index.py`
 - `tools/playback-parity-v1/playback_shadow_workflow_safety_audit.py`
 - `tools/playback-parity-v1/run_playback_shadow_review_pack.py`
 
@@ -201,5 +152,3 @@ The GitHub Actions workflow only performs checkout/tool setup, `npm ci`, and the
 ## Next Safe Migration Step
 
 After review, add a PR-comment or artifact publishing layer for these summaries, still without changing playback runtime behavior.
-stderr:
-(empty)

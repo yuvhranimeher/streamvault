@@ -55,8 +55,22 @@ main = do
 
 planRouteContract :: Fixture -> Decision
 planRouteContract fixture
+  | null (fixtureRouteTarget fixture) =
+      decision "invalid" False False False "Missing routeTarget; route contract is invalid."
+  | null (fixtureSourceType fixture) =
+      decision "invalid" False False False "Missing sourceType; route contract is invalid."
+  | null (fixtureClientType fixture) =
+      decision "invalid" False False False "Missing clientType; route contract is invalid."
   | null (fixtureStreamUrl fixture) =
       decision "invalid" False False False "Missing streamUrl; route contract is invalid."
+  | not (fixtureRouteTarget fixture `elem` routeTargets) =
+      decision "invalid" False False False "Unknown routeTarget; route contract is invalid."
+  | not (fixtureClientType fixture `elem` clientTypes) =
+      decision "invalid" False False False "Unsupported clientType; route contract is invalid."
+  | not (fixtureSourceType fixture `elem` sourceTypes) =
+      decision "invalid" False False False "Unsupported sourceType; route contract is invalid."
+  | not (safeStreamUrl (fixtureStreamUrl fixture)) =
+      decision "invalid" False False False "Unsafe streamUrl; route contract is invalid."
   | fixtureSourceType fixture == "live" && ".m3u8" `isInfixOf` fixtureStreamUrl fixture =
       decision "live" True False False "Live m3u8 route contract preserves live playback."
   | fixtureClientType fixture == "mobile" && fixturePlaybackMode fixture == "hls" =
@@ -91,6 +105,26 @@ planRouteContract fixture
         , decisionOk = ok
         , decisionReason = reason
         }
+
+routeTargets :: [String]
+routeTargets =
+  [ "/api/playback/local"
+  , "/api/playback/ftp"
+  , "/api/playback/movie"
+  , "/api/ftp/raw"
+  , "live TV m3u8 playback"
+  , "series episode playback"
+  ]
+
+clientTypes :: [String]
+clientTypes = ["desktop", "mobile"]
+
+sourceTypes :: [String]
+sourceTypes = ["movie", "series", "live"]
+
+safeStreamUrl :: String -> Bool
+safeStreamUrl value =
+  any (`prefixOf` value) ["http://", "https://", "ftp://", "local://"]
 
 decisionsJson :: [Decision] -> String
 decisionsJson decisions =

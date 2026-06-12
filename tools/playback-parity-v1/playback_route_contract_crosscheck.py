@@ -59,10 +59,22 @@ def main() -> int:
     for route_target, route_fixtures in sorted(fixtures_by_route.items()):
         contract = route_map.get(route_target)
         if contract is None:
+            invalid_fixtures = [fixture for fixture in route_fixtures if fixture.get("expectedValid") is False]
+            if len(invalid_fixtures) == len(route_fixtures):
+                fixture_lines.extend(
+                    f"- {fixture.get('name')}: routeTarget={route_target} expected invalid; inventory match skipped"
+                    for fixture in route_fixtures
+                )
+                continue
             failures.append(f"{route_target}: fixture route missing from inventory")
             continue
         for fixture in route_fixtures:
             name = fixture.get("name")
+            if fixture.get("expectedValid") is False:
+                fixture_lines.append(
+                    f"- {name}: routeTarget={route_target} expected invalid; inventory field comparison skipped"
+                )
+                continue
             if fixture.get("riskLevel") != contract.get("riskLevel"):
                 failures.append(f"{name}: riskLevel {fixture.get('riskLevel')} != inventory {contract.get('riskLevel')}")
             if fixture.get("responseKind") != contract.get("responseKind"):

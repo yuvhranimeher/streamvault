@@ -20,6 +20,15 @@ SOURCE_TYPES = {"movie", "series", "live"}
 PLAYBACK_MODES = {"direct", "hls", "live", "invalid"}
 RISK_LEVELS = {"low", "medium", "high"}
 RESPONSE_KINDS = {"json-only", "may-stream-bytes"}
+ROUTE_TARGETS = {
+    "/api/playback/local",
+    "/api/playback/ftp",
+    "/api/playback/movie",
+    "/api/ftp/raw",
+    "live TV m3u8 playback",
+    "series episode playback",
+}
+STREAM_URL_PREFIXES = ("http://", "https://", "ftp://", "local://")
 REQUIRED_KEYS = {
     "name",
     "routeTarget",
@@ -52,14 +61,22 @@ def validate_fixture(fixture: dict[str, Any]) -> list[str]:
     if missing:
         failures.append(f"missing_keys:{','.join(missing)}")
 
-    for key in ("name", "routeTarget", "futureHaskellMirrorName"):
+    for key in ("name", "futureHaskellMirrorName"):
         if not is_text(fixture.get(key)):
             failures.append(f"missing_{key}")
+    if not is_text(fixture.get("routeTarget")):
+        failures.append("missing_routeTarget")
+    elif fixture.get("routeTarget") not in ROUTE_TARGETS:
+        failures.append("invalid_routeTarget")
     if fixture.get("riskLevel") not in RISK_LEVELS:
         failures.append("invalid_riskLevel")
-    if fixture.get("clientType") not in CLIENT_TYPES:
+    if not is_text(fixture.get("clientType")):
+        failures.append("missing_clientType")
+    elif fixture.get("clientType") not in CLIENT_TYPES:
         failures.append("invalid_clientType")
-    if fixture.get("sourceType") not in SOURCE_TYPES:
+    if not is_text(fixture.get("sourceType")):
+        failures.append("missing_sourceType")
+    elif fixture.get("sourceType") not in SOURCE_TYPES:
         failures.append("invalid_sourceType")
     if fixture.get("playbackMode") not in PLAYBACK_MODES:
         failures.append("invalid_playbackMode")
@@ -83,8 +100,6 @@ def validate_fixture(fixture: dict[str, Any]) -> list[str]:
     if expected_valid and not stream_url:
         failures.append("valid_fixture_missing_streamUrl")
     if not expected_valid:
-        if stream_url:
-            failures.append("invalid_fixture_has_streamUrl")
         if not is_text(fixture.get("expectedFailureBucket")):
             failures.append("invalid_fixture_missing_expectedFailureBucket")
         if not is_text(fixture.get("invalidReason")):
@@ -92,6 +107,8 @@ def validate_fixture(fixture: dict[str, Any]) -> list[str]:
 
     if stream_url:
         lowered = stream_url.lower()
+        if not lowered.startswith(STREAM_URL_PREFIXES):
+            failures.append("invalid_unsafe_streamUrl")
         if fixture.get("routeTarget") == "/api/ftp/raw" and not lowered.startswith("ftp://"):
             failures.append("ftp_raw_not_ftp_url")
         if fixture.get("routeTarget") == "/api/playback/local" and not lowered.startswith("local://"):

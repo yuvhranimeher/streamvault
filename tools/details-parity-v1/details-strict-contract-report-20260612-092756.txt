@@ -1,0 +1,25 @@
+Status: PASS
+mode: read-only details/TMDB strict contract gate
+server_started: no
+tmdb_network_calls: no
+catalog_movies: 22171
+catalog_series: 3431
+js_response_contract_fields:
+- ok, localOnly, type, id, tmdbId, imdbId, title, overview, poster, backdrop, year, rating, runtime, genres, language, ratings, trailers, cast, crew, productionCompanies, similar, moreByDirector, director, episodes, about, playbackInfo
+failure_buckets:
+- missing_title, missing_stream, missing_poster_art, invalid_year, invalid_rating, raw_filename_title, malformed_series, malformed_episode, unsafe_null_field
+strict_fixture_results:
+- movie_complete_art: PASS kind=movie index=2 title='From the Ashes (Jaras Enzar) (2024)' year='2027' rating=None art=poster+backdrop stream_field=streamUrl episodes=0 failures=missing_title=0, missing_stream=0, missing_poster_art=0, invalid_year=0, invalid_rating=0, raw_filename_title=0, malformed_series=0, malformed_episode=0, unsafe_null_field=0
+- movie_poster_backdrop_fallback: PASS kind=movie index=1 title='The Hunt for Gollum (2009)' year='2027' rating=None art=poster-fallback stream_field=streamUrl episodes=0 failures=missing_title=0, missing_stream=0, missing_poster_art=0, invalid_year=0, invalid_rating=0, raw_filename_title=0, malformed_series=0, malformed_episode=0, unsafe_null_field=0
+- series_episode_contract: PASS kind=series index=17 title='Season 5 (Korean Language)' year='2025' rating=None art=poster+backdrop stream_field=episode-streamUrl episodes=16 failures=missing_title=0, missing_stream=0, missing_poster_art=0, invalid_year=0, invalid_rating=0, raw_filename_title=0, malformed_series=0, malformed_episode=0, unsafe_null_field=0
+- series_poster_backdrop_fallback: PASS kind=series index=292 title='Season 1 (Korean Language)' year='2023' rating=None art=poster-fallback stream_field=episode-streamUrl episodes=16 failures=missing_title=0, missing_stream=0, missing_poster_art=0, invalid_year=0, invalid_rating=0, raw_filename_title=0, malformed_series=0, malformed_episode=0, unsafe_null_field=0
+strict_fixture_failure_counts:
+- missing_title=0, missing_stream=0, missing_poster_art=0, invalid_year=0, invalid_rating=0, raw_filename_title=0, malformed_series=0, malformed_episode=0, unsafe_null_field=0
+global_movie_bucket_counts:
+- missing_title=1, missing_stream=0, missing_poster_art=831, invalid_year=0, invalid_rating=0, raw_filename_title=13, malformed_series=0, malformed_episode=0, unsafe_null_field=77
+global_series_bucket_counts:
+- missing_title=0, missing_stream=0, missing_poster_art=131, invalid_year=0, invalid_rating=0, raw_filename_title=2493, malformed_series=0, malformed_episode=0, unsafe_null_field=0
+contract_notes:
+- Movie fixtures validate title/name mapping, filename/file fallback, streamUrl presence, year/rating shape, poster/backdrop fallback, and nullable metadata arrays.
+- Series fixtures validate title/name mapping, seasons/episodes shape, season keys, episode display title fallback through filename, episode streamUrl/file fallback, and poster/backdrop fallback.
+- Global bucket counts are blockers for future Haskell route parity decisions, but this phase fails only when the representative strict fixtures violate the current JS contract.

@@ -1,0 +1,139 @@
+Status: PASS
+mode: read-only playback source inventory
+server_started: no
+media_sources_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+source_files_inspected:
+- server.js: present
+- public/app.js: present
+- public/player.js: present
+- public/details.js: present
+- public/sw.js: present
+- public/boot.js: present
+- routes/dashboard.js: present
+frontend_playback_functions:
+- attachPlayerSource: present
+- openLiveChannel: present
+- isMobilePlaybackClient: present
+- showVlcPlaybackNotice: present
+- streamUrlFor: present
+- fetchLocalPlaybackPlan: present
+- fetchFtpPlaybackPlan: present
+- planNeedsSourceSeek: present
+- ftpDirectPlayable: present
+- ftpProxySrc: present
+- ftpRawSrc: present
+- desktopFtpPlaybackSrc: present
+- ftpTranscodeSrc: present
+- localDirectPlayable: present
+- localFileForStreamId: present
+- ftpPlaybackSrc: present
+- subtitleTextTrackCodecs: present
+- subtitleCanRenderAsVtt: present
+- ftpSubtitleSrc: present
+- resolveFtpPlayUrl: present
+- loadFtpTrackOptions: present
+- loadFtpDuration: present
+- playFtpMedia: present
+- playStream: missing
+- setAudioTrack: missing
+- selectQuality: missing
+- loadSubtitles: missing
+server_playback_functions:
+- isMobilePlaybackRequest: present
+- remotePlayUrls: present
+- isRemoteDirectPlayable: present
+- remoteVideoCanCopy: present
+- readRemoteUrlParam: present
+- findCatalogItemByStreamUrl: present
+- getCachedMediaInfo: present
+- startMobileHlsSession: present
+- waitForPlaylist: missing
+- cleanupMobileHlsSessions: present
+- directStream: present
+- remuxStream: present
+- transcodeStream: present
+server_playback_routes:
+- GET '/poster-cache'
+- GET '/live/:channelId/playlist.m3u8'
+- GET '/live/:channelId/segment'
+- GET '/api/mobile-hls/local/:id/index.m3u8'
+- GET '/api/mobile-hls/ftp/index.m3u8'
+- GET '/api/mobile-hls/:scope/:key/:file'
+- POST '/api/mobile-hls/stop'
+- GET '/api/subtitles/:id'
+- GET '/stream/:id'
+- GET '/api/stream-seek/:id'
+- GET '/subtitles/:id/embedded/:streamIdx.vtt'
+- GET '/subtitles/:id/:trackIdx?'
+- GET '/api/play-url'
+- GET ['/api/ftp/media-info'
+- GET '/api/ftp/subtitle/:track.vtt'
+- GET '/api/ftp/stream'
+- GET '/api/ftp/proxy'
+- GET '/api/ftp/duration'
+- GET '/api/ftp/test'
+frontend_player_entrypoints:
+- movie_card_play: present; playFtpMedia(
+- series_episode_play: missing; playEpisode(
+- hero_play_button: present; heroPlayBtn
+- live_card_play: present; openLiveChannel(
+- local_stream_play: missing; playStream(
+- detail_modal_play: missing; playCurrentMovie
+frontend_endpoint_references:
+- /api/channels
+- /api/details/
+- /api/episode-titles
+- /api/ftp/duration
+- /api/ftp/media-info
+- /api/ftp/proxy
+- /api/ftp/raw
+- /api/ftp/stream
+- /api/ftp/subtitle/
+- /api/home-feed
+- /api/media-info/
+- /api/movies
+- /api/movies/keywords
+- /api/playback/ftp
+- /api/playback/local/
+- /api/playback/movie/
+- /api/qualities/
+- /api/series
+- /api/series/detail
+- /api/subtitles/
+- /api/thumbnail/
+- /api/trending
+- /api/vlc-playlist
+- /live/
+- /poster-cache
+- /stream/
+- /subtitles/
+desktop_direct_play_path:
+- playFtpMedia -> isMobilePlaybackClient false -> desktopFtpPlaybackSrc -> ftpRawSrc for ftp URLs or ftpProxySrc for http(s) URLs.
+- Desktop performance notices keep FFmpeg off, keep original quality, and disable extra audio-track transcoding.
+mobile_hls_path:
+- isMobilePlaybackClient true -> mobile=1 planning flag -> /api/mobile-hls/ftp/index.m3u8 or /api/mobile-hls/local/:id/index.m3u8 when required.
+- attachPlayerSource handles hls mode with Hls.js or native m3u8 support.
+subtitle_audio_handling:
+- Frontend loads FTP track options from /api/ftp/media-info and subtitles from /api/ftp/subtitle/:track.vtt.
+- Local playback uses /api/subtitles/:id and /subtitles/:id/embedded/:streamIdx.vtt.
+- Desktop direct-play intentionally blocks extra audio tracks because that would require FFmpeg.
+danger_zones:
+- ftp_ffmpeg_stream: present; app.get('/api/ftp/stream'
+- mobile_hls_startup: present; function startMobileHlsSession(
+- mobile_hls_routes: present; app.get('/api/mobile-hls/
+- local_transcode: present; function transcodeStream(
+- local_remux: present; function remuxStream(
+- ftp_subtitle_ffmpeg: present; app.get('/api/ftp/subtitle/:track.vtt'
+- remote_probe: present; app.get(['/api/ftp/media-info', '/api/ftp/info']
+- poster_cache_proxy: present; app.get('/poster-cache'
+- live_playlist_proxy: present; app.get('/live/:channelId/playlist.m3u8'
+- live_segment_proxy: present; app.get('/live/:channelId/segment'
+haskell_future_mirror_candidates:
+- Shadow-only playback planner decision table for desktop/mobile/live cases.
+- Parser-only URL planner for ftpProxySrc, ftpRawSrc, and ftpTranscodeSrc outputs.
+- Read-only route mirror for /api/play-url response shape.
+- Fixture-only mobile HLS planner mirror; no FFmpeg startup.
+- Live TV m3u8 contract mirror; no segment proxy changes.
+missing_core_tokens: []

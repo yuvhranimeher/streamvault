@@ -1,0 +1,21 @@
+Status: PASS
+mode: read-only playback route inventory/fixture crosscheck
+server_started: no
+network_called: no
+runtime_playback_changed: no
+active_routes_added: no
+inventory_path: tools/playback-parity-v1/playback-route-shadow-contract-inventory.json
+fixture_path: tools/playback-parity-v1/playback-route-contract-fixtures.json
+inventory_contract_count: 6
+fixture_count: 8
+routes_with_fixtures: ['/api/ftp/raw', '/api/playback/ftp', '/api/playback/local', '/api/playback/movie', 'live TV m3u8 playback', 'series episode playback']
+fixture_matches:
+- route_ftp_raw_stream_metadata: routeTarget=/api/ftp/raw riskLevel=high responseKind=may-stream-bytes mirror=PlaybackRouteFtpRawShadow
+- route_desktop_movie_direct_json: routeTarget=/api/playback/ftp riskLevel=high responseKind=json-only mirror=PlaybackRouteFtpShadow
+- route_mobile_movie_hls_planning: routeTarget=/api/playback/ftp riskLevel=high responseKind=json-only mirror=PlaybackRouteFtpShadow
+- route_invalid_missing_streamUrl: routeTarget=/api/playback/ftp riskLevel=high responseKind=json-only mirror=PlaybackRouteFtpShadow
+- route_local_playback_metadata: routeTarget=/api/playback/local riskLevel=high responseKind=json-only mirror=PlaybackRouteLocalShadow
+- route_movie_metadata_resolution: routeTarget=/api/playback/movie riskLevel=medium responseKind=json-only mirror=PlaybackRouteMovieShadow
+- route_live_tv_hls_contract: routeTarget=live TV m3u8 playback riskLevel=high responseKind=may-stream-bytes mirror=PlaybackRouteLiveM3u8Shadow
+- route_series_episode_planning: routeTarget=series episode playback riskLevel=medium responseKind=json-only mirror=PlaybackRouteSeriesEpisodeShadow
+failures: []

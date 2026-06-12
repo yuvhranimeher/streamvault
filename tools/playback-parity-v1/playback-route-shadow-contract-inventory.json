@@ -1,0 +1,122 @@
+{
+  "mode": "read-only playback route shadow contract inventory",
+  "serverStarted": false,
+  "runtimePlaybackChanged": false,
+  "activeRoutesAdded": false,
+  "contracts": [
+    {
+      "target": "/api/playback/local",
+      "routeStatus": "contract-only; frontend reference exists on this branch",
+      "expectedInputFields": ["id", "mobile", "quality", "audio", "start", "forceHls"],
+      "expectedOutputFields": ["ok", "src", "mode", "directPlayable", "duration", "decodedUrl", "error"],
+      "riskLevel": "high",
+      "jsSourceReferences": [
+        "public/app.js:1847 streamUrlFor(id,start)",
+        "public/app.js:1857 fetchLocalPlaybackPlan(id,start,options)",
+        "public/app.js:2245 local playback plan fetch path"
+      ],
+      "futureHaskellMirrorName": "PlaybackRouteLocalShadow",
+      "responseKind": "json-only",
+      "contractNotes": [
+        "Desktop local direct playback must not force HLS or FFmpeg.",
+        "Mobile HLS is allowed only when requested or required by compatibility.",
+        "This inventory does not implement or register the route."
+      ]
+    },
+    {
+      "target": "/api/playback/ftp",
+      "routeStatus": "contract-only; frontend reference exists on this branch",
+      "expectedInputFields": ["url", "mobile", "audio", "audioStream", "start", "forceHls", "mode"],
+      "expectedOutputFields": ["ok", "src", "mode", "directPlayable", "decodedUrl", "duration", "error"],
+      "riskLevel": "high",
+      "jsSourceReferences": [
+        "public/app.js:1872 fetchFtpPlaybackPlan(streamUrl,start,options)",
+        "public/app.js:1975 resolveFtpPlayUrl(streamUrl)",
+        "public/app.js:2488 playFtpMedia(streamUrl,name,year)"
+      ],
+      "futureHaskellMirrorName": "PlaybackRouteFtpShadow",
+      "responseKind": "json-only",
+      "contractNotes": [
+        "Desktop FTP direct play must preserve the original FTP source contract.",
+        "No automatic desktop transcoding is allowed in the shadow contract.",
+        "This inventory does not implement or register the route."
+      ]
+    },
+    {
+      "target": "/api/playback/movie",
+      "routeStatus": "contract-only; frontend reference exists on this branch",
+      "expectedInputFields": ["id", "name", "url", "streamUrl", "mobile", "quality"],
+      "expectedOutputFields": ["ok", "streamUrl", "sourceType", "clientType", "playbackMode", "error"],
+      "riskLevel": "medium",
+      "jsSourceReferences": [
+        "public/app.js:3747 ensureFtpMovieStreamUrl(movie)",
+        "public/app.js:3751 fetchWithTimeout('/api/playback/movie/...')",
+        "public/app.js:3778 playFtpMedia(movie.streamUrl,...)"
+      ],
+      "futureHaskellMirrorName": "PlaybackRouteMovieShadow",
+      "responseKind": "json-only",
+      "contractNotes": [
+        "Movie contract resolves metadata and streamUrl only.",
+        "Playback route shadow must not hydrate or mutate frontend state.",
+        "This inventory does not implement or register the route."
+      ]
+    },
+    {
+      "target": "/api/ftp/raw",
+      "routeStatus": "contract-only for raw FTP byte streaming metadata",
+      "expectedInputFields": ["url", "range"],
+      "expectedOutputFields": ["status", "contentType", "acceptRanges", "contentRange", "streamUrl", "error"],
+      "riskLevel": "high",
+      "jsSourceReferences": [
+        "public/app.js:1905 ftpRawSrc(url)",
+        "public/app.js:1920 desktopFtpPlaybackSrc(url)",
+        "public/app.js:2488 playFtpMedia(streamUrl,name,year)"
+      ],
+      "futureHaskellMirrorName": "PlaybackRouteFtpRawShadow",
+      "responseKind": "may-stream-bytes",
+      "contractNotes": [
+        "Shadow comparison records metadata only and never opens the remote FTP URL.",
+        "Future implementation may stream bytes, so range and content headers are part of the contract.",
+        "This inventory does not implement or register the route."
+      ]
+    },
+    {
+      "target": "live TV m3u8 playback",
+      "routeStatus": "existing JS live playlist path; shadow contract only here",
+      "expectedInputFields": ["channelId", "src"],
+      "expectedOutputFields": ["ok", "src", "mode", "streamUrl", "contentType", "error"],
+      "riskLevel": "high",
+      "jsSourceReferences": [
+        "public/app.js:694 live player playlist source",
+        "server.js:1680 app.get('/live/:channelId/playlist.m3u8')",
+        "server.js:1710 app.get('/live/:channelId/segment')"
+      ],
+      "futureHaskellMirrorName": "PlaybackRouteLiveM3u8Shadow",
+      "responseKind": "may-stream-bytes",
+      "contractNotes": [
+        "Live m3u8 sources must remain live mode.",
+        "No playlist URL rewrite is performed by these shadow tools.",
+        "This inventory does not implement or register the route."
+      ]
+    },
+    {
+      "target": "series episode playback",
+      "routeStatus": "contract-only; frontend episode playback uses streamUrl",
+      "expectedInputFields": ["seriesId", "season", "episode", "streamUrl", "mobile"],
+      "expectedOutputFields": ["ok", "src", "mode", "sourceType", "streamUrl", "error"],
+      "riskLevel": "medium",
+      "jsSourceReferences": [
+        "public/app.js:1493 episode streamUrl playback",
+        "public/app.js:1609 episode streamUrl playback",
+        "public/app.js:1627 first episode streamUrl playback"
+      ],
+      "futureHaskellMirrorName": "PlaybackRouteSeriesEpisodeShadow",
+      "responseKind": "json-only",
+      "contractNotes": [
+        "Series episode direct playback must not force desktop HLS or FFmpeg.",
+        "Episode streamUrl is preserved by the shadow contract.",
+        "This inventory does not implement or register the route."
+      ]
+    }
+  ]
+}

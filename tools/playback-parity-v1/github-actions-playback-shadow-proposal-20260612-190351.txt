@@ -1,0 +1,39 @@
+Status: PROPOSAL ONLY
+mode: read-only playback shadow GitHub Actions proposal
+workflow_added: no
+server_started: no
+network_called_by_gate: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+
+Rationale:
+- No existing .github workflow directory was present on this branch.
+- The local CI runner is newly introduced and should be reviewed first.
+- A proposal avoids creating repository-level automation before the shadow gate is accepted.
+
+Safe future workflow shape:
+- File: .github/workflows/playback-shadow-ci.yml
+- Triggers: pull_request and workflow_dispatch only.
+- Permissions: contents: read.
+- No deploy jobs.
+- No production server startup.
+- No npm audit fix.
+- No dependency or package version changes.
+- Install/load only Node 20.20.x, Python 3, and GHC needed by the read-only shadow gates.
+- Run: npm run test:playback-shadow
+
+Expected future job behavior:
+- Checkout repository.
+- Setup Node 20.20.x.
+- Setup Python 3.
+- Setup GHC matching local migration branch expectations.
+- Run the playback shadow npm script.
+- Upload timestamped report as an artifact if desired.
+
+Production safety notes:
+- The gate runs only scripts under tools/playback-parity-v1/.
+- It validates fixtures, schemas, inventory contracts, and JS/Haskell comparator output.
+- It does not register routes, start server.js, open media sources, or invoke FFmpeg.
+- It preserves desktop direct FTP expectations, mobile HLS-only-when-required expectations,
+  and the no automatic desktop transcoding contract.

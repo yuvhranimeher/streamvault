@@ -1,0 +1,63 @@
+Status: PASS
+mode: read-only home sections safety gate
+frontend_runtime_changed: no
+section_data_changed: no
+expected_active_row_count: 44
+actual_active_row_count: 44
+html_predeclared_row_count: 21
+html_predeclared_track_count: 21
+duplicate_row_ids: []
+duplicate_track_ids: []
+duplicate_section_keys: []
+missing_home_tokens: []
+missing_server_tokens: []
+warnings: []
+failures: []
+active_rows:
+- 01: rowId=netflixRow trackId=netflixTrack sectionKey=netflix title=Netflix Originals
+- 02: rowId=marvelRow trackId=marvelTrack sectionKey=marvel title=Marvel Studios
+- 03: rowId=dcRow trackId=dcTrack sectionKey=dc title=DC
+- 04: rowId=trendingRow trackId=trendingTrack sectionKey=trending title=\U0001f525 Trending Now
+- 05: rowId=seriesRow trackId=seriesTrack sectionKey=series title=Series
+- 06: rowId=newRow trackId=newTrack sectionKey=new title=New to StreamVault
+- 07: rowId=universalRow trackId=universalTrack sectionKey=universal title=Universal Pictures
+- 08: rowId=disneyRow trackId=disneyTrack sectionKey=disney title=Disney
+- 09: rowId=warnerRow trackId=warnerTrack sectionKey=warner title=Warner Bros
+- 10: rowId=hboRow trackId=hboTrack sectionKey=hbo title=HBO
+- 11: rowId=appleTvRow trackId=appleTvTrack sectionKey=apple title=Apple TV+
+- 12: rowId=indianRow trackId=indianTrack sectionKey=indian title=Indian Movies & Drama
+- 13: rowId=animeRow trackId=animeTrack sectionKey=anime title=Anime
+- 14: rowId=koreanRow trackId=koreanTrack sectionKey=koreanDrama title=Korean Drama
+- 15: rowId=horrorRow trackId=horrorTrack sectionKey=horrorNights title=Horror Nights
+- 16: rowId=scifiRow trackId=scifiTrack sectionKey=cyberpunkScifi title=Cyberpunk & Sci-Fi
+- 17: rowId=mindfuckRow trackId=mindfuckTrack sectionKey=mindfuck title=Mindfuck Movies
+- 18: rowId=cultClassicsRow trackId=cultClassicsTrack sectionKey=cultClassics title=Cult Classics
+- 19: rowId=a24Row trackId=a24Track sectionKey=a24 title=A24 Collection
+- 20: rowId=nostalgia90sRow trackId=nostalgia90sTrack sectionKey=nostalgia90s title=90s Nostalgia
+- 21: rowId=midnightCinemaRow trackId=midnightCinemaTrack sectionKey=midnightCinema title=Midnight Cinema
+- 22: rowId=trueCrimeRow trackId=trueCrimeTrack sectionKey=trueCrime title=True Crime
+- 23: rowId=thrillerRow trackId=thrillerTrack sectionKey=psychThriller title=Psychological Thriller
+- 24: rowId=adultAnimationRow trackId=adultAnimationTrack sectionKey=adultAnimation title=Adult Animation
+- 25: rowId=postApocalypticRow trackId=postApocalypticTrack sectionKey=postApocalyptic title=Post-Apocalyptic
+- 26: rowId=feelGoodRow trackId=feelGoodTrack sectionKey=feelGood title=Feel Good Movies
+- 27: rowId=darkComedyRow trackId=darkComedyTrack sectionKey=darkComedy title=Dark Comedy
+- 28: rowId=timeTravelRow trackId=timeTravelTrack sectionKey=timeTravel title=Time Travel
+- 29: rowId=spaceAiRow trackId=spaceAiTrack sectionKey=spaceAi title=Space & AI
+- 30: rowId=crimeRow trackId=crimeTrack sectionKey=crimeSyndicates title=Crime Syndicates
+- 31: rowId=zombieRow trackId=zombieTrack sectionKey=zombie title=Zombie Universe
+- 32: rowId=indieGemsRow trackId=indieGemsTrack sectionKey=indieGems title=Indie Gems
+- 33: rowId=hiddenMasterpiecesRow trackId=hiddenMasterpiecesTrack sectionKey=hiddenMasterpieces title=Hidden Masterpieces
+- 34: rowId=liveConcertsRow trackId=liveConcertsTrack sectionKey=liveConcerts title=Live Concerts
+- 35: rowId=documentaryRow trackId=documentaryTrack sectionKey=documentaryVault title=Documentary Vault
+- 36: rowId=ghibliRow trackId=ghibliTrack sectionKey=ghibli title=Studio Ghibli
+- 37: rowId=romanticRow trackId=romanticTrack sectionKey=romanceMidnight title=Romance After Midnight
+- 38: rowId=comingSoonRow trackId=comingSoonTrack sectionKey=comingSoon title=Coming Soon
+- 39: rowId=dramaRow trackId=dramaTrack sectionKey=drama title=Drama & Emotion
+- 40: rowId=spanishRow trackId=spanishTrack sectionKey=spanish title=Spanish & Latino
+- 41: rowId=highRatedRow trackId=highRatedTrack sectionKey=topRated title=\u2b50 Top Rated (8+)
+- 42: rowId=allRow trackId=allTrack sectionKey=allMovies title=All Movies
+- 43: rowId=recentlyAddedRow trackId=recentlyAddedTrack sectionKey=recentlyAdded title=Recently Added
+- 44: rowId=mostWatchedTodayRow trackId=mostWatchedTodayTrack sectionKey=mostWatchedToday title=Most Watched Today
+safety_notes:
+- public/home.js dynamically creates rows/tracks through svEnsureHomeRow, so HTML does not need to predeclare every active row.
+- Section expansion uses /api/section/:key and home loading uses /api/home-feed; both remain JavaScript source of truth.

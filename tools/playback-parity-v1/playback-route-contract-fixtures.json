@@ -10,6 +10,7 @@
     "playbackMode": "direct",
     "requiresTranscode": false,
     "shouldUseFfmpeg": false,
+    "expectedValid": true,
     "responseKind": "json-only",
     "expectedInputFields": ["url", "mobile", "audio", "audioStream", "start", "forceHls", "mode"],
     "expectedOutputFields": ["ok", "src", "mode", "directPlayable", "decodedUrl", "duration", "error"]
@@ -25,6 +26,7 @@
     "playbackMode": "hls",
     "requiresTranscode": true,
     "shouldUseFfmpeg": true,
+    "expectedValid": true,
     "responseKind": "json-only",
     "expectedInputFields": ["url", "mobile", "audio", "audioStream", "start", "forceHls", "mode"],
     "expectedOutputFields": ["ok", "src", "mode", "directPlayable", "decodedUrl", "duration", "error"]
@@ -40,6 +42,7 @@
     "playbackMode": "direct",
     "requiresTranscode": false,
     "shouldUseFfmpeg": false,
+    "expectedValid": true,
     "responseKind": "may-stream-bytes",
     "expectedInputFields": ["url", "range"],
     "expectedOutputFields": ["status", "contentType", "acceptRanges", "contentRange", "streamUrl", "error"]
@@ -55,6 +58,7 @@
     "playbackMode": "direct",
     "requiresTranscode": false,
     "shouldUseFfmpeg": false,
+    "expectedValid": true,
     "responseKind": "json-only",
     "expectedInputFields": ["id", "mobile", "quality", "audio", "start", "forceHls"],
     "expectedOutputFields": ["ok", "src", "mode", "directPlayable", "duration", "decodedUrl", "error"]
@@ -70,6 +74,7 @@
     "playbackMode": "direct",
     "requiresTranscode": false,
     "shouldUseFfmpeg": false,
+    "expectedValid": true,
     "responseKind": "json-only",
     "expectedInputFields": ["seriesId", "season", "episode", "streamUrl", "mobile"],
     "expectedOutputFields": ["ok", "src", "mode", "sourceType", "streamUrl", "error"]
@@ -85,6 +90,7 @@
     "playbackMode": "live",
     "requiresTranscode": false,
     "shouldUseFfmpeg": false,
+    "expectedValid": true,
     "responseKind": "may-stream-bytes",
     "expectedInputFields": ["channelId", "src"],
     "expectedOutputFields": ["ok", "src", "mode", "streamUrl", "contentType", "error"]
@@ -100,6 +106,9 @@
     "playbackMode": "direct",
     "requiresTranscode": false,
     "shouldUseFfmpeg": false,
+    "expectedValid": false,
+    "expectedFailureBucket": "missing_streamUrl",
+    "invalidReason": "Missing streamUrl fixture documents invalid route contract input.",
     "responseKind": "json-only",
     "expectedInputFields": ["url", "mobile", "audio", "audioStream", "start", "forceHls", "mode"],
     "expectedOutputFields": ["ok", "src", "mode", "directPlayable", "decodedUrl", "duration", "error"]

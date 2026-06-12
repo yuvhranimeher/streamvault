@@ -1,0 +1,76 @@
+# Playback Parity V1
+
+This directory contains the read-only playback shadow gates used during the
+StreamVault Haskell migration. The tools here validate contracts, fixtures,
+reports, and review artifacts without changing production playback behavior.
+
+## Local Commands
+
+Run the main shadow CI gate:
+
+```sh
+npm run test:playback-shadow
+```
+
+Run the reviewer pack:
+
+```sh
+npm run test:playback-shadow-review
+```
+
+Collect the latest review artifact bundle:
+
+```sh
+npm run collect:playback-shadow-artifacts
+```
+
+Validate the collected artifact bundle:
+
+```sh
+npm run report:playback-shadow-artifacts
+```
+
+## Main Entry Points
+
+- `run_playback_shadow_ci.py` runs all read-only playback shadow gates.
+- `run_playback_shadow_review_pack.py` runs CI, workflow safety, and PR summary generation.
+- `collect_playback_shadow_artifacts.py` copies the latest review reports into `.playback-shadow-artifacts/`.
+- `playback-shadow-artifact-inspection.md` explains how reviewers inspect the GitHub Actions artifact.
+- `playback-shadow-review-checklist.md` gives reviewers a safety checklist.
+
+## Route Contract Gates
+
+- `playback_route_inventory_schema_gate.py` validates the route inventory schema.
+- `playback_route_fixture_schema_gate.py` validates route contract fixtures.
+- `playback_route_contract_crosscheck.py` checks inventory and fixtures against each other.
+- `playback_route_shadow_full_gate.py` runs the route schema, crosscheck, and comparator gates together.
+
+## JS/Haskell Comparators
+
+- `playback_js_vs_hs_shadow_compare.py` compares JS and Haskell playback planner shadow output.
+- `playback_route_contract_js_vs_hs_compare.py` compares JS and Haskell route contract shadow output.
+
+## Workflow And Artifact Safety
+
+- `playback_shadow_workflow_safety_audit.py` validates the GitHub Actions workflow remains read-only.
+- `playback_shadow_artifact_manifest.py` validates the collected artifact bundle.
+- `.playback-shadow-artifacts/manifest.txt` lists the reports included in the latest local artifact bundle.
+
+## Safety Boundary
+
+These tools do not:
+
+- start the production Node server
+- invoke FFmpeg
+- call FTP or live URLs
+- modify runtime playback behavior
+- register active HTTP routes
+- touch production frontend playback code
+- require secrets or write permissions
+- post PR comments
+
+The preserved playback contract remains:
+
+- desktop direct playback preserves original FTP behavior
+- mobile HLS is allowed only when required
+- desktop playback does not automatically transcode

@@ -32,3 +32,29 @@ jobs:
 
       - name: Run playback shadow gates
         run: npm run test:playback-shadow
+
+      - name: Run playback shadow review pack
+        run: npm run test:playback-shadow-review
+
+      - name: Collect playback shadow artifacts
+        run: python3 tools/playback-parity-v1/collect_playback_shadow_artifacts.py
+
+      - name: Write playback shadow summary
+        run: |
+          {
+            echo "## Playback Shadow Review Pack"
+            echo ""
+            echo "- CI gate: PASS"
+            echo "- Review pack: PASS"
+            echo "- Artifact bundle: playback-shadow-review-pack"
+            echo "- Runtime safety: no server startup, no deploy, no secrets, no PR comments"
+            echo ""
+            echo "Collected reports are in \`tools/playback-parity-v1/.playback-shadow-artifacts/\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload playback shadow review pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: playback-shadow-review-pack
+          path: tools/playback-parity-v1/.playback-shadow-artifacts/
+          if-no-files-found: error

@@ -1,0 +1,19 @@
+Status: PASS
+mode: read-only playback route inventory schema gate
+server_started: no
+network_called: no
+runtime_playback_changed: no
+active_routes_added: no
+inventory_path: tools/playback-parity-v1/playback-route-shadow-contract-inventory.json
+contract_count: 6
+duplicate_route_keys: []
+allowed_risk_levels: ['high', 'low', 'medium']
+allowed_response_kinds: ['json-only', 'may-stream-bytes']
+contracts:
+- /api/playback/local: riskLevel=high responseKind=json-only mirror=PlaybackRouteLocalShadow inputFields=6 outputFields=7 jsRefs=3 failures=[]
+- /api/playback/ftp: riskLevel=high responseKind=json-only mirror=PlaybackRouteFtpShadow inputFields=7 outputFields=7 jsRefs=3 failures=[]
+- /api/playback/movie: riskLevel=medium responseKind=json-only mirror=PlaybackRouteMovieShadow inputFields=6 outputFields=6 jsRefs=3 failures=[]
+- /api/ftp/raw: riskLevel=high responseKind=may-stream-bytes mirror=PlaybackRouteFtpRawShadow inputFields=2 outputFields=6 jsRefs=3 failures=[]
+- live TV m3u8 playback: riskLevel=high responseKind=may-stream-bytes mirror=PlaybackRouteLiveM3u8Shadow inputFields=2 outputFields=6 jsRefs=3 failures=[]
+- series episode playback: riskLevel=medium responseKind=json-only mirror=PlaybackRouteSeriesEpisodeShadow inputFields=5 outputFields=6 jsRefs=3 failures=[]
+failures: []

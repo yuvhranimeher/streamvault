@@ -32,6 +32,22 @@
     "expectedOutputFields": ["ok", "src", "mode", "directPlayable", "decodedUrl", "duration", "error"]
   },
   {
+    "name": "route_movie_metadata_resolution",
+    "routeTarget": "/api/playback/movie",
+    "futureHaskellMirrorName": "PlaybackRouteMovieShadow",
+    "riskLevel": "medium",
+    "clientType": "desktop",
+    "sourceType": "movie",
+    "streamUrl": "ftp://media.example.test/movies/fixture-metadata-resolution.mp4",
+    "playbackMode": "direct",
+    "requiresTranscode": false,
+    "shouldUseFfmpeg": false,
+    "expectedValid": true,
+    "responseKind": "json-only",
+    "expectedInputFields": ["id", "name", "url", "streamUrl", "mobile", "quality"],
+    "expectedOutputFields": ["ok", "streamUrl", "sourceType", "clientType", "playbackMode", "error"]
+  },
+  {
     "name": "route_ftp_raw_stream_metadata",
     "routeTarget": "/api/ftp/raw",
     "futureHaskellMirrorName": "PlaybackRouteFtpRawShadow",

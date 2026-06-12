@@ -1,0 +1,165 @@
+BRANCH=haskell-deep-parity-batch-20260612-092756
+BASE_BRANCH=haskell-next-parity-batch-20260612-001656
+DATE=2026-06-12
+MODE=read-only deep Haskell migration inventory
+
+=== REPO STRUCTURE OBSERVED ===
+Current branch contains the production JavaScript runtime and read-only parity tools.
+Current branch does not contain app/Main.hs, app/CatalogApi.hs, app/CryptoHashCompat.hs, or streamvault-haskell-backend.cabal.
+cabal.project exists, but there is no local Haskell package file on this branch.
+No production runtime files were changed in this phase.
+
+Current read-only parity folders:
+- tools/haskell-migration-status
+- tools/details-parity-v1
+- tools/livetv-parity-v1
+- tools/playback-parity-v1
+
+Primary JavaScript runtime/source-of-truth files:
+- server.js
+- public/app.js
+- public/boot.js
+- public/home.js
+- public/details.js
+- public/livetv.js
+- public/player.js
+- public/search.js
+- public/downloads.js
+- public/sw.js
+- routes/dashboard.js
+- lib/catalog-index.js
+- lib/home-sections.js
+- lib/tmdb-verify.js
+
+Primary data/source-of-truth files:
+- catalog.json
+- section-catalog.json
+- channels.json
+- detail-cache.json
+- episode-title-cache.json
+- poster-cache.json
+- home-feed.json
+- section-cache.json
+
+=== COMPLETED HASKELL PARITY AREAS ON TOPIC BRANCHES ===
+downloads:
+- Branches: haskell-downloads-api-audit-20260609-172350, haskell-downloads-contract-fixture-20260609-182029.
+- Local branch status: no runtime Haskell route present; prior audit/fixture work exists on topic branches.
+
+movies:
+- Branches: haskell-movies-api-audit-clean-20260610-115824, haskell-movies-contract-fixture-20260610-120142, haskell-movies-route-readiness-audit-20260610-132901, haskell-movies-shadow-pager-20260610-152423.
+- Local branch status: JS remains source of truth; prior Haskell audit/shadow work exists on topic branches.
+
+home-feed:
+- Branches: haskell-home-feed-api-audit-20260610-170229, haskell-home-feed-contract-fixture-20260610-170751, haskell-home-feed-route-readiness-audit-20260610-180550, haskell-home-feed-shadow-pager-20260610-180836.
+- Local branch status: public/home.js and server.js remain source of truth.
+
+series:
+- Branches: haskell-series-api-audit-20260610-181146, haskell-series-contract-fixture-20260610-181514, haskell-series-contract-reader-ghc-20260610-181838, haskell-series-route-readiness-audit-20260610-194808, haskell-series-shadow-pager-20260610-214325, haskell-series-shadow-pager-gate-20260610-222257.
+- Local branch status: JS remains source of truth; prior Haskell audit/reader/shadow gate work exists on topic branches.
+
+search:
+- Branches: haskell-search-api-audit-20260610-222434, haskell-search-shadow-reader-20260610-222610, haskell-search-shadow-reader-gate-20260610-222904.
+- Local branch status: JS remains source of truth; prior standalone shadow reader/gate exists on topic branches.
+
+sections:
+- Branches: haskell-sections-api-audit-20260610-223050, haskell-sections-shadow-classifier-20260610-223224.
+- Local branch status: public/home.js 44-row contract remains source of truth; prior section classifier contract fix exists on topic branch.
+
+=== PARTIAL HASKELL PARITY AREAS ===
+details/TMDB:
+- Current branch has tools/details-parity-v1/details_readiness_gate.py.
+- Current branch has no full details fixture suite from old details branches.
+- JS source of truth: server.js /api/details/:type/:id, /api/title-details, TMDB helpers, public/app.js fetchTitleDetails and detail modals.
+- Risk: TMDB shape is rich and can drift between local-only fallback and online details.
+
+live TV:
+- Current branch has tools/livetv-parity-v1/live_tv_contract_audit.py.
+- JS source of truth: channels.json, public/livetv.js, public/app.js live helpers, server.js /api/channels and /live/:channelId proxy routes.
+- Risk: stream URLs are environment-sensitive and must remain untouched.
+
+playback planning:
+- Current branch has tools/playback-parity-v1/playback_readiness_audit.py.
+- JS source of truth: public/app.js playback planner/player helpers and server.js stream/proxy/mobile HLS routes.
+- Risk: desktop direct FTP and mobile HLS behavior are high-risk runtime paths.
+
+route inventory:
+- Current branch does not yet have a reusable route inventory gate.
+- Need map JS API routes to branch-scoped Haskell parity status.
+
+home sections safety:
+- Current branch does not yet have a reusable 44-section safety gate.
+- Need preserve rowId/trackId/sectionKey/title frontend contract.
+
+=== MISSING HASKELL ROUTE AREAS ON CURRENT BRANCH ===
+No local Haskell app routes are present on this branch.
+Missing local Haskell implementation files:
+- app/Main.hs
+- app/CatalogApi.hs
+- streamvault-haskell-backend.cabal
+
+Missing or not-yet-local Haskell route implementations:
+- /api/details/:type/:id
+- /api/title-details
+- /api/channels
+- /live/:channelId/playlist.m3u8
+- /live/:channelId/segment
+- /api/playback/local
+- /api/playback/ftp
+- /api/mobile-hls/*
+- /api/ftp/*
+- /poster-cache
+- /api/dashboard/*
+- /download/:id
+
+=== UNSAFE RUNTIME AREAS ===
+Do not migrate or modify without stronger parity gates:
+- desktop FTP direct-play / raw/proxy behavior
+- mobile HLS session creation and cleanup
+- /api/ftp/stream FFmpeg paths
+- /api/mobile-hls/* FFmpeg paths
+- live TV playlist and segment proxying
+- poster-cache image proxy/cache behavior
+- downloads redirect behavior
+- service worker cache strategy
+- frontend home-section DOM row wiring
+
+=== JS FILES STILL SOURCE OF TRUTH ===
+server.js:
+- API routes, playback routes, live TV proxy, poster cache, details/TMDB, downloads redirects.
+
+public/app.js:
+- main frontend state, playback planner, details fetch/merge/render, live TV helpers, section/card rendering.
+
+public/home.js:
+- active 44-section homepage row contract and section API consumption.
+
+public/livetv.js:
+- live TV card/grid/category UI contract.
+
+public/details.js:
+- details image optimization and series detail compatibility helpers.
+
+public/player.js:
+- player bootstrap/runtime supplement.
+
+public/sw.js:
+- poster-cache and home-feed service worker behavior.
+
+lib/home-sections.js:
+- JS home-section predicate/sort contract.
+
+lib/catalog-index.js:
+- JS indexed catalog route behavior for movies/series/search/home/section.
+
+=== RECOMMENDED NEXT STEPS ===
+1. Harden details/TMDB contract gate using catalog/detail fixtures without network calls.
+2. Add details fixture coverage report with representative movie and series samples.
+3. Harden live TV contract gate with duplicate-name and m3u8 URL checks.
+4. Expand playback blocker map into must-not-touch and future-Haskell-candidate route buckets.
+5. Add route/API inventory gate comparing JS routes to known branch-scoped Haskell parity status.
+6. Add home sections safety gate for the 44-section frontend contract.
+7. Only after these gates stabilize, choose one low-risk read-only Haskell route reader to reintroduce on a non-master branch.
+
+=== PHASE 1 RESULT ===
+PASS

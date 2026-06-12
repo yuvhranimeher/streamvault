@@ -1,0 +1,69 @@
+{
+  "mode": "read-only playback shadow freeze manifest",
+  "baseBranch": "haskell-playback-shadow-readiness-index-20260612-195110",
+  "nextAllowedBranchType": "inactive Haskell playback route implementation",
+  "frozenFixtureFiles": [
+    "tools/playback-parity-v1/playback-planner-fixtures.json",
+    "tools/playback-parity-v1/playback-route-contract-fixtures.json",
+    "tools/playback-parity-v1/playback-shadow-planner-expected-output.json"
+  ],
+  "frozenInventoryFile": "tools/playback-parity-v1/playback-route-shadow-contract-inventory.json",
+  "frozenHaskellPlannerFiles": [
+    "tools/playback-parity-v1/PlaybackShadowPlanner.hs",
+    "tools/playback-parity-v1/PlaybackRouteContractShadow.hs"
+  ],
+  "frozenJsPlannerFiles": [
+    "tools/playback-parity-v1/playback_shadow_planner_js.js",
+    "tools/playback-parity-v1/playback_route_contract_shadow_js.js"
+  ],
+  "frozenComparatorScripts": [
+    "tools/playback-parity-v1/playback_js_vs_hs_shadow_compare.py",
+    "tools/playback-parity-v1/playback_route_contract_js_vs_hs_compare.py"
+  ],
+  "frozenCiReviewScripts": [
+    "tools/playback-parity-v1/playback_planner_fixture_schema.py",
+    "tools/playback-parity-v1/playback_shadow_planner_gate.py",
+    "tools/playback-parity-v1/playback_route_inventory_schema_gate.py",
+    "tools/playback-parity-v1/playback_route_fixture_schema_gate.py",
+    "tools/playback-parity-v1/playback_route_contract_crosscheck.py",
+    "tools/playback-parity-v1/playback_route_shadow_full_gate.py",
+    "tools/playback-parity-v1/run_playback_shadow_ci.py",
+    "tools/playback-parity-v1/run_playback_shadow_review_pack.py",
+    "tools/playback-parity-v1/playback_shadow_workflow_safety_audit.py",
+    "tools/playback-parity-v1/collect_playback_shadow_artifacts.py",
+    "tools/playback-parity-v1/playback_shadow_artifact_manifest.py",
+    "tools/playback-parity-v1/playback_shadow_readiness_index.py"
+  ],
+  "frozenNpmScripts": [
+    "test:playback-shadow",
+    "test:playback-shadow-review",
+    "collect:playback-shadow-artifacts",
+    "report:playback-shadow-artifacts",
+    "report:playback-shadow-readiness"
+  ],
+  "frozenWorkflowFile": ".github/workflows/playback-shadow-ci.yml",
+  "acceptedRouteTargets": [
+    "/api/playback/local",
+    "/api/playback/ftp",
+    "/api/playback/movie",
+    "/api/ftp/raw",
+    "live TV m3u8 playback",
+    "series episode playback"
+  ],
+  "acceptedSafetyInvariants": [
+    "no active HTTP routes",
+    "no inactive Haskell HTTP routes yet",
+    "no production server start",
+    "no FFmpeg",
+    "no FTP/live URL calls",
+    "no runtime playback changes",
+    "no frontend playback changes",
+    "no secrets",
+    "no write permissions",
+    "no PR comment posting",
+    "desktop direct-play original FTP preserved",
+    "mobile HLS only when required",
+    "no automatic desktop transcoding"
+  ],
+  "forbiddenRuntimeFilesRequiredByFreeze": []
+}

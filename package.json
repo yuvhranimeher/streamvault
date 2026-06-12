@@ -21,6 +21,7 @@
     "collect:playback-shadow-artifacts": "python3 tools/playback-parity-v1/collect_playback_shadow_artifacts.py",
     "report:playback-shadow-artifacts": "python3 tools/playback-parity-v1/playback_shadow_artifact_manifest.py --write-report",
     "report:playback-shadow-readiness": "python3 tools/playback-parity-v1/playback_shadow_readiness_index.py --write-report",
+    "test:playback-shadow-freeze": "python3 tools/playback-parity-v1/playback_shadow_freeze_manifest_gate.py --write-report",
     "details:shadow:summary": "node tools/details-parity-v1/summarize-details-shadow-output.js"
   },
   "dependencies": {

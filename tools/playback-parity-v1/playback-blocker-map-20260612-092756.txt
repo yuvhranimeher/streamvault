@@ -1,0 +1,52 @@
+Status: PASS
+mode: read-only playback migration blocker map
+server_started: no
+media_sources_called: no
+ffmpeg_started: no
+production_playback_routes_changed: no
+desktop_direct_play_original_ftp: preserve
+mobile_hls_only_when_required: preserve
+automatic_desktop_transcoding: forbidden
+forced_desktop_ffmpeg: forbidden
+must_preserve_source_tokens:
+- desktop direct FTP selector: present; desktop chooses raw/proxy original source before any mobile planning
+- desktop keeps FFmpeg off: present; desktop direct-play must not be auto-transcoded
+- desktop original quality only: present; desktop should not be downscaled
+- mobile client detector: present; mobile-only planning branch
+- mobile HLS request flag: present; mobile HLS only when required
+- server mobile request detector: present; server separates mobile from desktop
+- mobile HLS profile: present; mobile session identity is profile-scoped
+- FTP proxy route: present; desktop HTTP(S) direct-play/proxy path
+- FTP stream route: present; FFmpeg path exists but must not become desktop default
+- mobile HLS FTP route: present; mobile HLS route exists
+- mobile HLS local route: present; mobile local HLS route exists
+frontend_route_reference_map:
+- /api/playback/local: frontend_reference=yes server_route=no; frontend planner reference
+- /api/playback/ftp: frontend_reference=yes server_route=no; frontend planner reference
+- /api/playback/movie: frontend_reference=yes server_route=no; frontend planner reference
+- /api/ftp/raw: frontend_reference=yes server_route=no; desktop ftp raw helper reference
+- /api/play-url: frontend_reference=no server_route=yes; current server play-url route
+- /api/ftp/proxy: frontend_reference=yes server_route=yes; current server proxy route
+- /api/ftp/stream: frontend_reference=yes server_route=yes; current server FFmpeg route
+dangerous_runtime_paths:
+- /api/ftp/stream: FFmpeg remote FTP transcode/remux path; do not make desktop default
+- /api/mobile-hls/ftp/index.m3u8: mobile-only HLS session startup; do not use for desktop direct-play
+- /api/mobile-hls/local/:id/index.m3u8: mobile-only local HLS session startup
+- /api/mobile-hls/:scope/:key/:file: HLS segment serving and session lifecycle
+- /api/ftp/subtitle/:track.vtt: FFmpeg subtitle extraction path
+- /api/ftp/media-info: remote probe path; may be slow/failure-prone
+- /api/ftp/duration: remote duration probe path
+- /live/:channelId/playlist.m3u8: live TV playlist rewriting, separate from playback migration
+- /live/:channelId/segment: live TV segment proxying, separate from playback migration
+safe_read_only_future_candidates:
+- static route inventory against server.js and public/app.js
+- fixture-only playback plan snapshots that do not call media sources
+- parser-only checks for play-url and ftp proxy URL encoding
+- mobile/desktop decision-table tests that do not start FFmpeg
+hard_blockers_before_haskell_playback_routes:
+- /api/playback/local: referenced by frontend but no matching server route on this branch (frontend planner reference)
+- /api/playback/ftp: referenced by frontend but no matching server route on this branch (frontend planner reference)
+- /api/playback/movie: referenced by frontend but no matching server route on this branch (frontend planner reference)
+- /api/ftp/raw: referenced by frontend but no matching server route on this branch (desktop ftp raw helper reference)
+next_task:
+- Add explicit playback planner parity only after the missing frontend/server route references are reconciled in a non-runtime test fixture.

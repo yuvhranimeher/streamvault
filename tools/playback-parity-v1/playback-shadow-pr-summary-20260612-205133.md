@@ -5,8 +5,8 @@ Status: PASS
 ## Branch Context
 
 - Base branch: `haskell-playback-shadow-github-actions-20260612-190632`
-- Current branch: `haskell-playback-shadow-readiness-index-20260612-195110`
-- HEAD: `ad85e78`
+- Current branch: `haskell-playback-shadow-freeze-baseline-20260612-204551`
+- HEAD: `82a593b`
 
 ## Gate List
 
@@ -30,10 +30,10 @@ Status: PASS
 
 ## Latest Reports
 
-- ci_gate: `tools/playback-parity-v1/playback-shadow-ci-report-20260612-195356.txt`
+- ci_gate: `tools/playback-parity-v1/playback-shadow-ci-report-20260612-205132.txt`
 - js_haskell_planner: `tools/playback-parity-v1/playback-js-vs-hs-shadow-compare-report-20260612-181036.txt`
 - route_comparator: `tools/playback-parity-v1/playback-route-contract-js-vs-hs-report-20260612-182035.txt`
-- workflow_safety: `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-195356.txt`
+- workflow_safety: `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-205133.txt`
 
 ## Changed Files
 
@@ -42,16 +42,17 @@ Status: PASS
 - `tools/playback-parity-v1/.playback-shadow-artifacts/manifest.txt`
 - `tools/playback-parity-v1/.playback-shadow-artifacts/playback-js-vs-hs-shadow-compare-report-20260612-181036.txt`
 - `tools/playback-parity-v1/.playback-shadow-artifacts/playback-route-contract-js-vs-hs-report-20260612-182035.txt`
-- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-ci-report-20260612-194737.txt`
-- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-ci-report-20260612-194759.txt`
-- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-pr-summary-20260612-194737.md`
-- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-pr-summary-20260612-194759.md`
-- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-review-pack-report-20260612-194737.txt`
-- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-review-pack-report-20260612-194759.txt`
-- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-workflow-safety-report-20260612-194737.txt`
-- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-workflow-safety-report-20260612-194759.txt`
+- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-ci-report-20260612-195356.txt`
+- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-ci-report-20260612-205105.txt`
+- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-pr-summary-20260612-195356.md`
+- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-pr-summary-20260612-205105.md`
+- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-review-pack-report-20260612-195356.txt`
+- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-review-pack-report-20260612-205105.txt`
+- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-workflow-safety-report-20260612-195356.txt`
+- `tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-workflow-safety-report-20260612-205105.txt`
 - `tools/playback-parity-v1/README.md`
 - `tools/playback-parity-v1/collect_playback_shadow_artifacts.py`
+- `tools/playback-parity-v1/playback-inactive-route-implementation-criteria.md`
 - `tools/playback-parity-v1/playback-route-contract-crosscheck-report-20260612-193421.txt`
 - `tools/playback-parity-v1/playback-route-fixture-schema-report-20260612-193421.txt`
 - `tools/playback-parity-v1/playback-route-inventory-schema-report-20260612-193421.txt`
@@ -61,6 +62,9 @@ Status: PASS
 - `tools/playback-parity-v1/playback-shadow-artifact-manifest-report-20260612-194716.txt`
 - `tools/playback-parity-v1/playback-shadow-artifact-manifest-report-20260612-194738.txt`
 - `tools/playback-parity-v1/playback-shadow-artifact-manifest-report-20260612-195337.txt`
+- `tools/playback-parity-v1/playback-shadow-artifact-manifest-report-20260612-195358.txt`
+- `tools/playback-parity-v1/playback-shadow-artifact-manifest-report-20260612-205045.txt`
+- `tools/playback-parity-v1/playback-shadow-artifact-manifest-report-20260612-205107.txt`
 - `tools/playback-parity-v1/playback-shadow-ci-report-20260612-193225.txt`
 - `tools/playback-parity-v1/playback-shadow-ci-report-20260612-193314.txt`
 - `tools/playback-parity-v1/playback-shadow-ci-report-20260612-193334.txt`
@@ -79,6 +83,17 @@ Status: PASS
 - `tools/playback-parity-v1/playback-shadow-ci-report-20260612-194759.txt`
 - `tools/playback-parity-v1/playback-shadow-ci-report-20260612-195347.txt`
 - `tools/playback-parity-v1/playback-shadow-ci-report-20260612-195356.txt`
+- `tools/playback-parity-v1/playback-shadow-ci-report-20260612-195408.txt`
+- `tools/playback-parity-v1/playback-shadow-ci-report-20260612-195419.txt`
+- `tools/playback-parity-v1/playback-shadow-ci-report-20260612-205056.txt`
+- `tools/playback-parity-v1/playback-shadow-ci-report-20260612-205105.txt`
+- `tools/playback-parity-v1/playback-shadow-ci-report-20260612-205121.txt`
+- `tools/playback-parity-v1/playback-shadow-ci-report-20260612-205132.txt`
+- `tools/playback-parity-v1/playback-shadow-freeze-baseline.md`
+- `tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260612-205000.txt`
+- `tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260612-205045.txt`
+- `tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260612-205106.txt`
+- `tools/playback-parity-v1/playback-shadow-freeze-manifest.json`
 - `tools/playback-parity-v1/playback-shadow-pr-summary-20260612-193121.md`
 - `tools/playback-parity-v1/playback-shadow-pr-summary-20260612-193225.md`
 - `tools/playback-parity-v1/playback-shadow-pr-summary-20260612-193258.md`
@@ -93,7 +108,13 @@ Status: PASS
 - `tools/playback-parity-v1/playback-shadow-pr-summary-20260612-194302.md`
 - `tools/playback-parity-v1/playback-shadow-pr-summary-20260612-194737.md`
 - `tools/playback-parity-v1/playback-shadow-pr-summary-20260612-194759.md`
+- `tools/playback-parity-v1/playback-shadow-pr-summary-20260612-195356.md`
+- `tools/playback-parity-v1/playback-shadow-pr-summary-20260612-195419.md`
+- `tools/playback-parity-v1/playback-shadow-pr-summary-20260612-205105.md`
 - `tools/playback-parity-v1/playback-shadow-readiness-index-20260612-195337.txt`
+- `tools/playback-parity-v1/playback-shadow-readiness-index-20260612-195357.txt`
+- `tools/playback-parity-v1/playback-shadow-readiness-index-20260612-205045.txt`
+- `tools/playback-parity-v1/playback-shadow-readiness-index-20260612-205106.txt`
 - `tools/playback-parity-v1/playback-shadow-review-checklist.md`
 - `tools/playback-parity-v1/playback-shadow-review-pack-report-20260612-193225.txt`
 - `tools/playback-parity-v1/playback-shadow-review-pack-report-20260612-193315.txt`
@@ -104,6 +125,9 @@ Status: PASS
 - `tools/playback-parity-v1/playback-shadow-review-pack-report-20260612-194219.txt`
 - `tools/playback-parity-v1/playback-shadow-review-pack-report-20260612-194737.txt`
 - `tools/playback-parity-v1/playback-shadow-review-pack-report-20260612-194759.txt`
+- `tools/playback-parity-v1/playback-shadow-review-pack-report-20260612-195356.txt`
+- `tools/playback-parity-v1/playback-shadow-review-pack-report-20260612-195419.txt`
+- `tools/playback-parity-v1/playback-shadow-review-pack-report-20260612-205105.txt`
 - `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-193225.txt`
 - `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-193314.txt`
 - `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-193334.txt`
@@ -116,7 +140,11 @@ Status: PASS
 - `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-194737.txt`
 - `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-194759.txt`
 - `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-195356.txt`
+- `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-195419.txt`
+- `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-205105.txt`
+- `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-205133.txt`
 - `tools/playback-parity-v1/playback_shadow_artifact_manifest.py`
+- `tools/playback-parity-v1/playback_shadow_freeze_manifest_gate.py`
 - `tools/playback-parity-v1/playback_shadow_pr_summary.py`
 - `tools/playback-parity-v1/playback_shadow_readiness_index.py`
 - `tools/playback-parity-v1/playback_shadow_workflow_safety_audit.py`

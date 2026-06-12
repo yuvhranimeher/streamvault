@@ -167,7 +167,9 @@ def main() -> int:
     output_failures = validate_plan_output(actual_plans) if actual_plans is not None else []
     expected_compare_status = "skipped: expected output fixture not present"
     expected_compare_failures: list[str] = []
-    if actual_plans is not None and EXPECTED_PATH.exists():
+    if actual_plans is None and EXPECTED_PATH.exists():
+        expected_compare_status = "skipped: ghc unavailable" if not shutil.which("ghc") else "skipped: no actual planner output"
+    elif actual_plans is not None and EXPECTED_PATH.exists():
         expected = load_json(EXPECTED_PATH)
         expected_compare_status = "passed" if expected == actual_plans else "failed"
         if expected != actual_plans:

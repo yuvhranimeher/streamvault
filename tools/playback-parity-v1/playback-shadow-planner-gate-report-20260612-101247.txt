@@ -6,7 +6,7 @@ ffmpeg_started: no
 runtime_playback_changed: no
 ghc_available: false
 compiled_validation: skipped: ghc unavailable
-expected_output_compare: skipped: expected output fixture not present
+expected_output_compare: skipped: ghc unavailable
 fixture_count: 5
 missing_source_tokens: []
 forbidden_source_tokens: []

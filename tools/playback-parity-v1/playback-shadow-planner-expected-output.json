@@ -1,0 +1,62 @@
+[
+  {
+    "inputId": "fixture-desktop-movie",
+    "fixtureName": "desktop_movie_direct_ftp",
+    "sourceType": "movie",
+    "clientType": "desktop",
+    "playbackMode": "direct",
+    "requiresTranscode": false,
+    "shouldUseFfmpeg": false,
+    "streamUrl": "ftp://media.example.test/movies/fixture-desktop-movie.mp4",
+    "reason": "Desktop streamUrl maps to direct shadow playback without FFmpeg.",
+    "ok": true
+  },
+  {
+    "inputId": "fixture-mobile-movie",
+    "fixtureName": "mobile_movie_hls_required",
+    "sourceType": "movie",
+    "clientType": "mobile",
+    "playbackMode": "hls",
+    "requiresTranscode": true,
+    "shouldUseFfmpeg": true,
+    "streamUrl": "http://media.example.test/movies/fixture-mobile-movie-hevc.mkv",
+    "reason": "Mobile compatibility fixture maps to HLS shadow playback.",
+    "ok": true
+  },
+  {
+    "inputId": "fixture-show-s01e01",
+    "fixtureName": "series_episode_direct",
+    "sourceType": "series",
+    "clientType": "desktop",
+    "playbackMode": "direct",
+    "requiresTranscode": false,
+    "shouldUseFfmpeg": false,
+    "streamUrl": "http://media.example.test/series/fixture-show/S01E01.mp4",
+    "reason": "Series episode streamUrl maps to direct shadow playback.",
+    "ok": true
+  },
+  {
+    "inputId": "fixture-live-channel",
+    "fixtureName": "live_tv_hls_m3u8",
+    "sourceType": "live",
+    "clientType": "desktop",
+    "playbackMode": "live",
+    "requiresTranscode": false,
+    "shouldUseFfmpeg": false,
+    "streamUrl": "http://live.example.test/channel/index.m3u8",
+    "reason": "Live TV m3u8 source maps to live shadow playback.",
+    "ok": true
+  },
+  {
+    "inputId": "fixture-missing-stream",
+    "fixtureName": "invalid_missing_streamUrl",
+    "sourceType": "movie",
+    "clientType": "desktop",
+    "playbackMode": "invalid",
+    "requiresTranscode": false,
+    "shouldUseFfmpeg": false,
+    "streamUrl": "",
+    "reason": "Missing streamUrl; playback plan is invalid.",
+    "ok": false
+  }
+]

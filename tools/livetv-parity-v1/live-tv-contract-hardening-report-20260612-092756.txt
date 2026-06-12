@@ -1,0 +1,21 @@
+Status: PASS
+mode: read-only live TV channel contract audit
+server_started: no
+stream_urls_modified: no
+channel_count: 15
+url_count: 15
+m3u8_url_count: 15
+logo_count: 0
+missing_logo_count: 15
+remote_logo_count: 0
+root_relative_logo_count: 0
+category_count: 5
+categories: {'Entertainment': 3, 'Kids': 1, 'Movies': 1, 'News': 7, 'Sports': 3}
+field_counts: {'category': 15, 'color': 15, 'id': 15, 'name': 15, 'textColor': 15, 'url': 15}
+duplicate_ids: []
+duplicate_names: []
+failures: []
+warnings: []
+logo_contract: optional; current frontend uses initials when logo is absent
+url_contract: required .m3u8 http(s) URL for playable live channels and preserved verbatim
+hardening_checks: route-safe unique id, unique normalized name, category presence, color/textColor hex, optional valid logo, required m3u8 URL

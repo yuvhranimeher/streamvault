@@ -25,6 +25,7 @@
     "tools/playback-parity-v1/playback_shadow_planner_gate.py",
     "tools/playback-parity-v1/playback_route_inventory_schema_gate.py",
     "tools/playback-parity-v1/playback_route_fixture_schema_gate.py",
+    "tools/playback-parity-v1/inactive_playback_route_fixture_coverage_audit.py",
     "tools/playback-parity-v1/playback_route_contract_crosscheck.py",
     "tools/playback-parity-v1/playback_route_shadow_full_gate.py",
     "tools/playback-parity-v1/run_playback_shadow_ci.py",
@@ -39,7 +40,8 @@
     "test:playback-shadow-review",
     "collect:playback-shadow-artifacts",
     "report:playback-shadow-artifacts",
-    "report:playback-shadow-readiness"
+    "report:playback-shadow-readiness",
+    "test:playback-inactive-route-fixtures"
   ],
   "frozenWorkflowFile": ".github/workflows/playback-shadow-ci.yml",
   "acceptedRouteTargets": [
@@ -61,6 +63,7 @@
     "no secrets",
     "no write permissions",
     "no PR comment posting",
+    "inactive route fixture coverage v1 is shadow-only",
     "desktop direct-play original FTP preserved",
     "mobile HLS only when required",
     "no automatic desktop transcoding"

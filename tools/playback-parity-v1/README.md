@@ -30,6 +30,12 @@ Validate the collected artifact bundle:
 npm run report:playback-shadow-artifacts
 ```
 
+Run the inactive route fixture coverage audit:
+
+```sh
+npm run test:playback-inactive-route-fixtures
+```
+
 ## Main Entry Points
 
 - `run_playback_shadow_ci.py` runs all read-only playback shadow gates.
@@ -42,6 +48,7 @@ npm run report:playback-shadow-artifacts
 
 - `playback_route_inventory_schema_gate.py` validates the route inventory schema.
 - `playback_route_fixture_schema_gate.py` validates route contract fixtures.
+- `inactive_playback_route_fixture_coverage_audit.py` verifies inactive route fixture coverage v1.
 - `playback_route_contract_crosscheck.py` checks inventory and fixtures against each other.
 - `playback_route_shadow_full_gate.py` runs the route schema, crosscheck, and comparator gates together.
 
@@ -68,6 +75,9 @@ These tools do not:
 - touch production frontend playback code
 - require secrets or write permissions
 - post PR comments
+
+Freeze baseline extension: inactive route fixture coverage v1 remains
+shadow-only and fixture-only.
 
 The preserved playback contract remains:
 

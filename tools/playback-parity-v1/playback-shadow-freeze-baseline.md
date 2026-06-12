@@ -33,8 +33,23 @@ They cover:
 - raw FTP stream metadata
 - local playback metadata
 - series episode playback
+- mobile series episode HLS planning
 - live TV m3u8 playback
 - invalid missing `streamUrl`
+- invalid unknown route target
+- invalid unsupported `clientType`
+- invalid unsupported `sourceType`
+- invalid unsafe/non-http `streamUrl`
+- invalid missing `routeTarget`
+- invalid missing `sourceType`
+- invalid missing `clientType`
+
+## Freeze Baseline Extension: Inactive Route Fixture Coverage V1
+
+This baseline is extended with inactive route fixture coverage v1. The extension
+adds read-only coverage auditing for route fixture breadth only; it does not add
+active HTTP routes, does not wire Haskell route code into the server, does not
+start production services, and does not call FTP/live URLs or FFmpeg.
 
 ## Accepted Inventory Schema
 
@@ -63,7 +78,8 @@ npm run report:playback-shadow-readiness
 The underlying read-only gates include planner fixture validation, Haskell shadow
 planner validation, JS/Haskell planner comparison, route inventory schema,
 route fixture schema, route crosscheck, JS/Haskell route comparison, route full
-gate, workflow safety, artifact manifest validation, and readiness indexing.
+gate, inactive route fixture coverage audit, workflow safety, artifact manifest
+validation, and readiness indexing.
 
 ## Accepted Workflow Safety Rules
 

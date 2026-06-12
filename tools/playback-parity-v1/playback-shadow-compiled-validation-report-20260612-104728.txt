@@ -1,0 +1,29 @@
+Status: PASS_WITH_COMPILED_VALIDATION_SKIPPED
+branch: haskell-playback-shadow-compiled-20260612-104728
+mode: read-only pure Haskell playback shadow planner validation
+server_started: no
+http_routes_added: no
+runtime_playback_changed: no
+production_playback_apis_changed: no
+desktop_direct_play_preserved: yes
+mobile_hls_only_when_required_preserved: yes
+automatic_desktop_transcoding_added: no
+
+compiler_availability:
+- ghc: unavailable in this shell
+- cabal: unavailable in this shell
+- stack: unavailable in this shell
+
+validation_results:
+- playback_shadow_planner_gate.py --write-report: PASS
+- playback_planner_fixture_schema.py --write-report: PASS
+- compiled PlaybackShadowPlanner.hs validation: SKIPPED, ghc unavailable
+- expected output comparison: SKIPPED, ghc unavailable
+
+compiled_validation_plan_when_ghc_exists:
+1. Compile tools/playback-parity-v1/PlaybackShadowPlanner.hs with ghc into a temporary directory.
+2. Run the compiled CLI against tools/playback-parity-v1/playback-planner-fixtures.json.
+3. Compare the resulting JSON with tools/playback-parity-v1/playback-shadow-planner-expected-output.json.
+
+remaining_blocker:
+- Install or expose a local Haskell compiler toolchain before claiming compiled validation.

@@ -1,0 +1,26 @@
+Status: PASS
+mode: read-only playback parity blocker gate
+server_started: no
+media_sources_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+fail_only_on_real_contract_risks: true
+contract_checks:
+- desktop_path_forces_ffmpeg: PASS
+- mobile_path_has_hls_plan: PASS
+- direct_streamUrl_handling: PASS
+- live_tv_m3u8_represented: PASS
+- unknown_playback_mode: PASS
+- unsafe_runtime_modification: PASS
+runtime_diff_checked_against: haskell-deep-parity-batch-20260612-092756
+unsafe_runtime_changes: []
+real_contract_risks: []
+reported_future_blockers:
+- /api/playback/local: frontend reference exists but JS server route is absent on this branch
+- /api/playback/ftp: frontend reference exists but JS server route is absent on this branch
+- /api/playback/movie: frontend reference exists but JS server route is absent on this branch
+- /api/ftp/raw: frontend reference exists but JS server route is absent on this branch
+remaining_policy:
+- Do not implement playback routes yet.
+- Keep desktop direct-play original FTP/HTTP behavior out of FFmpeg.
+- Keep mobile HLS limited to required compatibility cases.

@@ -15,6 +15,7 @@
     "details:shadow:all": "npm run details:shadow:audit && npm run details:shadow:schema && npm run details:shadow:schema:negative && npm run details:shadow:fixture:determinism && npm run details:shadow:fixture:coverage && npm run details:shadow:fixture:coverage:negative && npm run details:shadow:fixture:gaps && npm run details:shadow:suite",
     "details:shadow:fixture:gaps": "node tools/details-parity-v1/audit-details-fixture-gaps.js",
     "details:shadow:all:pssafe": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/details-parity-v1/run-details-shadow-all-powershell-safe.ps1",
+    "test:playback-shadow": "python3 tools/playback-parity-v1/run_playback_shadow_ci.py --write-report",
     "details:shadow:summary": "node tools/details-parity-v1/summarize-details-shadow-output.js"
   },
   "dependencies": {

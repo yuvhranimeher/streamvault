@@ -15,6 +15,9 @@ WORKFLOW_PATH = ROOT / ".github" / "workflows" / "playback-shadow-ci.yml"
 
 FORBIDDEN_PATTERNS = {
     "push_trigger": r"(?m)^\s*push\s*:",
+    "pull_requests_write_permission": r"(?ms)^\s*pull-requests:\s*write\s*$",
+    "issues_write_permission": r"(?ms)^\s*issues:\s*write\s*$",
+    "contents_write_permission": r"(?ms)^\s*contents:\s*write\s*$",
     "secrets_reference": r"\bsecrets\.",
     "npm_audit_fix": r"\bnpm\s+audit\s+fix\b",
     "npm_start": r"\bnpm\s+(?:run\s+)?start\b",
@@ -22,8 +25,15 @@ FORBIDDEN_PATTERNS = {
     "server_js_execution": r"\bserver\.js\b",
     "deploy_keyword": r"\bdeploy(?:ment)?\b",
     "production_keyword": r"\bproduction\b",
+    "github_script": r"actions/github-script",
+    "gh_cli_pr_comment": r"\bgh\s+pr\s+comment\b",
+    "gh_cli_issue_comment": r"\bgh\s+issue\s+comment\b",
+    "github_pr_comment_api": r"/issues/\$\{\{\s*github\.event\.pull_request\.number\s*\}/comments",
     "route_execution_curl": r"\bcurl\b",
     "route_execution_wget": r"\bwget\b",
+    "playback_api_route_call": r"/api/playback/",
+    "ftp_raw_route_call": r"/api/ftp/raw",
+    "live_route_call": r"/live/",
 }
 
 
@@ -74,6 +84,16 @@ def main() -> int:
         failures.append("missing npm ci install step")
     if "npm run test:playback-shadow" not in text:
         failures.append("missing playback shadow npm script step")
+    if "npm run test:playback-shadow-review" not in text:
+        failures.append("missing playback shadow review npm script step")
+    if "collect_playback_shadow_artifacts.py" not in text:
+        failures.append("missing artifact collector step")
+    if "actions/upload-artifact@v4" not in text:
+        failures.append("missing upload-artifact step")
+    if "GITHUB_STEP_SUMMARY" not in text:
+        failures.append("missing GitHub step summary")
+    if "playback-shadow-review-pack" not in text:
+        failures.append("missing playback shadow artifact name")
     if "ghc-version: 9.6.7" not in text:
         failures.append("missing GHC 9.6.7 setup")
 
@@ -99,6 +119,9 @@ def main() -> int:
         "workflow_must_not_deploy: true",
         "workflow_must_not_start_server: true",
         "workflow_must_not_use_secrets: true",
+        "upload_artifact_allowed: true",
+        "github_step_summary_allowed: true",
+        "pr_comments_avoided: true",
         f"forbidden_hits: {forbidden_hits}",
         f"failures: {failures}",
     ]

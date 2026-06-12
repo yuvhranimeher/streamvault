@@ -47,7 +47,7 @@ jobs:
             echo "- CI gate: PASS"
             echo "- Review pack: PASS"
             echo "- Artifact bundle: playback-shadow-review-pack"
-            echo "- Runtime safety: no server startup, no deploy, no secrets, no PR comments"
+            echo "- Runtime safety: no server startup, no release job, no secrets, no PR comments"
             echo ""
             echo "Collected reports are in \`tools/playback-parity-v1/.playback-shadow-artifacts/\`."
           } >> "$GITHUB_STEP_SUMMARY"

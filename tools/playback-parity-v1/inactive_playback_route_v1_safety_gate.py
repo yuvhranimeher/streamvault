@@ -18,11 +18,15 @@ HS_PATH = TOOL_DIR / "InactivePlaybackRouteV1.hs"
 PACKAGE_PATH = ROOT / "package.json"
 PACKAGE_LOCK_PATH = ROOT / "package-lock.json"
 BASE_REF = "haskell-playback-shadow-freeze-baseline-20260612-204551"
-SCRIPT_NAME = "test:playback-inactive-route-v1"
-SCRIPT_VALUE = (
-    "python3 tools/playback-parity-v1/inactive_playback_route_v1_gate.py --write-report "
-    "&& python3 tools/playback-parity-v1/inactive_playback_route_v1_safety_gate.py --write-report"
-)
+ALLOWED_NPM_SCRIPTS = {
+    "test:playback-inactive-route-v1": (
+        "python3 tools/playback-parity-v1/inactive_playback_route_v1_gate.py --write-report "
+        "&& python3 tools/playback-parity-v1/inactive_playback_route_v1_safety_gate.py --write-report"
+    ),
+    "test:playback-inactive-route-fixtures": (
+        "python3 tools/playback-parity-v1/inactive_playback_route_fixture_coverage_audit.py --write-report"
+    ),
+}
 
 ALLOWED_INACTIVE_ROUTE_FILES = {
     "tools/playback-parity-v1/InactivePlaybackRouteV1.hs",
@@ -157,12 +161,13 @@ def package_failures(base: str) -> list[str]:
 
     base_scripts = dict(base_pkg.get("scripts", {}))
     head_scripts = dict(head_pkg.get("scripts", {}))
-    base_script_value = base_scripts.pop(SCRIPT_NAME, None)
-    head_script_value = head_scripts.pop(SCRIPT_NAME, None)
-    if base_script_value is not None:
-        failures.append(f"baseline unexpectedly already had {SCRIPT_NAME}")
-    if head_script_value is not None and head_script_value != SCRIPT_VALUE:
-        failures.append(f"npm script {SCRIPT_NAME} has unexpected value")
+    for script_name, script_value in ALLOWED_NPM_SCRIPTS.items():
+        base_script_value = base_scripts.pop(script_name, None)
+        head_script_value = head_scripts.pop(script_name, None)
+        if base_script_value is not None:
+            failures.append(f"baseline unexpectedly already had {script_name}")
+        if head_script_value is not None and head_script_value != script_value:
+            failures.append(f"npm script {script_name} has unexpected value")
     if base_scripts != head_scripts:
         failures.append("package.json scripts changed beyond inactive route script")
 
@@ -208,7 +213,7 @@ def diff_safety_failures(base: str, files: list[str]) -> list[str]:
             "report-" in Path(path).name or "plan-" in Path(path).name
         ):
             continue
-        if path == "package.json" and SCRIPT_NAME in line:
+        if path == "package.json" and any(script_name in line for script_name in ALLOWED_NPM_SCRIPTS):
             continue
         if path.endswith((".md", ".txt", ".json")):
             continue
@@ -262,7 +267,7 @@ def main() -> int:
         f"inactive_haskell_exists: {str(HS_PATH.exists()).lower()}",
         f"changed_files: {files}",
         f"active_runtime_file_count_scanned: {len(active_runtime_files())}",
-        f"allowed_npm_script: {SCRIPT_NAME}",
+        f"allowed_npm_scripts: {sorted(ALLOWED_NPM_SCRIPTS)}",
         f"failures: {failures}",
     ]
     output = "\n".join(lines) + "\n"

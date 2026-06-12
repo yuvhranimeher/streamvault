@@ -1,0 +1,38 @@
+Status: PASS
+mode: read-only JS/Haskell route inventory gate
+server_started: no
+runtime_routes_changed: no
+local_haskell_file_count: 0
+local_haskell_files: []
+haskell_topic_branches_seen: 181
+route_inventory:
+- home-feed: route=/api/home-feed js_server=yes frontend_ref=yes local_haskell=no topic_status=topic-branch-seen local=7 remote=7; completed topic parity; local Haskell absent
+- movies: route=/api/movies js_server=yes frontend_ref=yes local_haskell=no topic_status=topic-branch-seen local=7 remote=7; completed topic parity; local Haskell absent
+- series: route=/api/series js_server=yes frontend_ref=yes local_haskell=no topic_status=topic-branch-seen local=8 remote=8; completed topic parity; local Haskell absent
+- search: route=/api/search js_server=yes frontend_ref=yes local_haskell=no topic_status=topic-branch-seen local=6 remote=6; completed topic parity; local Haskell absent
+- sections: route=/api/section/:key js_server=yes frontend_ref=yes local_haskell=no topic_status=topic-branch-seen local=2 remote=2; completed topic parity; local Haskell absent
+- sections-alias: route=/api/sections js_server=no frontend_ref=no local_haskell=no topic_status=topic-branch-seen local=2 remote=2; frontend contract uses /api/section/:key; /api/sections is alias-only in migration notes
+- details: route=/api/details/:type/:id js_server=yes frontend_ref=yes local_haskell=no topic_status=topic-branch-seen local=22 remote=22; partial details/TMDB parity
+- title-details: route=/api/title-details js_server=yes frontend_ref=no local_haskell=no topic_status=topic-branch-seen local=22 remote=22; partial details/TMDB parity
+- live-channels: route=/api/channels js_server=yes frontend_ref=yes local_haskell=no topic_status=no-topic-branch-seen; read-only live TV contract audit only
+- live-playlist: route=/live/:channelId/playlist.m3u8 js_server=yes frontend_ref=yes local_haskell=no topic_status=no-topic-branch-seen; runtime proxy, do not port yet
+- live-segment: route=/live/:channelId/segment js_server=yes frontend_ref=yes local_haskell=no topic_status=no-topic-branch-seen; runtime proxy, do not port yet
+- play-url: route=/api/play-url js_server=yes frontend_ref=no local_haskell=no topic_status=no-topic-branch-seen; legacy JS play URL route
+- playback-local: route=/api/playback/local js_server=no frontend_ref=yes local_haskell=no topic_status=no-topic-branch-seen; frontend reference, no JS server route on this branch
+- playback-ftp: route=/api/playback/ftp js_server=no frontend_ref=yes local_haskell=no topic_status=no-topic-branch-seen; frontend reference, no JS server route on this branch
+- playback-movie: route=/api/playback/movie js_server=no frontend_ref=yes local_haskell=no topic_status=no-topic-branch-seen; frontend reference, no JS server route on this branch
+- mobile-hls-ftp: route=/api/mobile-hls/ftp/index.m3u8 js_server=yes frontend_ref=no local_haskell=no topic_status=no-topic-branch-seen; mobile HLS runtime path, audit only
+- mobile-hls-local: route=/api/mobile-hls/local/:id/index.m3u8 js_server=yes frontend_ref=no local_haskell=no topic_status=no-topic-branch-seen; mobile HLS runtime path, audit only
+- ftp-proxy: route=/api/ftp/proxy js_server=yes frontend_ref=yes local_haskell=no topic_status=no-topic-branch-seen; desktop proxy/direct path, audit only
+- ftp-stream: route=/api/ftp/stream js_server=yes frontend_ref=yes local_haskell=no topic_status=no-topic-branch-seen; FFmpeg path, dangerous
+- ftp-raw: route=/api/ftp/raw js_server=no frontend_ref=yes local_haskell=no topic_status=no-topic-branch-seen; frontend helper reference, no JS server route on this branch
+- downloads: route=/api/downloads js_server=yes frontend_ref=yes local_haskell=no topic_status=topic-branch-seen local=5 remote=5; completed topic parity; local Haskell absent
+- download-redirect: route=/download/:id js_server=yes frontend_ref=yes local_haskell=no topic_status=topic-branch-seen local=5 remote=5; redirect behavior must be preserved
+- poster-cache: route=/poster-cache js_server=yes frontend_ref=yes local_haskell=no topic_status=no-topic-branch-seen; JS poster cache proxy is source of truth
+- dashboard: route=/api/dashboard js_server=yes frontend_ref=yes local_haskell=no topic_status=no-topic-branch-seen; Express router; no Haskell route on this branch
+missing_js_source_truth_routes: []
+local_haskell_route_gaps: ['/api/home-feed', '/api/movies', '/api/series', '/api/search', '/api/section/:key', '/api/sections', '/api/details/:type/:id', '/api/title-details', '/api/channels', '/live/:channelId/playlist.m3u8', '/live/:channelId/segment', '/api/play-url', '/api/playback/local', '/api/playback/ftp', '/api/playback/movie', '/api/mobile-hls/ftp/index.m3u8', '/api/mobile-hls/local/:id/index.m3u8', '/api/ftp/proxy', '/api/ftp/stream', '/api/ftp/raw', '/api/downloads', '/download/:id', '/poster-cache', '/api/dashboard']
+inventory_notes:
+- Current branch has no local Haskell route implementation files; topic branch parity exists for downloads, movies, home-feed, series, search, and sections.
+- Details, live TV, and playback remain read-only audit/contract areas on this branch.
+- Playback frontend/server route mismatches are documented blockers, not runtime changes.

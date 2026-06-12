@@ -15,6 +15,10 @@ TOOL_DIR = ROOT / "tools" / "playback-parity-v1"
 COMMANDS = [
     ("playback_shadow_ci", [sys.executable, str(TOOL_DIR / "run_playback_shadow_ci.py"), "--write-report"]),
     (
+        "inactive_route_fixture_coverage_audit",
+        [sys.executable, str(TOOL_DIR / "inactive_playback_route_fixture_coverage_audit.py"), "--write-report"],
+    ),
+    (
         "workflow_safety_audit",
         [sys.executable, str(TOOL_DIR / "playback_shadow_workflow_safety_audit.py"), "--write-report"],
     ),

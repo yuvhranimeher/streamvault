@@ -18,6 +18,7 @@ GATES = [
     ("js_vs_haskell_shadow_compare", TOOL_DIR / "playback_js_vs_hs_shadow_compare.py"),
     ("route_inventory_schema_gate", TOOL_DIR / "playback_route_inventory_schema_gate.py"),
     ("route_fixture_schema_gate", TOOL_DIR / "playback_route_fixture_schema_gate.py"),
+    ("inactive_route_fixture_coverage_audit", TOOL_DIR / "inactive_playback_route_fixture_coverage_audit.py"),
     ("route_contract_crosscheck", TOOL_DIR / "playback_route_contract_crosscheck.py"),
     ("route_contract_js_vs_hs_compare", TOOL_DIR / "playback_route_contract_js_vs_hs_compare.py"),
     ("route_shadow_full_gate", TOOL_DIR / "playback_route_shadow_full_gate.py"),

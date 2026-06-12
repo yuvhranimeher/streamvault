@@ -1,0 +1,39 @@
+Status: PASS
+mode: read-only inactive playback route v1 plan
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_routes_wired: no
+
+Frozen contract found:
+- tools/playback-parity-v1/playback-shadow-freeze-baseline.md
+- tools/playback-parity-v1/playback-shadow-freeze-manifest.json
+- tools/playback-parity-v1/playback-route-contract-fixtures.json
+- tools/playback-parity-v1/playback-route-shadow-contract-inventory.json
+
+Inactive route criteria found:
+- tools/playback-parity-v1/playback-inactive-route-implementation-criteria.md
+
+Planned inactive route model:
+- /api/playback/local
+- /api/playback/ftp
+- /api/playback/movie
+- /api/ftp/raw
+- live TV m3u8 playback
+- series episode playback
+
+Safety confirmations:
+- no active route wiring planned
+- no inactive Haskell HTTP route wiring planned
+- no production server startup needed
+- no FTP/live network calls needed
+- no FFmpeg calls needed
+- no production frontend playback changes planned
+- all validation will use frozen fixtures/contracts only
+
+Next phase:
+- add tools/playback-parity-v1/InactivePlaybackRouteV1.hs as an inactive shadow-only executable
+- compare output against frozen route contract decisions
+- keep the module unreferenced by any active runtime file

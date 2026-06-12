@@ -1,0 +1,420 @@
+Status: PASS
+mode: read-only JS playback behavior reference extractor
+server_started: no
+media_sources_called: no
+runtime_playback_changed: no
+js_file_count: 7
+detected_function_count: 505
+detected_playback_function_count: 113
+detected_function_names:
+- attachPlayerSource
+- audioTrackTitle
+- bindSubtitleTrack
+- cleanDisplayTitle
+- cleanupMobileHlsSessions
+- clearSubtitleOverlay
+- closePlayer
+- copyStreamLink
+- desktopFtpPlaybackSrc
+- directStream
+- ensureFtpTrackOptionsLoaded
+- ensureLocalTrackOptionsLoaded
+- enterMobileLandscapeMode
+- exitMobileLandscapeMode
+- fetchFtpPlaybackPlan
+- fetchLocalPlaybackPlan
+- findCatalogItemByStreamUrl
+- findSubtitleTracks
+- ftpDirectPlayable
+- ftpPlaybackSrc
+- ftpProxySrc
+- ftpRawSrc
+- ftpSeekTo
+- ftpSubtitleSrc
+- ftpTranscodeSrc
+- getPosterInfo
+- hidePlayerNotice
+- hideSeriesPlayerBar
+- hlsSessionId
+- hlsSessionKey
+- hydrateMoviePlayback
+- inferQuality
+- isMobileLandscapeMode
+- isMobilePlaybackClient
+- isMobilePlaybackRequest
+- isRemoteDirectPlayable
+- loadAudioTracks
+- loadFtpDuration
+- loadFtpTrackOptions
+- loadHlsScript
+- loadPlayerDuration
+- loadQualityOptions
+- loadSubtitleTracks
+- localDirectPlayable
+- localDirectorForDetails
+- localDirectorItems
+- localFileForStreamId
+- mobileForceLandscape
+- moreByDirector
+- needsTranscode
+- onFtpCanPlay
+- onFtpPlaybackError
+- onLocalPlaybackError
+- playFtpMedia
+- playMedia
+- playMovieFromDetail
+- playNative
+- playNextEpisode
+- playSeriesEpisode
+- playWithHls
+- playbackTime
+- playerDuration
+- playerLocalPoint
+- remotePlayUrls
+- remuxStream
+- renderAudioTracks
+- renderMobileMp4Page
+- renderSortedTrack
+- resetLocalTrackOptions
+- resolveFtpPlayUrl
+- rowSubtitle
+- selectDirector
+- selectedTextTrack
+- sendMobileHlsPlaylist
+- setAudio
+- setPlayerDuration
+- setQuality
+- setTrackMode
+- setupPlayerEvents
+- showPlayerNotice
+- showSeriesPlayerBar
+- showVlcPlaybackNotice
+- startMobileHlsSession
+- stopMobileHlsSession
+- streamUrlFor
+- subtitleCanRenderAsVtt
+- subtitleTextTrackCodecs
+- svAppendLazyTrack
+- svBuildPosterBridge
+- svFinishPosterLoad
+- svMarkPosterLoaded
+- svPosterBridgeKey
+- svPosterConcurrency
+- svPosterIntersectionObserver
+- svPosterRootMargin
+- svPumpPosterQueue
+- svQueueVisiblePosterImage
+- svRegisterPosterImages
+- svRenderLazyTrack
+- svRenderMixedTrack
+- svStartPosterObserver
+- svTrackForRow
+- svTrackIdForRow
+- throttleStream
+- togglePlay
+- touchMobileHlsSession
+- trackSummary
+- trackView
+- transcodeStream
+- updatePlayIcons
+- updateSubtitleOverlay
+- vlcPlaylistSrc
+- waitForHlsPlaylist
+detected_endpoint_count: 125
+detected_endpoints:
+- '/api/downloads'
+- '/api/downloads/debug'
+- '/api/ftp/duration'
+- '/api/ftp/proxy'
+- '/api/ftp/stream'
+- '/api/ftp/subtitle/:track.vtt'
+- '/api/ftp/test'
+- '/api/mobile-hls/:scope/:key/:file'
+- '/api/mobile-hls/ftp/index.m3u8'
+- '/api/mobile-hls/local/:id/index.m3u8'
+- '/api/mobile-hls/stop'
+- '/api/play-url'
+- '/api/stream-seek/:id'
+- '/api/subtitles/:id'
+- '/download/:id'
+- '/live/:channelId/playlist.m3u8'
+- '/live/:channelId/segment'
+- '/poster-cache'
+- '/stream/:id'
+- '/subtitles/:id/:trackIdx?'
+- '/subtitles/:id/embedded/:streamIdx.vtt'
+- /api/downloads
+- /api/downloads/debug
+- /api/ftp/duration
+- /api/ftp/duration?url=
+- /api/ftp/info
+- /api/ftp/media-info
+- /api/ftp/media-info?url=
+- /api/ftp/proxy
+- /api/ftp/proxy?url=
+- /api/ftp/raw?url=
+- /api/ftp/stream
+- /api/ftp/stream?
+- /api/ftp/stream?url=
+- /api/ftp/subtitle/
+- /api/ftp/subtitle/:track.vtt
+- /api/ftp/test
+- /api/mobile-hls/
+- /api/mobile-hls/:scope/:key/:file
+- /api/mobile-hls/ftp/index.m3u8
+- /api/mobile-hls/local/:id/index.m3u8
+- /api/mobile-hls/stop
+- /api/play-url
+- /api/playback/ftp?
+- /api/playback/local/
+- /api/playback/movie/
+- /api/stream-seek/:id
+- /api/subtitles/
+- /api/subtitles/:id
+- /download/:id
+- /live/
+- /live/:channelId/playlist.m3u8
+- /live/:channelId/segment
+- /poster-cache
+- /poster-cache?url=
+- /stream/
+- /stream/:id
+- /subtitles/
+- /subtitles/:id/:trackIdx?
+- /subtitles/:id/embedded/:streamIdx.vtt
+- ['/api/ftp/media-info'
+hls_reference_count: 80
+detected_hls_references:
+- server.js:24: const MOBILE_HLS_DIR = path.join(__dirname, 'cache', 'mobile-hls');
+- server.js:28: const MOBILE_HLS_PROFILE = String(process.env.MOBILE_HLS_PROFILE || 'mobile-hls-v3');
+- server.js:1673: if (trimmed.toLowerCase().includes('.m3u8')) {
+- server.js:1674: return `/live/${channelId}/playlist.m3u8?src=${encodeURIComponent(absoluteUrl)}`;
+- server.js:1680: app.get('/live/:channelId/playlist.m3u8', async (req, res) => {
+- server.js:1690: ? `Channel "${ch.name}" has no URL configured. Add the .m3u8 URL to channels.json.`
+- server.js:1700: res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+- server.js:1735: const mobileHlsSessions = new Map();
+- server.js:1737: function hlsSessionKey(scope, source, startSec, audioKey = '') {
+- server.js:1745: function hlsSessionId(scope, key) {
+- server.js:1749: function touchMobileHlsSession(scope, key) {
+- server.js:1750: const session = mobileHlsSessions.get(hlsSessionId(scope, key));
+- server.js:1755: function stopMobileHlsSession(scope, key, reason = 'stopped') {
+- server.js:1756: const sessionId = hlsSessionId(scope, key);
+- server.js:1757: const session = mobileHlsSessions.get(sessionId);
+- server.js:1760: mobileHlsSessions.delete(sessionId);
+- server.js:1761: console.log(`[Mobile HLS] stop ${sessionId} (${reason})`);
+- server.js:1768: function cleanupMobileHlsSessions(reason = 'idle') {
+- server.js:1770: const sessions = [...mobileHlsSessions.entries()];
+- server.js:1774: stopMobileHlsSession(scope, key, reason);
+- server.js:1778: const remaining = [...mobileHlsSessions.entries()]
+- server.js:1783: stopMobileHlsSession(scope, key, 'session limit');
+- server.js:1787: setInterval(() => cleanupMobileHlsSessions(), Math.min(MOBILE_HLS_IDLE_MS, 30000)).unref?.();
+- server.js:1797: if (Date.now() - started >= timeoutMs) return reject(new Error('Mobile HLS startup timed out'));
+- server.js:1804: function startMobileHlsSession({ scope, key, input, startSec = 0, audioMap = '0:a:0?', clientId = '' }) {
+- server.js:1807: const playlistPath = path.join(sessionDir, 'index.m3u8');
+- server.js:1808: const sessionId = hlsSessionId(scope, key);
+- server.js:1809: const existing = mobileHlsSessions.get(sessionId);
+- server.js:1815: cleanupMobileHlsSessions('new session');
+- server.js:1855: '-f', 'hls',
+- server.js:1863: console.log(`[Mobile HLS] start ${sessionId} input=${input}`);
+- server.js:1865: process.stderr.on('data', d => console.log('[Mobile HLS FFmpeg]', d.toString().trim()));
+- server.js:1867: console.log(`[Mobile HLS] ended ${sessionId} code=${code}`);
+- server.js:1868: const current = mobileHlsSessions.get(sessionId);
+- server.js:1869: if (current?.process === process) mobileHlsSessions.delete(sessionId);
+- server.js:1871: process.on('error', err => console.error('[Mobile HLS] spawn error:', err.message));
+- server.js:1872: mobileHlsSessions.set(sessionId, { process, dir: sessionDir, createdAt: Date.now(), lastAccess: Date.now(), clientId });
+- server.js:1877: touchMobileHlsSession(scope, key);
+- server.js:1880: touchMobileHlsSession(scope, key);
+- server.js:1881: const rewritten = content.replace(/^(seg_[^\r\n]+\.ts)$/gm, `/api/mobile-hls/${scope}/${key}/$1`);
+- public/app.js:57: let hlsInstance=null;
+- public/app.js:62: if(typeof Hls !== 'undefined')return Promise.resolve(true);
+- public/app.js:66: script.src='https://cdn.jsdelivr.net/npm/hls.js@latest';
+- public/app.js:68: script.onload=()=>resolve(typeof Hls !== 'undefined');
+- public/app.js:77: const isHls = mode === 'hls' || /\.m3u8(?:$|\?)/i.test(String(src));
+- public/app.js:78: if(hlsInstance){hlsInstance.destroy();hlsInstance=null;}
+- public/app.js:84: if(vid.canPlayType('application/vnd.apple.mpegurl')){
+- public/app.js:90: if(!ok || typeof Hls === 'undefined' || !Hls.isSupported())return false;
+- public/app.js:99: hlsInstance=new Hls({
+- public/app.js:111: hlsInstance.on(Hls.Events.MEDIA_ATTACHED,()=>hlsInstance.loadSource(src));
+- public/app.js:112: hlsInstance.on(Hls.Events.MANIFEST_PARSED,()=>finish(true));
+- public/app.js:113: hlsInstance.on(Hls.Events.ERROR,(e,data)=>{
+- public/app.js:115: console.warn('[HLS] fatal error:', data.type, data.details);
+- public/app.js:116: try{hlsInstance?.destroy();}catch(_){}
+- public/app.js:117: hlsInstance=null;
+- public/app.js:125: hlsInstance.attachMedia(vid);
+- public/app.js:676: if(hlsInstance){hlsInstance.destroy();hlsInstance=null;}
+- public/app.js:694: const src=`/live/${encodeURIComponent(channelId)}/playlist.m3u8`;
+- public/app.js:702: if(hlsInstance){hlsInstance.destroy();hlsInstance=null;}
+- public/app.js:703: hlsInstance=new Hls({
+- public/app.js:713: hlsInstance.on(Hls.Events.MEDIA_ATTACHED,()=>hlsInstance.loadSource(src));
+- public/app.js:714: hlsInstance.on(Hls.Events.MANIFEST_PARSED,()=>vid.play().catch(()=>{}));
+- public/app.js:715: hlsInstance.on(Hls.Events.ERROR,(e,data)=>{
+- public/app.js:717: if(data.type===Hls.ErrorTypes.NETWORK_ERROR){
+- public/app.js:718: try{hlsInstance.startLoad();}catch{}
+- public/app.js:721: if(data.type===Hls.ErrorTypes.MEDIA_ERROR){
+- public/app.js:722: try{hlsInstance.recoverMediaError();}catch{}
+- public/app.js:727: try{hlsInstance.destroy();}catch{}
+- public/app.js:728: hlsInstance=null;
+- public/app.js:730: hlsInstance.attachMedia(vid);
+- public/app.js:733: if(typeof Hls !== 'undefined' && Hls.isSupported()){
+- public/app.js:735: }else if(vid.canPlayType('application/vnd.apple.mpegurl')){
+- public/app.js:739: if(ok && typeof Hls !== 'undefined' && Hls.isSupported())playWithHls();
+- public/app.js:741: showToast('HLS not supported in this browser');
+- public/app.js:1890: return plan?.mode === 'remux' || plan?.mode === 'hls' || plan?.mode === 'stream';
+- public/app.js:2080: if(!attached)throw new Error('HLS not supported');
+- public/app.js:2181: if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+- public/app.js:2280: if(!attached)throw new Error('HLS not supported');
+- public/app.js:2503: if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+- public/app.js:2606: if (playbackMode === 'hls' || vid._ftpPlaybackFallbackTried) {
+ffmpeg_reference_count: 76
+detected_ffmpeg_references:
+- server.js:27: const MOBILE_HLS_FFMPEG_THREADS = String(process.env.MOBILE_HLS_FFMPEG_THREADS || 1);
+- server.js:35: // ── FFmpeg helper for extracting media info ──────────────────────────────────
+- server.js:152: function needsTranscode(mediaInfo, userAgent) {
+- server.js:162: // Transcode if the codec is known to be problematic, OR the container isn’t MP4/MOV
+- server.js:332: .replace(/\b(480p|576p|720p|1080p|1440p|2160p|4k|8k|uhd|hdr|hdr10|dv|dolby[ ._-]*vision|imax|web[- ]?dl|webrip|web|bluray|brrip|brip|dvdrip|hdrip|hdtv|hdcam|hdtc|camrip|amzn|nf|dsnp|zee5|hotstar|hulu|max|itunes|x264|x265
+- server.js:351: .replace(/\b(?:remastered|extended|unrated|directors?|director'?s?|cut|final|theatrical|imax|open[ ._-]*matte|proper|repack|rerip|remux|internal|limited|complete|collection|converted|reencoded|encoded|recoded|recode|free
+- server.js:1136: const transcodeUrl = `/api/ftp/stream?url=${encoded}`;
+- server.js:1141: transcodeUrl,
+- server.js:1142: finalPlayUrl: directPlayable ? proxyUrl : transcodeUrl,
+- server.js:1154: function ffmpegFilterEscape(value) {
+- server.js:1820: const ffmpegArgs = ['-hide_banner', '-loglevel', 'warning', '-nostdin'];
+- server.js:1821: if (startSec > 0) ffmpegArgs.push('-ss', String(Math.floor(startSec)));
+- server.js:1822: ffmpegArgs.push('-re');
+- server.js:1824: ffmpegArgs.push(
+- server.js:1831: ffmpegArgs.push(
+- server.js:1840: '-threads', MOBILE_HLS_FFMPEG_THREADS,
+- server.js:1864: const process = spawn('ffmpeg', ffmpegArgs);
+- server.js:1865: process.stderr.on('data', d => console.log('[Mobile HLS FFmpeg]', d.toString().trim()));
+- server.js:2514: .replace(/\b(2160p|1080p|720p|480p|4k|uhd|hdr|sdr|web|webrip|webdl|web-dl|bluray|brrip|dvdrip|hdtc|hdts|x264|x265|h264|hevc|aac|ddp|dd5|dts|remux|repack|yify|rarbg|tigole|psa|mkv|mp4|reencoded|dual|audio|hindi|english|es
+- server.js:3751: const forceTranscode = audioIdx > 0 || subtitleIdx >= 0;
+- server.js:3756: if (forceTranscode || (mobilePlayback && needsTranscode(mediaInfo, userAgent))) {
+- server.js:3758: return transcodeStream(req, res, filePath, mediaInfo, entry);
+- server.js:3764: // Fallback: transcode to a guaranteed compatible format (H.264 + AAC in MP4)
+- server.js:3765: return transcodeStream(req, res, filePath, { audioTracks: [], subtitleTracks: [], videoCodec: 'unknown' }, entry);
+- server.js:3780: const ffmpegArgs = [];
+- server.js:3781: if (startSec > 0) ffmpegArgs.push('-ss', String(startSec));
+- server.js:3782: ffmpegArgs.push('-i', filePath, '-map', '0:v:0', '-map', '0:a:0?');
+- server.js:3783: ffmpegArgs.push('-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2');
+- server.js:3784: ffmpegArgs.push('-avoid_negative_ts', 'make_zero');
+- server.js:3785: ffmpegArgs.push('-movflags', 'frag_keyframe+empty_moov+default_base_moof');
+- server.js:3786: ffmpegArgs.push('-f', 'mp4', 'pipe:1');
+- server.js:3788: const ffmpeg = spawn('ffmpeg', ffmpegArgs);
+- server.js:3792: ffmpeg.stdout.pipe(res);
+- server.js:3793: req.on('close', () => ffmpeg.kill('SIGKILL'));
+- server.js:3912: // --- Remux function (unchanged) ---
+- server.js:3913: function remuxStream(req, res, filePath, entry) {
+- server.js:3915: const ffmpegArgs = [];
+- server.js:3917: if (startSec > 0) ffmpegArgs.push('-ss', String(startSec));
+- server.js:3918: ffmpegArgs.push('-i', filePath);
+- server.js:3919: ffmpegArgs.push(
+- public/app.js:671: _ftpNeedsTranscode=false;
+- public/app.js:1702: if(_ftpStreamUrl&&_ftpNeedsTranscode)return validDurationSeconds(_ftpDuration) ? _ftpDuration : 0;
+- public/app.js:1819: showPlayerNotice('This file cannot be decoded by the browser without transcoding. Desktop performance mode kept FFmpeg off.');
+- public/app.js:1828: _ftpNeedsTranscode = true;
+- public/app.js:1834: const attached = await attachPlayerSource(ftpTranscodeSrc(streamUrl, start), 'stream');
+- public/app.js:1890: return plan?.mode === 'remux' || plan?.mode === 'hls' || plan?.mode === 'stream';
+- public/app.js:1915: function ftpTranscodeSrc(url, start=0){
+- public/app.js:1949: _ftpNeedsTranscode = false;
+- public/app.js:1952: const needsTranscode = !ftpDirectPlayable(_ftpStreamUrl) || currentAudioIdx > 0;
+- public/app.js:1953: _ftpNeedsTranscode = needsTranscode;
+- public/app.js:1954: return needsTranscode ? ftpTranscodeSrc(_ftpStreamUrl, start) : ftpProxySrc(_ftpStreamUrl);
+- public/app.js:1980: const transcodeUrl = ftpTranscodeSrc(sourceUrl);
+- public/app.js:1981: const playUrl = directPlayable ? proxyUrl : transcodeUrl;
+- public/app.js:1989: transcodeUrl,
+- public/app.js:2049: showToast('Desktop performance mode seeks on the original stream without FFmpeg.');
+- public/app.js:2093: if(_ftpStreamUrl&&_ftpNeedsTranscode){
+- public/app.js:2199: _ftpNeedsTranscode = false;
+- public/app.js:2259: showPlayerNotice('This file cannot be decoded by the browser without transcoding. Desktop performance mode kept FFmpeg off.');
+- public/app.js:2295: showToast('Desktop performance mode keeps FFmpeg off, so extra audio tracks are disabled.');
+- public/app.js:2476: let _ftpNeedsTranscode=false;
+- public/app.js:2513: _ftpNeedsTranscode = false;
+- public/app.js:2568: const playbackMode = playInfo.mode || (playInfo.directPlayable ? 'direct' : 'remux');
+- public/app.js:2570: const finalPlayUrl = playInfo.src || playInfo.finalPlayUrl || playInfo.playUrl || (directPlayable ? ftpProxySrc(resolvedStreamUrl) : ftpTranscodeSrc(resolvedStreamUrl));
+- public/app.js:2571: const transcodeUrl = '';
+- public/app.js:2580: _ftpNeedsTranscode = planNeedsSourceSeek({mode: playbackMode});
+- public/app.js:2581: vid._sourceSeekRequired = _ftpNeedsTranscode;
+- public/app.js:2582: vid._mediaSourceSeekRequired = _ftpNeedsTranscode;
+- public/app.js:2603: showPlayerNotice('This file cannot be decoded by the browser without transcoding. Desktop performance mode kept FFmpeg off.');
+- public/app.js:2615: _ftpNeedsTranscode = true;
+- public/app.js:2635: if(_ftpNeedsTranscode){
+- public/app.js:2683: _ftpNeedsTranscode = planNeedsSourceSeek(plan);
+- public/app.js:2684: vid._sourceSeekRequired = _ftpNeedsTranscode;
+- public/app.js:2685: vid._mediaSourceSeekRequired = _ftpNeedsTranscode;
+- public/app.js:2716: _ftpNeedsTranscode=false;
+- public/app.js:4062: if ((!_ftpStreamUrl || !_ftpNeedsTranscode) && !vid._durationPending && !validDurationSeconds(vid._apiDuration)) {
+- public/sw.js:1: const SV_CACHE_VERSION = '20260521-desktop-noffmpeg2';
+direct_play_reference_count: 26
+detected_direct_play_references:
+- server.js:1117: function isRemoteDirectPlayable(srcUrl) {
+- server.js:1137: const directPlayable = isRemoteDirectPlayable(srcUrl);
+- server.js:1139: directPlayable,
+- server.js:1142: finalPlayUrl: directPlayable ? proxyUrl : transcodeUrl,
+- server.js:4270: directPlayable: urls.directPlayable,
+- server.js:4409: const copyVideo = !mobilePlayback && isRemoteDirectPlayable(srcUrl) && remoteVideoCanCopy(srcUrl);
+- public/app.js:1893: function ftpDirectPlayable(url, options={}){
+- public/app.js:1900: function ftpProxySrc(url){
+- public/app.js:1904: function ftpRawSrc(url){
+- public/app.js:1908: function desktopFtpPlaybackSrc(url){
+- public/app.js:1910: if(/^ftp:\/\//i.test(value))return ftpRawSrc(value);
+- public/app.js:1911: if(/^https?:\/\//i.test(value))return ftpProxySrc(value);
+- public/app.js:1925: function localDirectPlayable(file){
+- public/app.js:1948: const directSrc = desktopFtpPlaybackSrc(_ftpStreamUrl);
+- public/app.js:1952: const needsTranscode = !ftpDirectPlayable(_ftpStreamUrl) || currentAudioIdx > 0;
+- public/app.js:1954: return needsTranscode ? ftpTranscodeSrc(_ftpStreamUrl, start) : ftpProxySrc(_ftpStreamUrl);
+- public/app.js:1978: const directPlayable = ftpDirectPlayable(sourceUrl);
+- public/app.js:1979: const proxyUrl = ftpProxySrc(sourceUrl);
+- public/app.js:1981: const playUrl = directPlayable ? proxyUrl : transcodeUrl;
+- public/app.js:1985: directPlayable,
+- public/app.js:2049: showToast('Desktop performance mode seeks on the original stream without FFmpeg.');
+- public/app.js:2497: console.log('[Playback] FTP proxy URL', ftpProxySrc(requestedStreamUrl));
+- public/app.js:2568: const playbackMode = playInfo.mode || (playInfo.directPlayable ? 'direct' : 'remux');
+- public/app.js:2569: const directPlayable = playbackMode === 'direct';
+- public/app.js:2570: const finalPlayUrl = playInfo.src || playInfo.finalPlayUrl || playInfo.playUrl || (directPlayable ? ftpProxySrc(resolvedStreamUrl) : ftpTranscodeSrc(resolvedStreamUrl));
+- public/app.js:2760: showToast('Desktop performance mode streams original quality only.');
+mobile_condition_reference_count: 44
+detected_mobile_conditions:
+- server.js:172: function isMobilePlaybackRequest(req) {
+- server.js:3755: const mobilePlayback = isMobilePlaybackRequest(req);
+- server.js:3756: if (forceTranscode || (mobilePlayback && needsTranscode(mediaInfo, userAgent))) {
+- server.js:3803: const mobilePlayback = isMobilePlaybackRequest(req);
+- server.js:3804: const readOptions = mobilePlayback ? {} : { highWaterMark: 1024 * 1024 };
+- server.js:3821: res.setHeader('Cache-Control', mobilePlayback ? 'no-cache, no-store, must-revalidate' : 'private, max-age=0, must-revalidate');
+- server.js:3950: const mobilePlayback = isMobilePlaybackRequest(req);
+- server.js:3982: if (mobilePlayback) videoFilters.push('scale=w=min(1280\\,iw):h=-2');
+- server.js:3984: if (isH264 && !mobilePlayback && !subtitleFilter) {
+- server.js:3991: '-crf', mobilePlayback ? '29' : '23',
+- server.js:3992: '-maxrate', mobilePlayback ? '2200k' : '6M',
+- server.js:3993: '-bufsize', mobilePlayback ? '4400k' : '12M',
+- server.js:3996: if (mobilePlayback) {
+- server.js:4408: const mobilePlayback = isMobilePlaybackRequest(req);
+- server.js:4409: const copyVideo = !mobilePlayback && isRemoteDirectPlayable(srcUrl) && remoteVideoCanCopy(srcUrl);
+- server.js:4437: if (mobilePlayback) ffmpegArgs.push('-vf', 'scale=w=min(1280\\,iw):h=-2');
+- server.js:4442: '-crf', mobilePlayback ? '30' : '23',
+- server.js:4443: '-maxrate', mobilePlayback ? '2000k' : '6M',
+- server.js:4444: '-bufsize', mobilePlayback ? '4000k' : '12M',
+- server.js:4450: if (mobilePlayback) {
+- server.js:4527: const mobilePlayback = isMobilePlaybackRequest(req);
+- server.js:4532: 'Cache-Control': mobilePlayback ? 'no-cache' : 'private, max-age=0, must-revalidate',
+- public/app.js:104: maxBufferLength:isMobilePlaybackClient()?20:45,
+- public/app.js:105: maxMaxBufferLength:isMobilePlaybackClient()?40:90,
+- public/app.js:106: maxBufferSize:isMobilePlaybackClient()?20*1000*1000:60*1000*1000,
+- public/app.js:1636: vid.preload = isMobilePlaybackClient() ? 'metadata' : 'auto';
+- public/app.js:1751: function isMobilePlaybackClient(){
+- public/app.js:1816: if(!isMobilePlaybackClient()){
+- public/app.js:1849: if(isMobilePlaybackClient())params.set('mobile', '1');
+- public/app.js:1859: if(isMobilePlaybackClient())params.set('mobile','1');
+- public/app.js:1875: if(isMobilePlaybackClient())params.set('mobile','1');
+- public/app.js:1947: if(!isMobilePlaybackClient()){
+- public/app.js:2047: if(!isMobilePlaybackClient()){
+- public/app.js:2207: const mobilePlayback = isMobilePlaybackClient();
+- public/app.js:2240: if(mobilePlayback)enterMobileLandscapeMode();
+- public/app.js:2257: if(!isMobilePlaybackClient()){
+- public/app.js:2293: if(!isMobilePlaybackClient() && idx > 0){
+- public/app.js:2378: if(!isMobilePlaybackClient())return false;
+- public/app.js:2412: if(isMobilePlaybackClient()){
+- public/app.js:2496: const mobilePlayback = isMobilePlaybackClient();
+- public/app.js:2543: if(mobilePlayback)enterMobileLandscapeMode();
+- public/app.js:2601: if(!isMobilePlaybackClient()){
+- public/app.js:2758: if(!isMobilePlaybackClient() && q !== 'auto'){
+- public/app.js:2875: if((id === 'audioDD' || id === 'subDD') && !_ftpStreamUrl && !isMobilePlaybackClient())ensureLocalTrackOptionsLoaded();
+missing_required_references: []

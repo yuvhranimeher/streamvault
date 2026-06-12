@@ -1,0 +1,18 @@
+Status: PASS
+mode: read-only JS vs Haskell playback shadow planner comparison
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+node_available: true
+ghc_available: true
+haskell_compile: passed
+haskell_run: passed
+javascript_run: passed
+normalized_compare: passed
+fixture_path: tools/playback-parity-v1/playback-planner-fixtures.json
+haskell_planner: tools/playback-parity-v1/PlaybackShadowPlanner.hs
+javascript_planner: tools/playback-parity-v1/playback_shadow_planner_js.js
+haskell_plan_count: 5
+javascript_plan_count: 5
+failures: []

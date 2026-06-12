@@ -1,0 +1,19 @@
+Status: PASS
+mode: read-only playback route contract JS vs Haskell comparison
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+node_available: true
+ghc_available: true
+haskell_compile: passed
+haskell_run: passed
+javascript_run: passed
+normalized_compare: passed
+fixture_path: tools/playback-parity-v1/playback-route-contract-fixtures.json
+haskell_planner: tools/playback-parity-v1/PlaybackRouteContractShadow.hs
+javascript_planner: tools/playback-parity-v1/playback_route_contract_shadow_js.js
+haskell_decision_count: 8
+javascript_decision_count: 8
+failures: []

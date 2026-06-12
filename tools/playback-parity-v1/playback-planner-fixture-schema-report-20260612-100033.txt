@@ -1,0 +1,24 @@
+Status: PASS
+mode: read-only playback planner fixture schema gate
+server_started: no
+media_sources_called: no
+runtime_playback_changed: no
+fixture_count: 5
+required_fixture_names: ['desktop_movie_direct_ftp', 'invalid_missing_streamUrl', 'live_tv_hls_m3u8', 'mobile_movie_hls_required', 'series_episode_direct']
+missing_required_fixture_names: []
+duplicate_fixture_names: []
+allowed_client_types: ['desktop', 'mobile']
+allowed_playback_modes: ['direct', 'hls', 'live']
+allowed_source_types: ['live', 'movie', 'series']
+failure_bucket_counts: {'missing_streamUrl': 1}
+fixtures:
+- desktop_movie_direct_ftp: expectedValid=True actualValid=True clientType=desktop sourceType=movie playbackMode=direct requiresTranscode=False shouldUseFfmpeg=False failures=[]
+- mobile_movie_hls_required: expectedValid=True actualValid=True clientType=mobile sourceType=movie playbackMode=hls requiresTranscode=True shouldUseFfmpeg=True failures=[]
+- series_episode_direct: expectedValid=True actualValid=True clientType=desktop sourceType=series playbackMode=direct requiresTranscode=False shouldUseFfmpeg=False failures=[]
+- live_tv_hls_m3u8: expectedValid=True actualValid=True clientType=desktop sourceType=live playbackMode=live requiresTranscode=False shouldUseFfmpeg=False failures=[]
+- invalid_missing_streamUrl: expectedValid=False actualValid=False clientType=desktop sourceType=movie playbackMode=direct requiresTranscode=False shouldUseFfmpeg=False failures=['missing_streamUrl']
+unexpected_results: []
+contract_notes:
+- Desktop direct fixtures must not require FFmpeg or HLS.
+- Mobile HLS fixtures may require FFmpeg only when compatibility requires HLS.
+- Live fixtures must remain m3u8/live-mode and must not rewrite production URLs.

@@ -1,0 +1,83 @@
+[
+  {
+    "name": "desktop_movie_direct_ftp",
+    "expectedValid": true,
+    "input": {
+      "title": "Fixture Desktop Movie",
+      "id": "fixture-desktop-movie",
+      "type": "movie"
+    },
+    "clientType": "desktop",
+    "streamUrl": "ftp://media.example.test/movies/fixture-desktop-movie.mp4",
+    "playbackMode": "direct",
+    "requiresTranscode": false,
+    "shouldUseFfmpeg": false,
+    "reason": "Desktop FTP direct-play keeps original source and does not force FFmpeg.",
+    "sourceType": "movie"
+  },
+  {
+    "name": "mobile_movie_hls_required",
+    "expectedValid": true,
+    "input": {
+      "title": "Fixture Mobile Movie",
+      "id": "fixture-mobile-movie",
+      "type": "movie"
+    },
+    "clientType": "mobile",
+    "streamUrl": "http://media.example.test/movies/fixture-mobile-movie-hevc.mkv",
+    "playbackMode": "hls",
+    "requiresTranscode": true,
+    "shouldUseFfmpeg": true,
+    "reason": "Mobile compatibility may require HLS for non-direct HEVC/MKV playback.",
+    "sourceType": "movie"
+  },
+  {
+    "name": "series_episode_direct",
+    "expectedValid": true,
+    "input": {
+      "title": "Fixture Show S01E01",
+      "id": "fixture-show-s01e01",
+      "type": "episode"
+    },
+    "clientType": "desktop",
+    "streamUrl": "http://media.example.test/series/fixture-show/S01E01.mp4",
+    "playbackMode": "direct",
+    "requiresTranscode": false,
+    "shouldUseFfmpeg": false,
+    "reason": "Desktop direct series episode uses original HTTP proxy-compatible stream.",
+    "sourceType": "series"
+  },
+  {
+    "name": "live_tv_hls_m3u8",
+    "expectedValid": true,
+    "input": {
+      "title": "Fixture Live Channel",
+      "id": "fixture-live-channel",
+      "type": "live"
+    },
+    "clientType": "desktop",
+    "streamUrl": "http://live.example.test/channel/index.m3u8",
+    "playbackMode": "live",
+    "requiresTranscode": false,
+    "shouldUseFfmpeg": false,
+    "reason": "Live TV uses m3u8 playlist/proxy behavior and should not rewrite stream URLs in this audit.",
+    "sourceType": "live"
+  },
+  {
+    "name": "invalid_missing_streamUrl",
+    "expectedValid": false,
+    "input": {
+      "title": "Fixture Missing Stream",
+      "id": "fixture-missing-stream",
+      "type": "movie"
+    },
+    "clientType": "desktop",
+    "streamUrl": "",
+    "playbackMode": "direct",
+    "requiresTranscode": false,
+    "shouldUseFfmpeg": false,
+    "reason": "Missing streamUrl must be rejected before route work.",
+    "sourceType": "movie",
+    "expectedFailureBucket": "missing_streamUrl"
+  }
+]

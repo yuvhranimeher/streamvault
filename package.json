@@ -18,6 +18,7 @@
     "test:playback-shadow": "python3 tools/playback-parity-v1/run_playback_shadow_ci.py --write-report",
     "report:playback-shadow-pr": "python3 tools/playback-parity-v1/playback_shadow_pr_summary.py --write-report",
     "test:playback-shadow-review": "python3 tools/playback-parity-v1/run_playback_shadow_review_pack.py --write-report",
+    "collect:playback-shadow-artifacts": "python3 tools/playback-parity-v1/collect_playback_shadow_artifacts.py",
     "details:shadow:summary": "node tools/details-parity-v1/summarize-details-shadow-output.js"
   },
   "dependencies": {

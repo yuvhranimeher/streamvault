@@ -76,8 +76,12 @@ def changed_files() -> list[str]:
     files = set(run_git(["diff", "--name-only", f"{BASE_BRANCH}..HEAD"]).splitlines())
     files.update(run_git(["diff", "--name-only", "HEAD"]).splitlines())
     for line in run_git(["status", "--short"]).splitlines():
-        if len(line) > 3:
-            files.add(line[3:])
+        if line.startswith(("?? ", "!! ")):
+            files.add(line[3:].strip())
+        elif len(line) > 3 and line[2] == " ":
+            files.add(line[3:].strip())
+        elif len(line) > 2 and line[1] == " ":
+            files.add(line[2:].strip())
     return sorted(path for path in files if path.strip())
 
 

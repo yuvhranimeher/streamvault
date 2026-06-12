@@ -39,7 +39,7 @@ main = do
   fixtures <- case parseFixtures raw of
     Left err -> die err
     Right value -> pure value
-  putStrLn (plansJson (map planFixture fixtures))
+  putStr (plansJson (map planFixture fixtures))
 
 planFixture :: Fixture -> Plan
 planFixture fixture
@@ -196,7 +196,7 @@ parseJsonString ('"' : rest) = Just (go rest)
     go ('\\' : 'n' : xs) = '\n' : go xs
     go ('\\' : 'r' : xs) = '\r' : go xs
     go ('\\' : 't' : xs) = '\t' : go xs
-    go (_ : xs@('u' : _)) = go xs
+    go ('\\' : 'u' : _ : _ : _ : _ : xs) = go xs
     go (x : xs) = x : go xs
 parseJsonString _ = Nothing
 

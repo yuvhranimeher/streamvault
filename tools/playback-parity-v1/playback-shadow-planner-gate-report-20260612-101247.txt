@@ -4,9 +4,9 @@ server_started: no
 media_sources_called: no
 ffmpeg_started: no
 runtime_playback_changed: no
-ghc_available: false
-compiled_validation: skipped: ghc unavailable
-expected_output_compare: skipped: ghc unavailable
+ghc_available: true
+compiled_validation: passed
+expected_output_compare: passed
 fixture_count: 5
 missing_source_tokens: []
 forbidden_source_tokens: []

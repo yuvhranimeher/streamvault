@@ -5,13 +5,13 @@ network_called: no
 ffmpeg_started: no
 runtime_playback_changed: no
 active_routes_added: no
-generated_at: 2026-06-12T20:51:07
+generated_at: 2026-06-13T10:39:35
 artifact_dir: tools/playback-parity-v1/.playback-shadow-artifacts
 artifacts:
-- ci-report: source=tools/playback-parity-v1/playback-shadow-ci-report-20260612-205105.txt artifact=tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-ci-report-20260612-205105.txt Status: PASS
-- pr-summary: source=tools/playback-parity-v1/playback-shadow-pr-summary-20260612-205105.md artifact=tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-pr-summary-20260612-205105.md Status: PASS
-- review-pack-report: source=tools/playback-parity-v1/playback-shadow-review-pack-report-20260612-205105.txt artifact=tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-review-pack-report-20260612-205105.txt Status: PASS
-- workflow-safety-report: source=tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-205105.txt artifact=tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-workflow-safety-report-20260612-205105.txt Status: PASS
+- ci-report: source=tools/playback-parity-v1/playback-shadow-ci-report-20260613-103935.txt artifact=tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-ci-report-20260613-103935.txt Status: PASS
+- pr-summary: source=tools/playback-parity-v1/playback-shadow-pr-summary-20260613-103935.md artifact=tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-pr-summary-20260613-103935.md Status: PASS
+- review-pack-report: source=tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-103935.txt artifact=tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-review-pack-report-20260613-103935.txt Status: PASS
+- workflow-safety-report: source=tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-103935.txt artifact=tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-workflow-safety-report-20260613-103935.txt Status: PASS
 - js-haskell-planner-compare: source=tools/playback-parity-v1/playback-js-vs-hs-shadow-compare-report-20260612-181036.txt artifact=tools/playback-parity-v1/.playback-shadow-artifacts/playback-js-vs-hs-shadow-compare-report-20260612-181036.txt Status: PASS
 - route-contract-compare: source=tools/playback-parity-v1/playback-route-contract-js-vs-hs-report-20260612-182035.txt artifact=tools/playback-parity-v1/.playback-shadow-artifacts/playback-route-contract-js-vs-hs-report-20260612-182035.txt Status: PASS
 failures: []

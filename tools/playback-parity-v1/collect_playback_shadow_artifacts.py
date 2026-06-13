@@ -20,6 +20,13 @@ REPORTS = [
     ("workflow-safety-report", "playback-shadow-workflow-safety-report-*.txt"),
     ("js-haskell-planner-compare", "playback-js-vs-hs-shadow-compare-report-*.txt"),
     ("route-contract-compare", "playback-route-contract-js-vs-hs-report-*.txt"),
+    ("inactive-route-fixture-coverage-audit", "inactive-playback-route-fixture-coverage-report-*.txt"),
+    ("inactive-route-fixture-pr-summary", "inactive-playback-route-fixture-pr-summary-*.md"),
+    ("inactive-route-fixture-review-pack", "inactive-route-fixture-review-pack-report-*.txt"),
+]
+
+STATIC_ARTIFACTS = [
+    ("inactive-route-fixture-review-checklist", "inactive-playback-route-fixture-review-checklist.md"),
 ]
 
 
@@ -70,6 +77,19 @@ def main() -> int:
         manifest_lines.append(
             f"- {label}: source={source.relative_to(ROOT)} artifact={destination.relative_to(ROOT)} "
             f"{status_line(source)}"
+        )
+
+    for label, relative_path in STATIC_ARTIFACTS:
+        source = TOOL_DIR / relative_path
+        if not source.exists():
+            failures.append(f"missing static artifact for {label}: {relative_path}")
+            manifest_lines.append(f"- {label}: missing path={relative_path}")
+            continue
+        destination = ARTIFACT_DIR / source.name
+        shutil.copy2(source, destination)
+        copied.append(destination)
+        manifest_lines.append(
+            f"- {label}: source={source.relative_to(ROOT)} artifact={destination.relative_to(ROOT)}"
         )
 
     if failures:

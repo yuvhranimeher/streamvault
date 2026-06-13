@@ -26,6 +26,7 @@
     "test:playback-inactive-route-fixtures": "python3 tools/playback-parity-v1/inactive_playback_route_fixture_coverage_audit.py --write-report",
     "report:playback-inactive-route-fixtures": "python3 tools/playback-parity-v1/inactive_playback_route_fixture_pr_summary.py --write-report",
     "test:playback-inactive-route-fixture-review": "python3 tools/playback-parity-v1/run_inactive_route_fixture_review_pack.py --write-report",
+    "test:playback-fixture-readiness": "python3 tools/playback-parity-v1/run_inactive_route_fixture_review_pack.py --write-report && python3 tools/playback-parity-v1/playback_shadow_readiness_index.py --write-report && python3 tools/playback-parity-v1/collect_playback_shadow_artifacts.py && python3 tools/playback-parity-v1/playback_shadow_artifact_manifest.py --write-report",
     "details:shadow:summary": "node tools/details-parity-v1/summarize-details-shadow-output.js"
   },
   "dependencies": {

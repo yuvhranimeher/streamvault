@@ -19,6 +19,10 @@ COMMANDS = [
         [sys.executable, str(TOOL_DIR / "inactive_playback_route_fixture_coverage_audit.py"), "--write-report"],
     ),
     (
+        "inactive_route_response_envelope_gate",
+        [sys.executable, str(TOOL_DIR / "inactive_playback_route_response_envelope_gate.py"), "--write-report"],
+    ),
+    (
         "workflow_safety_audit",
         [sys.executable, str(TOOL_DIR / "playback_shadow_workflow_safety_audit.py"), "--write-report"],
     ),

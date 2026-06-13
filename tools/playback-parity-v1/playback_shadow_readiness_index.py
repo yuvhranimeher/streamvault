@@ -22,6 +22,7 @@ GATES = [
     "playback_js_vs_hs_shadow_compare.py",
     "playback_route_inventory_schema_gate.py",
     "playback_route_fixture_schema_gate.py",
+    "inactive_playback_route_response_envelope_gate.py",
     "inactive_playback_route_fixture_coverage_audit.py",
     "playback_route_contract_crosscheck.py",
     "playback_route_contract_js_vs_hs_compare.py",
@@ -43,6 +44,7 @@ REPORTS = [
     ("route_compare_report", "playback-route-contract-js-vs-hs-report-*.txt"),
     ("route_inventory_schema_report", "playback-route-inventory-schema-report-*.txt"),
     ("route_fixture_schema_report", "playback-route-fixture-schema-report-*.txt"),
+    ("inactive_route_response_envelope_report", "inactive-playback-route-response-envelope-report-*.txt"),
     ("inactive_route_fixture_coverage_report", "inactive-playback-route-fixture-coverage-report-*.txt"),
     ("route_crosscheck_report", "playback-route-contract-crosscheck-report-*.txt"),
 ]

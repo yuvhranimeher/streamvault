@@ -1,0 +1,32 @@
+Status: PASS
+mode: read-only inactive playback route fixture coverage audit
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+fixture_path: tools/playback-parity-v1/playback-route-contract-fixtures.json
+inventory_path: tools/playback-parity-v1/playback-route-shadow-contract-inventory.json
+inactive_haskell: tools/playback-parity-v1/InactivePlaybackRouteV1.hs
+fixture_count: 16
+inventory_targets: ['/api/playback/local', '/api/playback/ftp', '/api/playback/movie', '/api/ftp/raw', 'live TV m3u8 playback', 'series episode playback']
+missing_inventory_targets: []
+coverage:
+- desktop movie direct: present fixtures=['route_desktop_movie_direct_json']
+- mobile movie HLS: present fixtures=['route_mobile_movie_hls_planning']
+- desktop series episode direct: present fixtures=['route_series_episode_planning']
+- mobile series episode HLS: present fixtures=['route_mobile_series_episode_hls_planning']
+- FTP raw stream metadata: present fixtures=['route_ftp_raw_stream_metadata']
+- local file playback metadata: present fixtures=['route_local_playback_metadata']
+- live TV HLS contract: present fixtures=['route_live_tv_hls_contract']
+- invalid missing streamUrl: present fixtures=['route_invalid_missing_streamUrl']
+- invalid unknown route: present fixtures=['route_invalid_unknown_route']
+- invalid unsupported clientType: present fixtures=['route_invalid_unsupported_clientType']
+- invalid unsupported sourceType: present fixtures=['route_invalid_unsupported_sourceType']
+- invalid unsafe/non-http streamUrl: present fixtures=['route_invalid_unsafe_non_http_streamUrl']
+- invalid missing route target: present fixtures=['route_invalid_missing_routeTarget']
+- invalid missing sourceType: present fixtures=['route_invalid_missing_sourceType']
+- invalid missing clientType: present fixtures=['route_invalid_missing_clientType']
+inactive_haskell_checks: {'exists': True, 'shadow_only_banner': True, 'missing_route_target_guard': True, 'unsupported_client_guard': True, 'unsupported_source_guard': True, 'unsafe_stream_guard': True, 'no_server_start': True, 'no_ffmpeg': True}
+failures: []

@@ -1,0 +1,42 @@
+{
+  "contractName": "inactive playback route response body parity",
+  "version": "1.0.0",
+  "mode": "read-only shadow-only route response body contract",
+  "routeTargets": [
+    "/api/playback/movie",
+    "/api/playback/ftp",
+    "/api/playback/local",
+    "/api/ftp/raw",
+    "series episode playback",
+    "live TV m3u8 playback"
+  ],
+  "responseShapes": {
+    "movie-json": ["ok", "streamUrl", "sourceType", "clientType", "playbackMode"],
+    "ftp-json": ["ok", "src", "mode", "directPlayable", "decodedUrl", "duration"],
+    "local-json": ["ok", "src", "mode", "directPlayable", "duration"],
+    "raw-bytes": ["status", "contentType", "acceptRanges", "contentRange", "streamUrl"],
+    "series-json": ["ok", "src", "mode", "sourceType", "streamUrl"],
+    "live-hls": ["ok", "src", "mode", "streamUrl", "contentType"],
+    "error-json": ["ok", "error", "reason"]
+  },
+  "errorCodes": [
+    "MISSING_ROUTE",
+    "UNKNOWN_ROUTE",
+    "MISSING_STREAM_URL",
+    "UNSAFE_STREAM_URL",
+    "UNSUPPORTED_CLIENT_TYPE",
+    "UNSUPPORTED_SOURCE_TYPE",
+    "UNSUPPORTED_PLAYBACK_MODE"
+  ],
+  "safetyInvariants": [
+    "no active HTTP routes",
+    "no active runtime imports",
+    "no frontend playback changes",
+    "no production server startup",
+    "no network calls",
+    "no FFmpeg calls",
+    "no localhost or dev-only URL activation",
+    "no desktop direct-play behavior change",
+    "no mobile HLS behavior change"
+  ]
+}

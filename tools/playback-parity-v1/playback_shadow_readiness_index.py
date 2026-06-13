@@ -23,6 +23,8 @@ GATES = [
     "playback_route_inventory_schema_gate.py",
     "playback_route_fixture_schema_gate.py",
     "inactive_playback_route_fixture_coverage_audit.py",
+    "inactive_playback_route_fixture_pr_summary.py",
+    "run_inactive_route_fixture_review_pack.py",
     "playback_route_contract_crosscheck.py",
     "playback_route_contract_js_vs_hs_compare.py",
     "playback_route_shadow_full_gate.py",
@@ -44,6 +46,8 @@ REPORTS = [
     ("route_inventory_schema_report", "playback-route-inventory-schema-report-*.txt"),
     ("route_fixture_schema_report", "playback-route-fixture-schema-report-*.txt"),
     ("inactive_route_fixture_coverage_report", "inactive-playback-route-fixture-coverage-report-*.txt"),
+    ("inactive_route_fixture_pr_summary", "inactive-playback-route-fixture-pr-summary-*.md"),
+    ("inactive_route_fixture_review_pack_report", "inactive-route-fixture-review-pack-report-*.txt"),
     ("route_crosscheck_report", "playback-route-contract-crosscheck-report-*.txt"),
 ]
 
@@ -54,7 +58,17 @@ NPM_SCRIPTS = [
     "report:playback-shadow-artifacts",
     "report:playback-shadow-readiness",
     "test:playback-inactive-route-fixtures",
+    "report:playback-inactive-route-fixtures",
+    "test:playback-inactive-route-fixture-review",
 ]
+
+REVIEWER_DOCS = [
+    ("playback_artifact_inspection", "playback-shadow-artifact-inspection.md"),
+    ("playback_shadow_reviewer_checklist", "playback-shadow-review-checklist.md"),
+    ("inactive_route_fixture_reviewer_checklist", "inactive-playback-route-fixture-review-checklist.md"),
+]
+
+FIXTURE_PATH = TOOL_DIR / "playback-route-contract-fixtures.json"
 
 
 def latest(pattern: str) -> Path | None:
@@ -75,6 +89,33 @@ def package_scripts() -> dict[str, str]:
     package = json.loads(PACKAGE_PATH.read_text(encoding="utf-8"))
     scripts = package.get("scripts", {})
     return scripts if isinstance(scripts, dict) else {}
+
+
+def fixture_count_summary() -> tuple[list[str], list[str]]:
+    failures: list[str] = []
+    if not FIXTURE_PATH.exists():
+        return [f"- fixture_path: missing {FIXTURE_PATH.relative_to(ROOT)}"], ["missing playback route fixtures"]
+    fixtures = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+    if not isinstance(fixtures, list):
+        return [f"- fixture_path: {FIXTURE_PATH.relative_to(ROOT)} invalid"], ["fixture file is not a JSON array"]
+    fixture_dicts = [fixture for fixture in fixtures if isinstance(fixture, dict)]
+    valid_count = sum(1 for fixture in fixture_dicts if fixture.get("expectedValid") is True)
+    invalid_count = sum(1 for fixture in fixture_dicts if fixture.get("expectedValid") is False)
+    route_targets = sorted(
+        {
+            str(fixture.get("routeTarget"))
+            for fixture in fixture_dicts
+            if fixture.get("expectedValid") is True and fixture.get("routeTarget")
+        }
+    )
+    lines = [
+        f"- fixture_path: {FIXTURE_PATH.relative_to(ROOT)}",
+        f"- fixture_count: {len(fixture_dicts)}",
+        f"- valid_fixture_count: {valid_count}",
+        f"- invalid_fixture_count: {invalid_count}",
+        f"- valid_route_targets: {route_targets}",
+    ]
+    return lines, failures
 
 
 def report_path() -> Path:
@@ -111,7 +152,21 @@ def main() -> int:
             failures.append(f"missing npm script: {script}")
         npm_lines.append(f"- {script}: {command or 'missing'}")
 
+    reviewer_doc_lines: list[str] = []
+    for label, relative in REVIEWER_DOCS:
+        path = TOOL_DIR / relative
+        if not path.exists():
+            failures.append(f"missing reviewer doc: {relative}")
+        reviewer_doc_lines.append(f"- {label}: {path.relative_to(ROOT) if path.exists() else 'missing'}")
+
+    fixture_lines, fixture_failures = fixture_count_summary()
+    failures.extend(fixture_failures)
+
     workflow_text = WORKFLOW_PATH.read_text(encoding="utf-8") if WORKFLOW_PATH.exists() else ""
+    cabal_version_pinned = "cabal-version:" in workflow_text
+    cabal_update_disabled = "cabal-update: false" in workflow_text
+    upload_path_fixed = "path: tools/playback-parity-v1/.playback-shadow-artifacts/**" in workflow_text
+    upload_hidden_files = "include-hidden-files: true" in workflow_text
     workflow_summary = [
         f"- workflow_file: {WORKFLOW_PATH.relative_to(ROOT) if WORKFLOW_PATH.exists() else 'missing'}",
         f"- pull_request_trigger: {str('pull_request:' in workflow_text).lower()}",
@@ -119,6 +174,11 @@ def main() -> int:
         f"- contents_read_permission: {str('contents: read' in workflow_text).lower()}",
         f"- upload_artifact: {str('actions/upload-artifact@v4' in workflow_text).lower()}",
         f"- step_summary: {str('GITHUB_STEP_SUMMARY' in workflow_text).lower()}",
+        f"- haskell_setup_ghc_9_6_7: {str('ghc-version: 9.6.7' in workflow_text).lower()}",
+        f"- haskell_setup_no_pinned_cabal_version: {str(not cabal_version_pinned).lower()}",
+        f"- cabal_update_disabled_or_non_blocking: {str(cabal_update_disabled).lower()}",
+        f"- artifact_upload_path_fixed: {str(upload_path_fixed).lower()}",
+        f"- artifact_upload_hidden_files_enabled: {str(upload_hidden_files).lower()}",
     ]
     for expected, present in [
         ("workflow file", WORKFLOW_PATH.exists()),
@@ -127,6 +187,11 @@ def main() -> int:
         ("contents read permission", "contents: read" in workflow_text),
         ("artifact upload", "actions/upload-artifact@v4" in workflow_text),
         ("step summary", "GITHUB_STEP_SUMMARY" in workflow_text),
+        ("Haskell setup GHC 9.6.7", "ghc-version: 9.6.7" in workflow_text),
+        ("no pinned Cabal version", not cabal_version_pinned),
+        ("Cabal update disabled", cabal_update_disabled),
+        ("fixed artifact upload path", upload_path_fixed),
+        ("hidden artifact files enabled", upload_hidden_files),
     ]:
         if not present:
             failures.append(f"missing workflow readiness item: {expected}")
@@ -162,6 +227,21 @@ def main() -> int:
         "",
         "npm_scripts_available:",
         *npm_lines,
+        "",
+        "reviewer_docs_available:",
+        *reviewer_doc_lines,
+        "",
+        "fixture_count_summary:",
+        *fixture_lines,
+        "",
+        "safety_invariant_summary:",
+        "- no active runtime wiring",
+        "- no production frontend playback changes",
+        "- no server startup",
+        "- no FTP/live URL calls",
+        "- no FFmpeg calls",
+        "- no secrets or write permissions",
+        "- no package dependency/version changes",
         "",
         "workflow_status_summary:",
         *workflow_summary,

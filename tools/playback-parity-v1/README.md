@@ -42,6 +42,12 @@ Run the inactive route response envelope gate:
 python3 tools/playback-parity-v1/inactive_playback_route_response_envelope_gate.py --write-report
 ```
 
+Run the inactive route adapter tests:
+
+```sh
+npm run test:playback-inactive-route-adapter
+```
+
 ## Main Entry Points
 
 - `run_playback_shadow_ci.py` runs all read-only playback shadow gates.
@@ -56,6 +62,8 @@ python3 tools/playback-parity-v1/inactive_playback_route_response_envelope_gate.
 - `playback_route_fixture_schema_gate.py` validates route contract fixtures.
 - `inactive_playback_route_response_envelope_gate.py` validates the inactive route response envelope and error taxonomy.
 - `inactive_playback_route_fixture_coverage_audit.py` verifies inactive route fixture coverage v1.
+- `inactive_playback_route_adapter_js_vs_hs_compare.py` compares JS and Haskell inactive adapter envelopes.
+- `inactive_playback_route_adapter_safety_gate.py` verifies inactive adapter tests remain shadow-only.
 - `playback_route_contract_crosscheck.py` checks inventory and fixtures against each other.
 - `playback_route_shadow_full_gate.py` runs the route schema, crosscheck, and comparator gates together.
 
@@ -84,7 +92,8 @@ These tools do not:
 - post PR comments
 
 Freeze baseline extension: inactive route fixture coverage v1 and inactive route
-response envelope v1 remain shadow-only and fixture-only.
+response envelope v1 remain shadow-only and fixture-only. Freeze baseline
+extension: inactive route adapter tests v1 remains shadow-only and fixture-only.
 
 The preserved playback contract remains:
 

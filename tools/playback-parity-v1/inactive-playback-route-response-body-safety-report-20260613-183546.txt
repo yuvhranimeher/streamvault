@@ -1,0 +1,19 @@
+Status: PASS
+mode: inactive playback route response body safety gate
+base_branch: haskell-playback-inactive-route-fixture-coverage-20260613-003827
+base_ref: 80d29e636877612d314f090c55b4df630b350667
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+frontend_playback_changed: no
+localhost_url_activated: no
+haskell_shadow_exists: true
+js_shadow_exists: true
+fixtures_exist: true
+changed_files: ['package.json', 'tools/playback-parity-v1/InactivePlaybackRouteResponseBody.hs', 'tools/playback-parity-v1/README.md', 'tools/playback-parity-v1/__pycache__/', 'tools/playback-parity-v1/inactive-playback-route-adapter-js-vs-hs-report-20260613-183542.txt', 'tools/playback-parity-v1/inactive-playback-route-adapter-safety-report-20260613-183542.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-183538.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-contract.json', 'tools/playback-parity-v1/inactive-playback-route-response-body-contract.md', 'tools/playback-parity-v1/inactive-playback-route-response-body-envelope-report-20260613-183417.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-envelope-report-20260613-183545.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-fixture-coverage-report-20260613-183417.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-fixture-coverage-report-20260613-183545.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-fixtures.json', 'tools/playback-parity-v1/inactive-playback-route-response-body-js-vs-hs-report-20260613-183417.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-js-vs-hs-report-20260613-183545.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-safety-report-20260613-183418.txt', 'tools/playback-parity-v1/inactive-playback-route-response-envelope-report-20260613-183538.txt', 'tools/playback-parity-v1/inactive_playback_route_adapter_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_response_body_envelope_gate.py', 'tools/playback-parity-v1/inactive_playback_route_response_body_fixture_coverage_audit.py', 'tools/playback-parity-v1/inactive_playback_route_response_body_js_vs_hs_compare.py', 'tools/playback-parity-v1/inactive_playback_route_response_body_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_response_body_shadow_js.js', 'tools/playback-parity-v1/inactive_playback_route_v1_safety_gate.py', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-183520.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-183538.txt', 'tools/playback-parity-v1/playback-shadow-freeze-baseline.md', 'tools/playback-parity-v1/playback-shadow-freeze-manifest.json', 'tools/playback-parity-v1/playback_shadow_freeze_manifest_gate.py', 'tools/playback-parity-v1/playback_shadow_readiness_index.py', 'tools/playback-parity-v1/run_playback_shadow_ci.py', 'tools/playback-parity-v1/run_playback_shadow_review_pack.py']
+active_runtime_file_count_scanned: 28
+allowed_new_npm_scripts: ['test:playback-inactive-route-response-body']
+failures: []

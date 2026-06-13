@@ -77,6 +77,7 @@ def main() -> int:
         "frozenJsPlannerFiles",
         "frozenComparatorScripts",
         "frozenCiReviewScripts",
+        "frozenContractFiles",
     ]
     for field in file_fields:
         values = manifest.get(field)

@@ -75,6 +75,19 @@ routes are registered, no Haskell adapter is imported by the server, no runtime
 playback code changes, no frontend playback code changes, no network calls, and
 no FFmpeg calls.
 
+## Freeze Baseline Extension: Inactive Route Response Body Parity V1
+
+This baseline is further extended with inactive route response body parity v1.
+The extension adds route-level response payload fixtures, JS/Haskell shadows,
+an exact comparator, an envelope gate, a coverage audit, and a safety gate. It
+models stable payload shapes for movie JSON, FTP JSON, local JSON, FTP raw byte
+metadata, series JSON, live HLS metadata, and error JSON without starting a
+server or opening any fixture URL.
+
+This extension does not change desktop direct-play behavior, mobile HLS
+behavior, production runtime playback code, production frontend playback code,
+active route registration, workflow permissions, or FFmpeg/network behavior.
+
 ## Accepted Inventory Schema
 
 The accepted route inventory is `playback-route-shadow-contract-inventory.json`.
@@ -104,7 +117,9 @@ planner validation, JS/Haskell planner comparison, route inventory schema,
 route fixture schema, route crosscheck, JS/Haskell route comparison, route full
 gate, inactive route fixture coverage audit, inactive route response envelope
 gate, inactive route adapter comparator, inactive route adapter safety gate,
-workflow safety, artifact manifest validation, and readiness indexing.
+inactive route response body comparator, response body envelope gate, response
+body fixture coverage audit, response body safety gate, workflow safety,
+artifact manifest validation, and readiness indexing.
 
 ## Accepted Workflow Safety Rules
 
@@ -144,6 +159,7 @@ and the latest readiness index report.
 - route fixture coverage
 - inactive route response envelope v1 and error taxonomy
 - inactive route adapter tests v1
+- inactive route response body parity v1
 - JS/Haskell comparator behavior
 - read-only CI/review/artifact workflow
 - safety invariants listed in this document

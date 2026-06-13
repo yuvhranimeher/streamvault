@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify inactive playback route adapter tests remain shadow-only and read-only."""
+"""Verify inactive playback route response body parity remains shadow-only."""
 
 from __future__ import annotations
 
@@ -16,17 +16,13 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parents[2]
 TOOL_DIR = ROOT / "tools" / "playback-parity-v1"
 BASE_BRANCH = "haskell-playback-inactive-route-fixture-coverage-20260613-003827"
-HS_ADAPTER_PATH = TOOL_DIR / "InactivePlaybackRouteAdapter.hs"
-JS_ADAPTER_PATH = TOOL_DIR / "inactive_playback_route_adapter_shadow_js.js"
-FIXTURE_PATH = TOOL_DIR / "inactive-playback-route-adapter-fixtures.json"
+HS_PATH = TOOL_DIR / "InactivePlaybackRouteResponseBody.hs"
+JS_PATH = TOOL_DIR / "inactive_playback_route_response_body_shadow_js.js"
+FIXTURE_PATH = TOOL_DIR / "inactive-playback-route-response-body-fixtures.json"
 PACKAGE_PATH = ROOT / "package.json"
 PACKAGE_LOCK_PATH = ROOT / "package-lock.json"
 
-ADAPTER_NPM_SCRIPT = {
-    "test:playback-inactive-route-adapter": (
-        "python3 tools/playback-parity-v1/inactive_playback_route_adapter_js_vs_hs_compare.py --write-report "
-        "&& python3 tools/playback-parity-v1/inactive_playback_route_adapter_safety_gate.py --write-report"
-    ),
+ALLOWED_NEW_NPM_SCRIPTS = {
     "test:playback-inactive-route-response-body": (
         "python3 tools/playback-parity-v1/inactive_playback_route_response_body_js_vs_hs_compare.py --write-report "
         "&& python3 tools/playback-parity-v1/inactive_playback_route_response_body_envelope_gate.py --write-report "
@@ -35,13 +31,17 @@ ADAPTER_NPM_SCRIPT = {
     )
 }
 
-FRONTEND_PLAYBACK_FILES = {
+FORBIDDEN_PATH_PREFIXES = (
+    "public/",
+    "routes/",
+    "middleware/",
+    "src/",
+    "lib/",
+)
+FORBIDDEN_EXACT_PATHS = {
+    "server.js",
     "public/app.js",
     "public/player.js",
-    "public/details.js",
-    "public/livetv.js",
-    "public/movies-page-fix.js",
-    "public/series-page-fix.js",
 }
 ACTIVE_RUNTIME_PREFIXES = (
     "server.js",
@@ -53,8 +53,7 @@ ACTIVE_RUNTIME_PREFIXES = (
     "src/",
 )
 ACTIVE_ROUTE_RE = re.compile(
-    r"\b(?:app|router)\s*\.\s*(?:get|post|put|patch|delete|all|use)\s*\("
-    r"\s*[`'\"]/(?:api/playback/(?:local|ftp|movie)|api/ftp/raw|api/playback/series|api/playback/live|live/)",
+    r"\b(?:app|router)\s*\.\s*(?:get|post|put|patch|delete|all|use)\s*\(",
     re.IGNORECASE,
 )
 SERVER_START_RE = re.compile(
@@ -67,7 +66,7 @@ FFMPEG_COMMAND_RE = re.compile(
 )
 LIVE_OR_FTP_CALL_RE = re.compile(
     r"\b(?:fetch|axios|request|http\.get|https\.get|ftp\.access|client\.access|curl|wget)\s*\([^)\n]*"
-    r"(?:ftp://|ftps://|https?://|/live/)",
+    r"(?:ftp://|ftps://|https?://|/live/|localhost|127\.0\.0\.1)",
     re.IGNORECASE,
 )
 WORKFLOW_WRITE_RE = re.compile(r"(?m)^\s*(?:contents|pull-requests|issues|actions|checks):\s*write\s*$")
@@ -79,7 +78,7 @@ def rel(path: Path) -> str:
 
 def report_path() -> Path:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    return TOOL_DIR / f"inactive-playback-route-adapter-safety-report-{stamp}.txt"
+    return TOOL_DIR / f"inactive-playback-route-response-body-safety-report-{stamp}.txt"
 
 
 def run_git(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -165,12 +164,12 @@ def active_runtime_files() -> list[str]:
     return files
 
 
-def adapter_reference_failures() -> list[str]:
+def active_reference_failures() -> list[str]:
     failures: list[str] = []
     needles = [
-        "InactivePlaybackRouteAdapter",
-        "inactive_playback_route_adapter_shadow_js",
-        "inactive_playback_route_adapter_js_vs_hs_compare",
+        "InactivePlaybackRouteResponseBody",
+        "inactive_playback_route_response_body",
+        "playback-route-response-body",
     ]
     for path in active_runtime_files():
         full_path = ROOT / path
@@ -181,7 +180,7 @@ def adapter_reference_failures() -> list[str]:
             continue
         for needle in needles:
             if needle in text:
-                failures.append(f"active runtime references inactive adapter {needle}: {path}")
+                failures.append(f"active runtime references response body shadow {needle}: {path}")
     return failures
 
 
@@ -199,11 +198,11 @@ def package_failures(base: str) -> list[str]:
     base_scripts = dict(base_pkg.get("scripts", {}))
     head_scripts = dict(head_pkg.get("scripts", {}))
     expected_scripts = dict(base_scripts)
-    for script_name, script_value in ADAPTER_NPM_SCRIPT.items():
+    for script_name, script_value in ALLOWED_NEW_NPM_SCRIPTS.items():
         if script_name in head_scripts:
             expected_scripts[script_name] = script_value
     if head_scripts != expected_scripts:
-        failures.append("package.json scripts changed beyond inactive adapter npm script")
+        failures.append("package.json scripts changed beyond inactive response body npm script")
 
     if PACKAGE_LOCK_PATH.exists():
         lock_diff = run_git(["diff", "--name-only", f"{base}...HEAD", "--", "package-lock.json"])
@@ -214,16 +213,20 @@ def package_failures(base: str) -> list[str]:
 
 def diff_safety_failures(base: str, files: list[str]) -> list[str]:
     failures: list[str] = []
-    frontend_changes = sorted(path for path in files if path in FRONTEND_PLAYBACK_FILES)
-    if frontend_changes:
-        failures.append(f"frontend playback files changed: {frontend_changes}")
+    forbidden_changes = [
+        path
+        for path in files
+        if path in FORBIDDEN_EXACT_PATHS or path.startswith(FORBIDDEN_PATH_PREFIXES)
+    ]
+    if forbidden_changes:
+        failures.append(f"forbidden active runtime/frontend files changed: {forbidden_changes}")
 
     for path, line in added_lines(base):
         if not path:
             continue
         if path.endswith((".md", ".txt", ".json")):
             continue
-        if path == "package.json" and any(script_name in line for script_name in ADAPTER_NPM_SCRIPT):
+        if path == "package.json" and any(script_name in line for script_name in ALLOWED_NEW_NPM_SCRIPTS):
             continue
 
         if SERVER_START_RE.search(line):
@@ -231,10 +234,10 @@ def diff_safety_failures(base: str, files: list[str]) -> list[str]:
         if FFMPEG_COMMAND_RE.search(line):
             failures.append(f"FFmpeg command added in {path}: {line.strip()}")
         if LIVE_OR_FTP_CALL_RE.search(line):
-            failures.append(f"FTP/live URL call added in {path}: {line.strip()}")
-        if path == "server.js" or path.startswith(("app/", "routes/", "src/", "lib/")):
+            failures.append(f"FTP/live/local URL call added in {path}: {line.strip()}")
+        if path == "server.js" or path.startswith(("app/", "routes/", "src/", "lib/", "middleware/")):
             if ACTIVE_ROUTE_RE.search(line):
-                failures.append(f"active playback HTTP route added in {path}: {line.strip()}")
+                failures.append(f"active HTTP route code added in {path}: {line.strip()}")
 
     for path in [path for path in files if path.startswith(".github/workflows/")]:
         text = (ROOT / path).read_text(encoding="utf-8", errors="ignore")
@@ -253,33 +256,30 @@ def diff_safety_failures(base: str, files: list[str]) -> list[str]:
     return failures
 
 
-def adapter_file_failures() -> list[str]:
+def shadow_file_failures() -> list[str]:
     failures: list[str] = []
-    for path in [HS_ADAPTER_PATH, JS_ADAPTER_PATH, FIXTURE_PATH]:
+    for path in [HS_PATH, JS_PATH, FIXTURE_PATH]:
         if not path.exists():
-            failures.append(f"missing adapter file: {rel(path)}")
+            failures.append(f"missing response body shadow file: {rel(path)}")
 
-    for path in [HS_ADAPTER_PATH, JS_ADAPTER_PATH]:
+    for path in [HS_PATH, JS_PATH]:
         if not path.exists():
             continue
         text = path.read_text(encoding="utf-8", errors="ignore")
         for label, pattern in [
             ("server startup", SERVER_START_RE),
             ("FFmpeg command", FFMPEG_COMMAND_RE),
-            ("FTP/live URL call", LIVE_OR_FTP_CALL_RE),
-            ("active route registration", ACTIVE_ROUTE_RE),
+            ("FTP/live/local URL call", LIVE_OR_FTP_CALL_RE),
         ]:
             if pattern.search(text):
-                failures.append(f"{label} found in adapter file: {rel(path)}")
+                failures.append(f"{label} found in response body shadow file: {rel(path)}")
     return failures
 
 
 def safe_fixture_url(value: str) -> bool:
     if not value:
         return True
-    if value.startswith("local://"):
-        return True
-    if value.startswith("placeholder://"):
+    if value.startswith(("local://", "placeholder://")):
         return True
     parsed = urlparse(value)
     if parsed.scheme in {"http", "https", "ftp"}:
@@ -289,56 +289,25 @@ def safe_fixture_url(value: str) -> bool:
     return True
 
 
-def walk_values(value: Any) -> list[str]:
-    if isinstance(value, dict):
-        values: list[str] = []
-        for nested in value.values():
-            values.extend(walk_values(nested))
-        return values
-    if isinstance(value, list):
-        values: list[str] = []
-        for nested in value:
-            values.extend(walk_values(nested))
-        return values
-    if isinstance(value, str):
-        return [value]
-    return []
-
-
 def fixture_failures() -> list[str]:
     failures: list[str] = []
     if not FIXTURE_PATH.exists():
-        return [f"missing adapter fixture file: {rel(FIXTURE_PATH)}"]
+        return [f"missing response body fixture file: {rel(FIXTURE_PATH)}"]
     try:
         fixtures = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        return [f"adapter fixture JSON parse failed: {exc}"]
+        return [f"response body fixture JSON parse failed: {exc}"]
     if not isinstance(fixtures, list):
-        return ["adapter fixture file must contain a JSON array"]
-    required_names = {
-        "adapter_get_movie_playback_query",
-        "adapter_post_movie_playback_body",
-        "adapter_local_playback_query",
-        "adapter_ftp_playback_query",
-        "adapter_ftp_raw_range_query",
-        "adapter_series_episode_playback",
-        "adapter_live_tv_hls_contract",
-        "adapter_invalid_missing_route",
-        "adapter_invalid_missing_streamUrl",
-        "adapter_invalid_unsupported_method",
-        "adapter_invalid_unsafe_streamUrl",
-    }
-    names = {str(item.get("name") or "") for item in fixtures if isinstance(item, dict)}
-    missing = sorted(required_names - names)
-    if missing:
-        failures.append(f"adapter fixtures missing required cases: {missing}")
+        return ["response body fixture file must contain a JSON array"]
     for item in fixtures:
         if not isinstance(item, dict):
-            failures.append("adapter fixture contains non-object entry")
+            failures.append("response body fixture contains non-object entry")
             continue
-        for value in walk_values(item):
-            if "://" in value and not safe_fixture_url(value):
-                failures.append(f"{item.get('name')}: unsafe fixture URL: {value}")
+        value = str(item.get("streamUrl") or "")
+        if "localhost" in value or "127.0.0.1" in value:
+            failures.append(f"{item.get('name')}: localhost/dev-only URL in fixture")
+        if "://" in value and not safe_fixture_url(value):
+            failures.append(f"{item.get('name')}: unsafe fixture URL: {value}")
     return failures
 
 
@@ -348,16 +317,16 @@ def main() -> int:
     files = changed_files(base)
     failures: list[str] = []
 
-    failures.extend(adapter_reference_failures())
+    failures.extend(active_reference_failures())
     failures.extend(package_failures(base))
     failures.extend(diff_safety_failures(base, files))
-    failures.extend(adapter_file_failures())
+    failures.extend(shadow_file_failures())
     failures.extend(fixture_failures())
 
     ok = not failures
     lines = [
         f"Status: {'PASS' if ok else 'FAIL'}",
-        "mode: inactive playback route adapter safety gate",
+        "mode: inactive playback route response body safety gate",
         f"base_branch: {BASE_BRANCH}",
         f"base_ref: {base}",
         "server_started: no",
@@ -366,12 +335,14 @@ def main() -> int:
         "runtime_playback_changed: no",
         "active_routes_added: no",
         "inactive_route_wired: no",
-        f"haskell_adapter_exists: {str(HS_ADAPTER_PATH.exists()).lower()}",
-        f"js_adapter_exists: {str(JS_ADAPTER_PATH.exists()).lower()}",
-        f"adapter_fixtures_exist: {str(FIXTURE_PATH.exists()).lower()}",
+        "frontend_playback_changed: no",
+        "localhost_url_activated: no",
+        f"haskell_shadow_exists: {str(HS_PATH.exists()).lower()}",
+        f"js_shadow_exists: {str(JS_PATH.exists()).lower()}",
+        f"fixtures_exist: {str(FIXTURE_PATH.exists()).lower()}",
         f"changed_files: {files}",
         f"active_runtime_file_count_scanned: {len(active_runtime_files())}",
-        f"allowed_npm_scripts: {sorted(ADAPTER_NPM_SCRIPT)}",
+        f"allowed_new_npm_scripts: {sorted(ALLOWED_NEW_NPM_SCRIPTS)}",
         f"failures: {failures}",
     ]
     output = "\n".join(lines) + "\n"

@@ -31,6 +31,22 @@ COMMANDS = [
         [sys.executable, str(TOOL_DIR / "inactive_playback_route_adapter_safety_gate.py"), "--write-report"],
     ),
     (
+        "inactive_route_response_body_js_vs_hs_compare",
+        [sys.executable, str(TOOL_DIR / "inactive_playback_route_response_body_js_vs_hs_compare.py"), "--write-report"],
+    ),
+    (
+        "inactive_route_response_body_envelope_gate",
+        [sys.executable, str(TOOL_DIR / "inactive_playback_route_response_body_envelope_gate.py"), "--write-report"],
+    ),
+    (
+        "inactive_route_response_body_fixture_coverage_audit",
+        [sys.executable, str(TOOL_DIR / "inactive_playback_route_response_body_fixture_coverage_audit.py"), "--write-report"],
+    ),
+    (
+        "inactive_route_response_body_safety_gate",
+        [sys.executable, str(TOOL_DIR / "inactive_playback_route_response_body_safety_gate.py"), "--write-report"],
+    ),
+    (
         "workflow_safety_audit",
         [sys.executable, str(TOOL_DIR / "playback_shadow_workflow_safety_audit.py"), "--write-report"],
     ),

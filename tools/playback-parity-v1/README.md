@@ -48,6 +48,12 @@ Run the inactive route adapter tests:
 npm run test:playback-inactive-route-adapter
 ```
 
+Run the inactive route response body parity tests:
+
+```sh
+npm run test:playback-inactive-route-response-body
+```
+
 ## Main Entry Points
 
 - `run_playback_shadow_ci.py` runs all read-only playback shadow gates.
@@ -64,6 +70,10 @@ npm run test:playback-inactive-route-adapter
 - `inactive_playback_route_fixture_coverage_audit.py` verifies inactive route fixture coverage v1.
 - `inactive_playback_route_adapter_js_vs_hs_compare.py` compares JS and Haskell inactive adapter envelopes.
 - `inactive_playback_route_adapter_safety_gate.py` verifies inactive adapter tests remain shadow-only.
+- `inactive_playback_route_response_body_js_vs_hs_compare.py` compares JS and Haskell route response body envelopes.
+- `inactive_playback_route_response_body_envelope_gate.py` validates response payload shapes and safety fields.
+- `inactive_playback_route_response_body_fixture_coverage_audit.py` verifies route response body fixture coverage.
+- `inactive_playback_route_response_body_safety_gate.py` proves response body parity remains shadow-only.
 - `playback_route_contract_crosscheck.py` checks inventory and fixtures against each other.
 - `playback_route_shadow_full_gate.py` runs the route schema, crosscheck, and comparator gates together.
 
@@ -94,6 +104,8 @@ These tools do not:
 Freeze baseline extension: inactive route fixture coverage v1 and inactive route
 response envelope v1 remain shadow-only and fixture-only. Freeze baseline
 extension: inactive route adapter tests v1 remains shadow-only and fixture-only.
+Freeze baseline extension: inactive route response body parity v1 remains
+shadow-only and fixture-only.
 
 The preserved playback contract remains:
 

@@ -35,6 +35,10 @@ ALLOWED_NPM_SCRIPTS = {
     "test:playback-inactive-route-fixture-review": (
         "python3 tools/playback-parity-v1/run_inactive_route_fixture_review_pack.py --write-report"
     ),
+    "test:playback-inactive-route-adapter": (
+        "python3 tools/playback-parity-v1/inactive_playback_route_adapter_js_vs_hs_compare.py --write-report "
+        "&& python3 tools/playback-parity-v1/inactive_playback_route_adapter_safety_gate.py --write-report"
+    ),
 }
 
 ALLOWED_INACTIVE_ROUTE_FILES = {

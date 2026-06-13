@@ -24,6 +24,8 @@ GATES = [
     "playback_route_fixture_schema_gate.py",
     "inactive_playback_route_response_envelope_gate.py",
     "inactive_playback_route_fixture_coverage_audit.py",
+    "inactive_playback_route_adapter_js_vs_hs_compare.py",
+    "inactive_playback_route_adapter_safety_gate.py",
     "playback_route_contract_crosscheck.py",
     "playback_route_contract_js_vs_hs_compare.py",
     "playback_route_shadow_full_gate.py",
@@ -46,6 +48,8 @@ REPORTS = [
     ("route_fixture_schema_report", "playback-route-fixture-schema-report-*.txt"),
     ("inactive_route_response_envelope_report", "inactive-playback-route-response-envelope-report-*.txt"),
     ("inactive_route_fixture_coverage_report", "inactive-playback-route-fixture-coverage-report-*.txt"),
+    ("inactive_route_adapter_compare_report", "inactive-playback-route-adapter-js-vs-hs-report-*.txt"),
+    ("inactive_route_adapter_safety_report", "inactive-playback-route-adapter-safety-report-*.txt"),
     ("route_crosscheck_report", "playback-route-contract-crosscheck-report-*.txt"),
 ]
 
@@ -56,6 +60,7 @@ NPM_SCRIPTS = [
     "report:playback-shadow-artifacts",
     "report:playback-shadow-readiness",
     "test:playback-inactive-route-fixtures",
+    "test:playback-inactive-route-adapter",
 ]
 
 

@@ -65,6 +65,16 @@ into the production server, does not modify runtime playback behavior, does not
 touch production frontend playback code, and does not call FTP/live URLs or
 FFmpeg.
 
+## Freeze Baseline Extension: Inactive Route Adapter Tests V1
+
+This baseline is further extended with inactive route adapter tests v1. The
+extension adds local request/response adapter fixtures and JS/Haskell shadow
+adapters that normalize `method`, `path`, `query`, and `body` fixture inputs
+into the inactive response envelope. It remains shadow-only: no active HTTP
+routes are registered, no Haskell adapter is imported by the server, no runtime
+playback code changes, no frontend playback code changes, no network calls, and
+no FFmpeg calls.
+
 ## Accepted Inventory Schema
 
 The accepted route inventory is `playback-route-shadow-contract-inventory.json`.
@@ -93,7 +103,8 @@ The underlying read-only gates include planner fixture validation, Haskell shado
 planner validation, JS/Haskell planner comparison, route inventory schema,
 route fixture schema, route crosscheck, JS/Haskell route comparison, route full
 gate, inactive route fixture coverage audit, inactive route response envelope
-gate, workflow safety, artifact manifest validation, and readiness indexing.
+gate, inactive route adapter comparator, inactive route adapter safety gate,
+workflow safety, artifact manifest validation, and readiness indexing.
 
 ## Accepted Workflow Safety Rules
 
@@ -132,6 +143,7 @@ and the latest readiness index report.
 - route inventory target list
 - route fixture coverage
 - inactive route response envelope v1 and error taxonomy
+- inactive route adapter tests v1
 - JS/Haskell comparator behavior
 - read-only CI/review/artifact workflow
 - safety invariants listed in this document

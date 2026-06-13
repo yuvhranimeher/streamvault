@@ -20,6 +20,8 @@ GATES = [
     ("route_fixture_schema_gate", TOOL_DIR / "playback_route_fixture_schema_gate.py"),
     ("inactive_route_response_envelope_gate", TOOL_DIR / "inactive_playback_route_response_envelope_gate.py"),
     ("inactive_route_fixture_coverage_audit", TOOL_DIR / "inactive_playback_route_fixture_coverage_audit.py"),
+    ("inactive_route_adapter_js_vs_hs_compare", TOOL_DIR / "inactive_playback_route_adapter_js_vs_hs_compare.py"),
+    ("inactive_route_adapter_safety_gate", TOOL_DIR / "inactive_playback_route_adapter_safety_gate.py"),
     ("route_contract_crosscheck", TOOL_DIR / "playback_route_contract_crosscheck.py"),
     ("route_contract_js_vs_hs_compare", TOOL_DIR / "playback_route_contract_js_vs_hs_compare.py"),
     ("route_shadow_full_gate", TOOL_DIR / "playback_route_shadow_full_gate.py"),

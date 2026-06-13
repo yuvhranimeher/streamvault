@@ -88,6 +88,19 @@ This extension does not change desktop direct-play behavior, mobile HLS
 behavior, production runtime playback code, production frontend playback code,
 active route registration, workflow permissions, or FFmpeg/network behavior.
 
+## Freeze Baseline Extension: Inactive Route Status/Header Parity V1
+
+This baseline is further extended with inactive route status/header parity v1.
+The extension adds route-level status and response header fixtures, JS/Haskell
+shadows, an exact comparator, an envelope gate, a coverage audit, and a safety
+gate. It models deterministic status codes and lowercase sorted headers for
+JSON responses, raw byte metadata, live HLS metadata, rejected adapter results,
+unsafe placeholder URLs, and method/status edge cases.
+
+This extension does not change desktop direct-play behavior, mobile HLS
+behavior, production runtime playback code, production frontend playback code,
+active route registration, workflow permissions, or FFmpeg/network behavior.
+
 ## Accepted Inventory Schema
 
 The accepted route inventory is `playback-route-shadow-contract-inventory.json`.
@@ -118,7 +131,9 @@ route fixture schema, route crosscheck, JS/Haskell route comparison, route full
 gate, inactive route fixture coverage audit, inactive route response envelope
 gate, inactive route adapter comparator, inactive route adapter safety gate,
 inactive route response body comparator, response body envelope gate, response
-body fixture coverage audit, response body safety gate, workflow safety,
+body fixture coverage audit, response body safety gate, inactive route
+status/header comparator, status/header envelope gate, status/header fixture
+coverage audit, status/header safety gate, workflow safety,
 artifact manifest validation, and readiness indexing.
 
 ## Accepted Workflow Safety Rules
@@ -160,6 +175,7 @@ and the latest readiness index report.
 - inactive route response envelope v1 and error taxonomy
 - inactive route adapter tests v1
 - inactive route response body parity v1
+- inactive route status/header parity v1
 - JS/Haskell comparator behavior
 - read-only CI/review/artifact workflow
 - safety invariants listed in this document

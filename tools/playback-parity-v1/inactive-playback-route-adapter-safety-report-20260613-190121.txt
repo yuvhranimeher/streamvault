@@ -1,0 +1,17 @@
+Status: PASS
+mode: inactive playback route adapter safety gate
+base_branch: haskell-playback-inactive-route-fixture-coverage-20260613-003827
+base_ref: 26ca8c6be35d71eaa57f7411896b3ae1e94ba762
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+haskell_adapter_exists: true
+js_adapter_exists: true
+adapter_fixtures_exist: true
+changed_files: ['package.json', 'tools/playback-parity-v1/InactivePlaybackRouteStatusHeader.hs', 'tools/playback-parity-v1/README.md', 'tools/playback-parity-v1/inactive-playback-route-adapter-js-vs-hs-report-20260613-190121.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-190119.txt', 'tools/playback-parity-v1/inactive-playback-route-response-envelope-report-20260613-190119.txt', 'tools/playback-parity-v1/inactive-playback-route-status-header-contract.json', 'tools/playback-parity-v1/inactive-playback-route-status-header-contract.md', 'tools/playback-parity-v1/inactive-playback-route-status-header-fixtures.json', 'tools/playback-parity-v1/inactive_playback_route_adapter_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_response_body_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_status_header_envelope_gate.py', 'tools/playback-parity-v1/inactive_playback_route_status_header_fixture_coverage_audit.py', 'tools/playback-parity-v1/inactive_playback_route_status_header_js_vs_hs_compare.py', 'tools/playback-parity-v1/inactive_playback_route_status_header_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_status_header_shadow_js.js', 'tools/playback-parity-v1/inactive_playback_route_v1_safety_gate.py', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-190102.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-190119.txt', 'tools/playback-parity-v1/playback-shadow-freeze-baseline.md', 'tools/playback-parity-v1/playback-shadow-freeze-manifest.json', 'tools/playback-parity-v1/playback_shadow_readiness_index.py', 'tools/playback-parity-v1/run_playback_shadow_ci.py', 'tools/playback-parity-v1/run_playback_shadow_review_pack.py']
+active_runtime_file_count_scanned: 28
+allowed_npm_scripts: ['test:playback-inactive-route-adapter', 'test:playback-inactive-route-response-body', 'test:playback-inactive-route-status-headers']
+failures: []

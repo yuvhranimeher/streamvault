@@ -1,0 +1,42 @@
+Status: PASS
+mode: read-only inactive playback route v1 comparator gate
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+ghc_available: true
+node_available: true
+inactive_haskell: tools/playback-parity-v1/InactivePlaybackRouteV1.hs
+fixture_path: tools/playback-parity-v1/playback-route-contract-fixtures.json
+compile_status: passed
+inactive_run_status: passed
+js_run_status: passed
+existing_route_comparator_status: passed
+normalized_compare_status: passed
+inactive_decision_count: 16
+js_decision_count: 16
+existing_route_comparator_stdout:
+Status: PASS
+mode: read-only playback route contract JS vs Haskell comparison
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+node_available: true
+ghc_available: true
+haskell_compile: passed
+haskell_run: passed
+javascript_run: passed
+normalized_compare: passed
+fixture_path: tools/playback-parity-v1/playback-route-contract-fixtures.json
+haskell_planner: tools/playback-parity-v1/PlaybackRouteContractShadow.hs
+javascript_planner: tools/playback-parity-v1/playback_route_contract_shadow_js.js
+haskell_decision_count: 16
+javascript_decision_count: 16
+failures: []
+existing_route_comparator_stderr:
+(empty)
+failures: []

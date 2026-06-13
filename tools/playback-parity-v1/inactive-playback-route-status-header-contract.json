@@ -1,0 +1,92 @@
+{
+  "contract": "inactive-playback-route-status-header-v1",
+  "mode": "shadow-only",
+  "envelopeFields": [
+    "fixtureId",
+    "decision",
+    "status",
+    "headers",
+    "bodyShape",
+    "reasonCode",
+    "safetyNotes"
+  ],
+  "acceptedMethods": [
+    "GET",
+    "POST"
+  ],
+  "acceptedBodyShapes": [
+    "movie-json",
+    "ftp-json",
+    "local-json",
+    "raw-bytes",
+    "series-json",
+    "live-hls",
+    "error-json"
+  ],
+  "headerShapes": {
+    "json": [
+      "cache-control",
+      "content-type",
+      "x-streamvault-shadow"
+    ],
+    "live-hls": [
+      "cache-control",
+      "content-type",
+      "x-streamvault-shadow"
+    ],
+    "raw-bytes": [
+      "accept-ranges",
+      "cache-control",
+      "content-type",
+      "x-streamvault-shadow"
+    ],
+    "raw-bytes-range": [
+      "accept-ranges",
+      "cache-control",
+      "content-range",
+      "content-type",
+      "x-streamvault-shadow"
+    ],
+    "method-error": [
+      "allow",
+      "cache-control",
+      "content-type",
+      "x-streamvault-shadow"
+    ]
+  },
+  "statusByReasonCode": {
+    "OK": 200,
+    "PARTIAL_CONTENT": 206,
+    "MISSING_ROUTE": 404,
+    "UNKNOWN_ROUTE": 404,
+    "UNSUPPORTED_METHOD": 405,
+    "MISSING_ID": 400,
+    "MALFORMED_ID": 400,
+    "MISSING_STREAM_URL": 400,
+    "UNSAFE_STREAM_URL": 400,
+    "ADAPTER_DENIED": 403,
+    "UNSUPPORTED_SOURCE_TYPE": 422,
+    "UNSUPPORTED_CLIENT_TYPE": 422,
+    "UNSUPPORTED_PLAYBACK_MODE": 422,
+    "UNSUPPORTED_BODY_SHAPE": 422,
+    "RESPONSE_BODY_DENIED": 502
+  },
+  "safetyNotes": [
+    "shadow-only",
+    "no-server",
+    "no-network",
+    "no-ffmpeg",
+    "no-active-runtime-wiring"
+  ],
+  "requiredCoverage": [
+    "valid inactive route request",
+    "missing required params",
+    "malformed id",
+    "unsafe URL placeholder",
+    "adapter denied case",
+    "response-body accepted case",
+    "cache-control expectations",
+    "content-type expectations",
+    "method/status edge case"
+  ]
+}

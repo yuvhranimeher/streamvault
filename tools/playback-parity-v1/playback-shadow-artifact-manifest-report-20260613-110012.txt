@@ -1,0 +1,21 @@
+Status: PASS
+mode: read-only playback shadow artifact manifest validator
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+artifact_dir: tools/playback-parity-v1/.playback-shadow-artifacts
+artifact_file_count: 11
+artifacts:
+- manifest: tools/playback-parity-v1/.playback-shadow-artifacts/manifest.txt Status: PASS
+- ci_report: tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-ci-report-20260613-110011.txt Status: PASS
+- pr_summary: tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-pr-summary-20260613-110011.md Status: PASS
+- review_pack_report: tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-review-pack-report-20260613-110011.txt Status: PASS
+- workflow_safety_report: tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-workflow-safety-report-20260613-110011.txt Status: PASS
+- js_haskell_planner_compare: tools/playback-parity-v1/.playback-shadow-artifacts/playback-js-vs-hs-shadow-compare-report-20260612-181036.txt Status: PASS
+- route_contract_compare: tools/playback-parity-v1/.playback-shadow-artifacts/playback-route-contract-js-vs-hs-report-20260612-182035.txt Status: PASS
+- inactive_route_fixture_coverage_audit: tools/playback-parity-v1/.playback-shadow-artifacts/inactive-playback-route-fixture-coverage-report-20260613-110011.txt Status: PASS
+- inactive_route_fixture_pr_summary: tools/playback-parity-v1/.playback-shadow-artifacts/inactive-playback-route-fixture-pr-summary-20260613-105947.md Status: PASS
+- inactive_route_fixture_review_pack: tools/playback-parity-v1/.playback-shadow-artifacts/inactive-route-fixture-review-pack-report-20260613-105944.txt Status: PASS
+failures: []

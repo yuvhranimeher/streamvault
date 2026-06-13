@@ -52,9 +52,15 @@ jobs:
             echo "Collected reports are in \`tools/playback-parity-v1/.playback-shadow-artifacts/\`."
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: List playback shadow artifacts
+        run: |
+          ls -la tools/playback-parity-v1/.playback-shadow-artifacts || true
+          find tools/playback-parity-v1/.playback-shadow-artifacts -maxdepth 2 -type f -print || true
+
       - name: Upload playback shadow review pack
         uses: actions/upload-artifact@v4
         with:
           name: playback-shadow-review-pack
-          path: tools/playback-parity-v1/.playback-shadow-artifacts/
+          path: tools/playback-parity-v1/.playback-shadow-artifacts/**
+          include-hidden-files: true
           if-no-files-found: error

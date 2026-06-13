@@ -34,6 +34,10 @@ GATES = [
     "inactive_playback_route_status_header_envelope_gate.py",
     "inactive_playback_route_status_header_fixture_coverage_audit.py",
     "inactive_playback_route_status_header_safety_gate.py",
+    "inactive_playback_route_error_taxonomy_js_vs_hs_compare.py",
+    "inactive_playback_route_error_taxonomy_envelope_gate.py",
+    "inactive_playback_route_error_taxonomy_fixture_coverage_audit.py",
+    "inactive_playback_route_error_taxonomy_safety_gate.py",
     "playback_route_contract_crosscheck.py",
     "playback_route_contract_js_vs_hs_compare.py",
     "playback_route_shadow_full_gate.py",
@@ -66,6 +70,10 @@ REPORTS = [
     ("inactive_route_status_header_envelope_report", "inactive-playback-route-status-header-envelope-report-*.txt"),
     ("inactive_route_status_header_fixture_coverage_report", "inactive-playback-route-status-header-fixture-coverage-report-*.txt"),
     ("inactive_route_status_header_safety_report", "inactive-playback-route-status-header-safety-report-*.txt"),
+    ("inactive_route_error_taxonomy_compare_report", "inactive-playback-route-error-taxonomy-js-vs-hs-report-*.txt"),
+    ("inactive_route_error_taxonomy_envelope_report", "inactive-playback-route-error-taxonomy-envelope-report-*.txt"),
+    ("inactive_route_error_taxonomy_fixture_coverage_report", "inactive-playback-route-error-taxonomy-fixture-coverage-report-*.txt"),
+    ("inactive_route_error_taxonomy_safety_report", "inactive-playback-route-error-taxonomy-safety-report-*.txt"),
     ("route_crosscheck_report", "playback-route-contract-crosscheck-report-*.txt"),
 ]
 
@@ -79,6 +87,7 @@ NPM_SCRIPTS = [
     "test:playback-inactive-route-adapter",
     "test:playback-inactive-route-response-body",
     "test:playback-inactive-route-status-headers",
+    "test:playback-inactive-route-error-taxonomy",
 ]
 
 

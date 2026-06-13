@@ -48,6 +48,12 @@ Run the inactive route fixture review pack:
 npm run test:playback-inactive-route-fixture-review
 ```
 
+Run the combined fixture readiness flow:
+
+```sh
+npm run test:playback-fixture-readiness
+```
+
 ## Main Entry Points
 
 - `run_playback_shadow_ci.py` runs all read-only playback shadow gates.

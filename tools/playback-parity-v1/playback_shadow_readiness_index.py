@@ -60,6 +60,7 @@ NPM_SCRIPTS = [
     "test:playback-inactive-route-fixtures",
     "report:playback-inactive-route-fixtures",
     "test:playback-inactive-route-fixture-review",
+    "test:playback-fixture-readiness",
 ]
 
 REVIEWER_DOCS = [

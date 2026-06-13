@@ -85,6 +85,7 @@ Run the fixture coverage commands locally:
 npm run test:playback-inactive-route-fixtures
 npm run report:playback-inactive-route-fixtures
 npm run test:playback-inactive-route-fixture-review
+npm run test:playback-fixture-readiness
 ```
 
 Open the latest `inactive-playback-route-fixture-coverage-report-*.txt` and

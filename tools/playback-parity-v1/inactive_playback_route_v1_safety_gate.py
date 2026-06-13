@@ -32,6 +32,12 @@ ALLOWED_NPM_SCRIPTS = {
     "test:playback-inactive-route-fixture-review": (
         "python3 tools/playback-parity-v1/run_inactive_route_fixture_review_pack.py --write-report"
     ),
+    "test:playback-fixture-readiness": (
+        "python3 tools/playback-parity-v1/run_inactive_route_fixture_review_pack.py --write-report "
+        "&& python3 tools/playback-parity-v1/playback_shadow_readiness_index.py --write-report "
+        "&& python3 tools/playback-parity-v1/collect_playback_shadow_artifacts.py "
+        "&& python3 tools/playback-parity-v1/playback_shadow_artifact_manifest.py --write-report"
+    ),
 }
 
 ALLOWED_INACTIVE_ROUTE_FILES = {

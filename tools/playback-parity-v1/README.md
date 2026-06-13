@@ -36,13 +36,27 @@ Run the inactive route fixture coverage audit:
 npm run test:playback-inactive-route-fixtures
 ```
 
+Generate the inactive route fixture reviewer summary:
+
+```sh
+npm run report:playback-inactive-route-fixtures
+```
+
+Run the inactive route fixture review pack:
+
+```sh
+npm run test:playback-inactive-route-fixture-review
+```
+
 ## Main Entry Points
 
 - `run_playback_shadow_ci.py` runs all read-only playback shadow gates.
 - `run_playback_shadow_review_pack.py` runs CI, workflow safety, and PR summary generation.
+- `run_inactive_route_fixture_review_pack.py` runs fixture coverage, inactive route safety, route comparison, freeze, CI, review-pack, and fixture PR summary checks.
 - `collect_playback_shadow_artifacts.py` copies the latest review reports into `.playback-shadow-artifacts/`.
 - `playback-shadow-artifact-inspection.md` explains how reviewers inspect the GitHub Actions artifact.
 - `playback-shadow-review-checklist.md` gives reviewers a safety checklist.
+- `inactive-playback-route-fixture-review-checklist.md` gives reviewers a fixture coverage checklist.
 
 ## Route Contract Gates
 
@@ -51,6 +65,23 @@ npm run test:playback-inactive-route-fixtures
 - `inactive_playback_route_fixture_coverage_audit.py` verifies inactive route fixture coverage v1.
 - `playback_route_contract_crosscheck.py` checks inventory and fixtures against each other.
 - `playback_route_shadow_full_gate.py` runs the route schema, crosscheck, and comparator gates together.
+
+## Inactive Route Fixture Coverage
+
+The inactive route fixture coverage tools inspect frozen JSON fixtures and
+shadow-only Haskell route code. They do not register active HTTP routes and do
+not wire `InactivePlaybackRouteV1.hs` into the production Node server.
+
+Reviewers should inspect:
+
+- latest `inactive-playback-route-fixture-coverage-report-*.txt`
+- latest `inactive-playback-route-fixture-pr-summary-*.md`
+- latest `inactive-route-fixture-review-pack-report-*.txt`
+- `inactive-playback-route-fixture-review-checklist.md`
+
+The fixture coverage audit reports fixture counts, valid and invalid coverage
+buckets, placeholder-only URL expectations, inactive route safety checks, and
+the frozen inventory targets covered by the fixtures.
 
 ## JS/Haskell Comparators
 
@@ -62,6 +93,12 @@ npm run test:playback-inactive-route-fixtures
 - `playback_shadow_workflow_safety_audit.py` validates the GitHub Actions workflow remains read-only.
 - `playback_shadow_artifact_manifest.py` validates the collected artifact bundle.
 - `.playback-shadow-artifacts/manifest.txt` lists the reports included in the latest local artifact bundle.
+
+GitHub Actions readiness fixes already applied:
+
+- Haskell setup uses GHC 9.6.7 without a pinned Cabal version.
+- Cabal update is disabled in the workflow.
+- Artifact upload uses `tools/playback-parity-v1/.playback-shadow-artifacts/**` with hidden files included.
 
 ## Safety Boundary
 
@@ -75,6 +112,14 @@ These tools do not:
 - touch production frontend playback code
 - require secrets or write permissions
 - post PR comments
+
+Fixture readiness must keep these invariants true:
+
+- inactive route code remains shadow-only and unwired
+- production Node playback runtime remains unchanged
+- production frontend playback code remains unchanged
+- package versions and dependencies remain unchanged
+- no FTP/live URLs, FFmpeg, secrets, write permissions, or server startup are introduced
 
 Freeze baseline extension: inactive route fixture coverage v1 remains
 shadow-only and fixture-only.

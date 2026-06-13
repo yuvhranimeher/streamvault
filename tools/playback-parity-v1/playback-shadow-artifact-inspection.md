@@ -31,6 +31,10 @@ The artifact should contain:
 - latest workflow safety report
 - latest JS/Haskell playback planner compare report
 - latest route contract JS/Haskell compare report
+- latest inactive route fixture coverage audit report
+- latest inactive route fixture PR summary
+- latest inactive route fixture review-pack report
+- inactive route fixture review checklist
 
 ## Read The CI Report
 
@@ -66,6 +70,50 @@ Open the `playback-shadow-workflow-safety-report-*.txt` file and confirm:
 - PR comments are avoided
 - `forbidden_hits: {}`
 
+Also confirm the workflow retains the fixture-readiness fixes:
+
+- Haskell setup uses GHC 9.6.7 without a pinned Cabal version.
+- Cabal update is disabled in the workflow.
+- Artifact upload uses `tools/playback-parity-v1/.playback-shadow-artifacts/**`.
+- Hidden artifact files are included for the local `.playback-shadow-artifacts` folder.
+
+## Inspect Inactive Route Fixture Coverage
+
+Run the fixture coverage commands locally:
+
+```sh
+npm run test:playback-inactive-route-fixtures
+npm run report:playback-inactive-route-fixtures
+npm run test:playback-inactive-route-fixture-review
+```
+
+Open the latest `inactive-playback-route-fixture-coverage-report-*.txt` and
+confirm:
+
+- `Status: PASS`
+- fixture count is present
+- required valid and invalid coverage buckets are present
+- inventory targets are covered
+- inactive Haskell checks pass
+
+Open the latest `inactive-playback-route-fixture-pr-summary-*.md` and confirm:
+
+- fixture coverage audit status is PASS
+- inactive route gate and safety statuses are PASS
+- route comparator, freeze manifest, CI, and review pack statuses are PASS
+- runtime wiring statement says the inactive route is not wired
+- remaining blockers are `None`
+
+Open the latest `inactive-route-fixture-review-pack-report-*.txt` and confirm:
+
+- `Status: PASS`
+- `server_started: no`
+- `network_called: no`
+- `ffmpeg_started: no`
+- `runtime_playback_changed: no`
+- `active_routes_added: no`
+- `inactive_route_wired: no`
+
 ## Verify No Runtime Playback Changes
 
 Review the branch diff and confirm:
@@ -75,6 +123,10 @@ Review the branch diff and confirm:
 - no production Node server startup was added
 - no package versions or dependencies changed
 - no secrets or write permissions were introduced
+
+The fixture coverage branch must remain documentation, report, artifact, and
+readiness-index only. It must not add active runtime wiring for
+`InactivePlaybackRouteV1.hs`.
 
 The shadow contract remains:
 
@@ -91,5 +143,8 @@ The shadow contract remains:
 - [ ] Workflow safety report is PASS with no forbidden hits.
 - [ ] JS/Haskell planner comparator is PASS.
 - [ ] Route contract comparator is PASS.
+- [ ] Inactive route fixture coverage audit is PASS.
+- [ ] Inactive route fixture PR summary has no blockers.
+- [ ] Inactive route fixture review pack is PASS.
 - [ ] No runtime playback code changed.
 - [ ] No PR comment posting or write permission was added.

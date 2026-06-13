@@ -25,6 +25,7 @@ jobs:
         uses: haskell-actions/setup@v2
         with:
           ghc-version: 9.6.7
+          cabal-update: false
 
       - name: Install Node dependencies
         run: npm ci

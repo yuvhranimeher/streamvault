@@ -1,0 +1,129 @@
+{
+  "contract": "inactive-playback-route-error-taxonomy-v1",
+  "mode": "shadow-only",
+  "envelopeFields": [
+    "fixtureId",
+    "decision",
+    "ok",
+    "status",
+    "errorCode",
+    "errorCategory",
+    "reasonCode",
+    "userSafeMessage",
+    "developerDetail",
+    "retryable",
+    "headers",
+    "bodyShape",
+    "safetyNotes"
+  ],
+  "errorCategories": [
+    "VALIDATION_ERROR",
+    "UNSAFE_URL",
+    "ADAPTER_DENIED",
+    "BODY_REJECTED",
+    "HEADER_REJECTED",
+    "METHOD_NOT_ALLOWED",
+    "NOT_FOUND",
+    "SHADOW_INTERNAL_ERROR"
+  ],
+  "acceptedMethods": [
+    "GET",
+    "POST"
+  ],
+  "acceptedMediaTypes": [
+    "movie",
+    "series",
+    "live"
+  ],
+  "acceptedBodyShapes": [
+    "error-json"
+  ],
+  "headerShapes": {
+    "error-json": [
+      "cache-control",
+      "content-type",
+      "x-streamvault-shadow"
+    ],
+    "method-error": [
+      "allow",
+      "cache-control",
+      "content-type",
+      "x-streamvault-shadow"
+    ]
+  },
+  "statusByReasonCode": {
+    "MISSING_ID": 400,
+    "MALFORMED_ID": 400,
+    "MISSING_MEDIA_TYPE": 400,
+    "UNSUPPORTED_MEDIA_TYPE": 422,
+    "MISSING_SOURCE_URL": 400,
+    "UNSAFE_PLACEHOLDER_URL": 400,
+    "ADAPTER_DENIED": 403,
+    "RESPONSE_BODY_REJECTED": 502,
+    "STATUS_HEADER_REJECTED": 502,
+    "UNKNOWN_ROUTE": 404,
+    "METHOD_NOT_ALLOWED": 405,
+    "SHADOW_INTERNAL_SAFE_ERROR": 500
+  },
+  "categoryByReasonCode": {
+    "MISSING_ID": "VALIDATION_ERROR",
+    "MALFORMED_ID": "VALIDATION_ERROR",
+    "MISSING_MEDIA_TYPE": "VALIDATION_ERROR",
+    "UNSUPPORTED_MEDIA_TYPE": "VALIDATION_ERROR",
+    "MISSING_SOURCE_URL": "VALIDATION_ERROR",
+    "UNSAFE_PLACEHOLDER_URL": "UNSAFE_URL",
+    "ADAPTER_DENIED": "ADAPTER_DENIED",
+    "RESPONSE_BODY_REJECTED": "BODY_REJECTED",
+    "STATUS_HEADER_REJECTED": "HEADER_REJECTED",
+    "UNKNOWN_ROUTE": "NOT_FOUND",
+    "METHOD_NOT_ALLOWED": "METHOD_NOT_ALLOWED",
+    "SHADOW_INTERNAL_SAFE_ERROR": "SHADOW_INTERNAL_ERROR"
+  },
+  "errorCodeByCategory": {
+    "VALIDATION_ERROR": "PLAYBACK_ROUTE_VALIDATION_ERROR",
+    "UNSAFE_URL": "PLAYBACK_ROUTE_UNSAFE_URL",
+    "ADAPTER_DENIED": "PLAYBACK_ROUTE_ADAPTER_DENIED",
+    "BODY_REJECTED": "PLAYBACK_ROUTE_BODY_REJECTED",
+    "HEADER_REJECTED": "PLAYBACK_ROUTE_HEADER_REJECTED",
+    "METHOD_NOT_ALLOWED": "PLAYBACK_ROUTE_METHOD_NOT_ALLOWED",
+    "NOT_FOUND": "PLAYBACK_ROUTE_NOT_FOUND",
+    "SHADOW_INTERNAL_ERROR": "PLAYBACK_ROUTE_SHADOW_INTERNAL_ERROR"
+  },
+  "retryableByReasonCode": {
+    "MISSING_ID": false,
+    "MALFORMED_ID": false,
+    "MISSING_MEDIA_TYPE": false,
+    "UNSUPPORTED_MEDIA_TYPE": false,
+    "MISSING_SOURCE_URL": false,
+    "UNSAFE_PLACEHOLDER_URL": false,
+    "ADAPTER_DENIED": false,
+    "RESPONSE_BODY_REJECTED": true,
+    "STATUS_HEADER_REJECTED": true,
+    "UNKNOWN_ROUTE": false,
+    "METHOD_NOT_ALLOWED": false,
+    "SHADOW_INTERNAL_SAFE_ERROR": true
+  },
+  "safetyNotes": [
+    "shadow-only",
+    "fixture-only",
+    "no-server",
+    "no-network",
+    "no-ffmpeg",
+    "no-active-runtime-wiring",
+    "no-live-urls"
+  ],
+  "requiredCoverage": [
+    "missing id",
+    "malformed id",
+    "missing media type",
+    "unsupported media type",
+    "missing source url",
+    "unsafe placeholder url",
+    "adapter denied",
+    "response body rejected",
+    "status header rejected",
+    "unknown route",
+    "method not allowed",
+    "internal safe shadow error"
+  ]
+}

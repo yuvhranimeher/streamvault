@@ -266,6 +266,8 @@ def safe_fixture_url(value: str) -> bool:
         return True
     if value.startswith("local://"):
         return True
+    if value.startswith("placeholder://"):
+        return True
     parsed = urlparse(value)
     if parsed.scheme in {"http", "https", "ftp"}:
         return (parsed.hostname or "").endswith(".example.test")

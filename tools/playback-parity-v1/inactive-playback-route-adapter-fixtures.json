@@ -169,7 +169,7 @@
       "method": "GET",
       "path": "/api/playback/ftp",
       "query": {
-        "streamUrl": "file:///tmp/unsafe-fixture.mp4",
+        "streamUrl": "placeholder://unsafe-stream",
         "sourceType": "movie",
         "clientType": "desktop",
         "playbackMode": "direct"

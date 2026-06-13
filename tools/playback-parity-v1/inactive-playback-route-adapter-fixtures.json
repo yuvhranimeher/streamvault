@@ -1,0 +1,182 @@
+[
+  {
+    "name": "adapter_get_movie_playback_query",
+    "request": {
+      "method": "GET",
+      "path": "/api/playback/movie",
+      "query": {
+        "id": "movie-001",
+        "streamUrl": "http://media.example.test/movies/query-movie.mp4",
+        "sourceType": "movie",
+        "clientType": "desktop",
+        "playbackMode": "direct",
+        "quality": "original"
+      },
+      "body": {}
+    },
+    "expectedValid": true
+  },
+  {
+    "name": "adapter_post_movie_playback_body",
+    "request": {
+      "method": "POST",
+      "path": "/api/playback/movie",
+      "query": {},
+      "body": {
+        "id": "movie-002",
+        "url": "http://media.example.test/movies/body-movie-hevc.mkv",
+        "sourceType": "movie",
+        "clientType": "mobile",
+        "mode": "hls",
+        "requiresTranscode": true,
+        "shouldUseFfmpeg": true
+      }
+    },
+    "expectedValid": true
+  },
+  {
+    "name": "adapter_local_playback_query",
+    "request": {
+      "method": "GET",
+      "path": "/api/playback/local",
+      "query": {
+        "id": "local-001",
+        "streamUrl": "local://library/movies/local-fixture.mp4",
+        "sourceType": "movie",
+        "clientType": "desktop",
+        "playbackMode": "direct"
+      },
+      "body": {}
+    },
+    "expectedValid": true
+  },
+  {
+    "name": "adapter_ftp_playback_query",
+    "request": {
+      "method": "GET",
+      "path": "/api/playback/ftp",
+      "query": {
+        "url": "ftp://media.example.test/movies/ftp-fixture.mp4",
+        "sourceType": "movie",
+        "clientType": "desktop",
+        "mode": "direct",
+        "forceHls": false
+      },
+      "body": {}
+    },
+    "expectedValid": true
+  },
+  {
+    "name": "adapter_ftp_raw_range_query",
+    "request": {
+      "method": "GET",
+      "path": "/api/ftp/raw",
+      "query": {
+        "url": "ftp://media.example.test/movies/raw-fixture.mp4",
+        "sourceType": "movie",
+        "clientType": "desktop",
+        "playbackMode": "direct",
+        "range": "bytes=0-1023"
+      },
+      "body": {}
+    },
+    "expectedValid": true
+  },
+  {
+    "name": "adapter_series_episode_playback",
+    "request": {
+      "method": "GET",
+      "path": "/api/playback/series/episode",
+      "query": {
+        "seriesId": "series-001",
+        "season": "1",
+        "episode": "2",
+        "streamUrl": "http://media.example.test/series/show/S01E02.mp4",
+        "sourceType": "series",
+        "clientType": "desktop",
+        "playbackMode": "direct"
+      },
+      "body": {}
+    },
+    "expectedValid": true
+  },
+  {
+    "name": "adapter_live_tv_hls_contract",
+    "request": {
+      "method": "GET",
+      "path": "/api/playback/live/hls",
+      "query": {
+        "channelId": "channel-001",
+        "src": "http://live.example.test/channel/index.m3u8",
+        "sourceType": "live",
+        "clientType": "desktop",
+        "playbackMode": "live"
+      },
+      "body": {}
+    },
+    "expectedValid": true
+  },
+  {
+    "name": "adapter_invalid_missing_route",
+    "request": {
+      "method": "GET",
+      "path": "",
+      "query": {
+        "streamUrl": "http://media.example.test/movies/missing-route.mp4",
+        "sourceType": "movie",
+        "clientType": "desktop",
+        "playbackMode": "direct"
+      },
+      "body": {}
+    },
+    "expectedValid": false,
+    "expectedFailureBucket": "missing_route"
+  },
+  {
+    "name": "adapter_invalid_missing_streamUrl",
+    "request": {
+      "method": "GET",
+      "path": "/api/playback/ftp",
+      "query": {
+        "sourceType": "movie",
+        "clientType": "desktop",
+        "playbackMode": "direct"
+      },
+      "body": {}
+    },
+    "expectedValid": false,
+    "expectedFailureBucket": "missing_streamUrl"
+  },
+  {
+    "name": "adapter_invalid_unsupported_method",
+    "request": {
+      "method": "PUT",
+      "path": "/api/playback/movie",
+      "query": {
+        "streamUrl": "http://media.example.test/movies/unsupported-method.mp4",
+        "sourceType": "movie",
+        "clientType": "desktop",
+        "playbackMode": "direct"
+      },
+      "body": {}
+    },
+    "expectedValid": false,
+    "expectedFailureBucket": "unsupported_method"
+  },
+  {
+    "name": "adapter_invalid_unsafe_streamUrl",
+    "request": {
+      "method": "GET",
+      "path": "/api/playback/ftp",
+      "query": {
+        "streamUrl": "file:///tmp/unsafe-fixture.mp4",
+        "sourceType": "movie",
+        "clientType": "desktop",
+        "playbackMode": "direct"
+      },
+      "body": {}
+    },
+    "expectedValid": false,
+    "expectedFailureBucket": "unsafe_streamUrl"
+  }
+]

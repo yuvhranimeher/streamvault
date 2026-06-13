@@ -20,6 +20,10 @@ EXPECTED = [
     ("workflow_safety_report", "playback-shadow-workflow-safety-report-*.txt"),
     ("js_haskell_planner_compare", "playback-js-vs-hs-shadow-compare-report-*.txt"),
     ("route_contract_compare", "playback-route-contract-js-vs-hs-report-*.txt"),
+    ("error_taxonomy_compare", "inactive-playback-route-error-taxonomy-js-vs-hs-report-*.txt"),
+    ("error_taxonomy_envelope", "inactive-playback-route-error-taxonomy-envelope-report-*.txt"),
+    ("error_taxonomy_fixture_coverage", "inactive-playback-route-error-taxonomy-fixture-coverage-report-*.txt"),
+    ("error_taxonomy_safety", "inactive-playback-route-error-taxonomy-safety-report-*.txt"),
 ]
 
 
@@ -70,6 +74,10 @@ def main() -> int:
             "workflow-safety-report",
             "js-haskell-planner-compare",
             "route-contract-compare",
+            "error-taxonomy-compare",
+            "error-taxonomy-envelope",
+            "error-taxonomy-fixture-coverage",
+            "error-taxonomy-safety",
         ]:
             if expected_text not in manifest_text:
                 failures.append(f"manifest missing entry: {expected_text}")

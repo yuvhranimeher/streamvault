@@ -20,6 +20,10 @@ REPORTS = [
     ("workflow-safety-report", "playback-shadow-workflow-safety-report-*.txt"),
     ("js-haskell-planner-compare", "playback-js-vs-hs-shadow-compare-report-*.txt"),
     ("route-contract-compare", "playback-route-contract-js-vs-hs-report-*.txt"),
+    ("error-taxonomy-compare", "inactive-playback-route-error-taxonomy-js-vs-hs-report-*.txt"),
+    ("error-taxonomy-envelope", "inactive-playback-route-error-taxonomy-envelope-report-*.txt"),
+    ("error-taxonomy-fixture-coverage", "inactive-playback-route-error-taxonomy-fixture-coverage-report-*.txt"),
+    ("error-taxonomy-safety", "inactive-playback-route-error-taxonomy-safety-report-*.txt"),
 ]
 
 

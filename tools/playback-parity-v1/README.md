@@ -60,6 +60,12 @@ Run the inactive route status/header parity tests:
 npm run test:playback-inactive-route-status-headers
 ```
 
+Run the inactive route error taxonomy parity tests:
+
+```sh
+npm run test:playback-inactive-route-error-taxonomy
+```
+
 ## Main Entry Points
 
 - `run_playback_shadow_ci.py` runs all read-only playback shadow gates.
@@ -84,6 +90,10 @@ npm run test:playback-inactive-route-status-headers
 - `inactive_playback_route_status_header_envelope_gate.py` validates deterministic status/header fields.
 - `inactive_playback_route_status_header_fixture_coverage_audit.py` verifies route status/header fixture coverage.
 - `inactive_playback_route_status_header_safety_gate.py` proves status/header parity remains shadow-only.
+- `inactive_playback_route_error_taxonomy_js_vs_hs_compare.py` compares JS and Haskell route error taxonomy envelopes.
+- `inactive_playback_route_error_taxonomy_envelope_gate.py` validates deterministic error envelope fields.
+- `inactive_playback_route_error_taxonomy_fixture_coverage_audit.py` verifies route error taxonomy fixture coverage.
+- `inactive_playback_route_error_taxonomy_safety_gate.py` proves error taxonomy parity remains shadow-only.
 - `playback_route_contract_crosscheck.py` checks inventory and fixtures against each other.
 - `playback_route_shadow_full_gate.py` runs the route schema, crosscheck, and comparator gates together.
 
@@ -117,6 +127,8 @@ extension: inactive route adapter tests v1 remains shadow-only and fixture-only.
 Freeze baseline extension: inactive route response body parity v1 remains
 shadow-only and fixture-only. Freeze baseline extension: inactive route
 status/header parity v1 remains shadow-only and fixture-only.
+Freeze baseline extension: inactive route error taxonomy parity v1 remains
+shadow-only and fixture-only.
 
 The preserved playback contract remains:
 

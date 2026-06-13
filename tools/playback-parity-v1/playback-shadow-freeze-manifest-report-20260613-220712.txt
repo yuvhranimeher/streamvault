@@ -1,0 +1,50 @@
+Status: PASS
+mode: read-only playback shadow freeze manifest gate
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+manifest_path: tools/playback-parity-v1/playback-shadow-freeze-manifest.json
+base_branch: haskell-playback-inactive-route-fixture-coverage-20260613-003827
+checked_file_count: 57
+checked_files: ['tools/playback-parity-v1/playback-planner-fixtures.json', 'tools/playback-parity-v1/playback-route-contract-fixtures.json', 'tools/playback-parity-v1/inactive-playback-route-adapter-fixtures.json', 'tools/playback-parity-v1/inactive-playback-route-response-body-fixtures.json', 'tools/playback-parity-v1/inactive-playback-route-status-header-fixtures.json', 'tools/playback-parity-v1/inactive-playback-route-error-taxonomy-fixtures.json', 'tools/playback-parity-v1/playback-shadow-planner-expected-output.json', 'tools/playback-parity-v1/PlaybackShadowPlanner.hs', 'tools/playback-parity-v1/PlaybackRouteContractShadow.hs', 'tools/playback-parity-v1/InactivePlaybackRouteAdapter.hs', 'tools/playback-parity-v1/InactivePlaybackRouteResponseBody.hs', 'tools/playback-parity-v1/InactivePlaybackRouteStatusHeader.hs', 'tools/playback-parity-v1/InactivePlaybackRouteErrorTaxonomy.hs', 'tools/playback-parity-v1/playback_shadow_planner_js.js', 'tools/playback-parity-v1/playback_route_contract_shadow_js.js', 'tools/playback-parity-v1/inactive_playback_route_adapter_shadow_js.js', 'tools/playback-parity-v1/inactive_playback_route_response_body_shadow_js.js', 'tools/playback-parity-v1/inactive_playback_route_status_header_shadow_js.js', 'tools/playback-parity-v1/inactive_playback_route_error_taxonomy_shadow_js.js', 'tools/playback-parity-v1/playback_js_vs_hs_shadow_compare.py', 'tools/playback-parity-v1/playback_route_contract_js_vs_hs_compare.py', 'tools/playback-parity-v1/inactive_playback_route_adapter_js_vs_hs_compare.py', 'tools/playback-parity-v1/inactive_playback_route_response_body_js_vs_hs_compare.py', 'tools/playback-parity-v1/inactive_playback_route_status_header_js_vs_hs_compare.py', 'tools/playback-parity-v1/inactive_playback_route_error_taxonomy_js_vs_hs_compare.py', 'tools/playback-parity-v1/playback_planner_fixture_schema.py', 'tools/playback-parity-v1/playback_shadow_planner_gate.py', 'tools/playback-parity-v1/playback_route_inventory_schema_gate.py', 'tools/playback-parity-v1/playback_route_fixture_schema_gate.py', 'tools/playback-parity-v1/inactive_playback_route_response_envelope_gate.py', 'tools/playback-parity-v1/inactive_playback_route_fixture_coverage_audit.py', 'tools/playback-parity-v1/inactive_playback_route_adapter_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_response_body_envelope_gate.py', 'tools/playback-parity-v1/inactive_playback_route_response_body_fixture_coverage_audit.py', 'tools/playback-parity-v1/inactive_playback_route_response_body_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_status_header_envelope_gate.py', 'tools/playback-parity-v1/inactive_playback_route_status_header_fixture_coverage_audit.py', 'tools/playback-parity-v1/inactive_playback_route_status_header_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_error_taxonomy_envelope_gate.py', 'tools/playback-parity-v1/inactive_playback_route_error_taxonomy_fixture_coverage_audit.py', 'tools/playback-parity-v1/inactive_playback_route_error_taxonomy_safety_gate.py', 'tools/playback-parity-v1/playback_route_contract_crosscheck.py', 'tools/playback-parity-v1/playback_route_shadow_full_gate.py', 'tools/playback-parity-v1/run_playback_shadow_ci.py', 'tools/playback-parity-v1/run_playback_shadow_review_pack.py', 'tools/playback-parity-v1/playback_shadow_workflow_safety_audit.py', 'tools/playback-parity-v1/collect_playback_shadow_artifacts.py', 'tools/playback-parity-v1/playback_shadow_artifact_manifest.py', 'tools/playback-parity-v1/playback_shadow_readiness_index.py', 'tools/playback-parity-v1/inactive-playback-route-response-body-contract.md', 'tools/playback-parity-v1/inactive-playback-route-response-body-contract.json', 'tools/playback-parity-v1/inactive-playback-route-status-header-contract.md', 'tools/playback-parity-v1/inactive-playback-route-status-header-contract.json', 'tools/playback-parity-v1/inactive-playback-route-error-taxonomy-contract.md', 'tools/playback-parity-v1/inactive-playback-route-error-taxonomy-contract.json', 'tools/playback-parity-v1/playback-route-shadow-contract-inventory.json', '.github/workflows/playback-shadow-ci.yml']
+frozen_npm_scripts: ['test:playback-shadow', 'test:playback-shadow-review', 'collect:playback-shadow-artifacts', 'report:playback-shadow-artifacts', 'report:playback-shadow-readiness', 'test:playback-inactive-route-fixtures', 'test:playback-inactive-route-adapter', 'test:playback-inactive-route-response-body', 'test:playback-inactive-route-status-headers', 'test:playback-inactive-route-error-taxonomy']
+workflow_checks: {'pull_request trigger': True, 'workflow_dispatch trigger': True, 'contents read permission': True, 'no contents write': True, 'no pull requests write': True, 'no secrets': True, 'no PR comments': True, 'no npm start': True, 'no node server': True}
+accepted_route_targets: ['/api/playback/local', '/api/playback/ftp', '/api/playback/movie', '/api/ftp/raw', 'live TV m3u8 playback', 'series episode playback']
+inventory_route_targets: ['/api/playback/local', '/api/playback/ftp', '/api/playback/movie', '/api/ftp/raw', 'live TV m3u8 playback', 'series episode playback']
+route_fixture_schema_exit_code: 0
+route_fixture_schema_stdout:
+Status: PASS
+mode: read-only playback route fixture schema gate
+server_started: no
+network_called: no
+runtime_playback_changed: no
+active_routes_added: no
+fixture_path: tools/playback-parity-v1/playback-route-contract-fixtures.json
+fixture_count: 16
+duplicate_fixture_names: []
+coverage_counts: {'direct': 6, 'hls': 2, 'live': 1, 'local': 1, 'raw_or_streaming': 2}
+missing_coverage: []
+fixtures:
+- route_desktop_movie_direct_json: routeTarget=/api/playback/ftp clientType=desktop sourceType=movie playbackMode=direct responseKind=json-only expectedValid=True actualSchemaValid=True failures=[]
+- route_mobile_movie_hls_planning: routeTarget=/api/playback/ftp clientType=mobile sourceType=movie playbackMode=hls responseKind=json-only expectedValid=True actualSchemaValid=True failures=[]
+- route_movie_metadata_resolution: routeTarget=/api/playback/movie clientType=desktop sourceType=movie playbackMode=direct responseKind=json-only expectedValid=True actualSchemaValid=True failures=[]
+- route_ftp_raw_stream_metadata: routeTarget=/api/ftp/raw clientType=desktop sourceType=movie playbackMode=direct responseKind=may-stream-bytes expectedValid=True actualSchemaValid=True failures=[]
+- route_local_playback_metadata: routeTarget=/api/playback/local clientType=desktop sourceType=movie playbackMode=direct responseKind=json-only expectedValid=True actualSchemaValid=True failures=[]
+- route_series_episode_planning: routeTarget=series episode playback clientType=desktop sourceType=series playbackMode=direct responseKind=json-only expectedValid=True actualSchemaValid=True failures=[]
+- route_mobile_series_episode_hls_planning: routeTarget=series episode playback clientType=mobile sourceType=series playbackMode=hls responseKind=json-only expectedValid=True actualSchemaValid=True failures=[]
+- route_live_tv_hls_contract: routeTarget=live TV m3u8 playback clientType=desktop sourceType=live playbackMode=live responseKind=may-stream-bytes expectedValid=True actualSchemaValid=True failures=[]
+- route_invalid_missing_streamUrl: routeTarget=/api/playback/ftp clientType=desktop sourceType=movie playbackMode=direct responseKind=json-only expectedValid=False actualSchemaValid=False failures=['missing_streamUrl']
+- route_invalid_unknown_route: routeTarget=/api/playback/unknown clientType=desktop sourceType=movie playbackMode=invalid responseKind=json-only expectedValid=False actualSchemaValid=False failures=['invalid_routeTarget']
+- route_invalid_unsupported_clientType: routeTarget=/api/playback/ftp clientType=tv sourceType=movie playbackMode=invalid responseKind=json-only expectedValid=False actualSchemaValid=False failures=['invalid_clientType']
+- route_invalid_unsupported_sourceType: routeTarget=/api/playback/ftp clientType=desktop sourceType=camera playbackMode=invalid responseKind=json-only expectedValid=False actualSchemaValid=False failures=['invalid_sourceType']
+- route_invalid_unsafe_non_http_streamUrl: routeTarget=/api/playback/ftp clientType=desktop sourceType=movie playbackMode=invalid responseKind=json-only expectedValid=False actualSchemaValid=False failures=['invalid_unsafe_streamUrl']
+- route_invalid_missing_routeTarget: routeTarget= clientType=desktop sourceType=movie playbackMode=invalid responseKind=json-only expectedValid=False actualSchemaValid=False failures=['missing_routeTarget']
+- route_invalid_missing_sourceType: routeTarget=/api/playback/ftp clientType=desktop sourceType= playbackMode=invalid responseKind=json-only expectedValid=False actualSchemaValid=False failures=['missing_sourceType']
+- route_invalid_missing_clientType: routeTarget=/api/playback/ftp clientType= sourceType=movie playbackMode=invalid responseKind=json-only expectedValid=False actualSchemaValid=False failures=['missing_clientType']
+unexpected_results: []
+route_fixture_schema_stderr:
+(empty)
+missing_safety_invariants: []
+failures: []

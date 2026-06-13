@@ -11,13 +11,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 TOOL_DIR = ROOT / "tools" / "playback-parity-v1"
-BASE_BRANCH = "haskell-playback-shadow-github-actions-20260612-190632"
+BASE_BRANCH = "haskell-playback-inactive-route-fixture-coverage-20260613-003827"
 
 REPORT_PATTERNS = {
     "ci_gate": "playback-shadow-ci-report-*.txt",
     "js_haskell_planner": "playback-js-vs-hs-shadow-compare-report-*.txt",
     "route_comparator": "playback-route-contract-js-vs-hs-report-*.txt",
     "workflow_safety": "playback-shadow-workflow-safety-report-*.txt",
+    "error_taxonomy_compare": "inactive-playback-route-error-taxonomy-js-vs-hs-report-*.txt",
+    "error_taxonomy_envelope": "inactive-playback-route-error-taxonomy-envelope-report-*.txt",
+    "error_taxonomy_fixture_coverage": "inactive-playback-route-error-taxonomy-fixture-coverage-report-*.txt",
+    "error_taxonomy_safety": "inactive-playback-route-error-taxonomy-safety-report-*.txt",
 }
 
 GATE_LIST = [
@@ -29,6 +33,10 @@ GATE_LIST = [
     "playback_route_contract_crosscheck.py",
     "playback_route_contract_js_vs_hs_compare.py",
     "playback_route_shadow_full_gate.py",
+    "inactive_playback_route_error_taxonomy_js_vs_hs_compare.py",
+    "inactive_playback_route_error_taxonomy_envelope_gate.py",
+    "inactive_playback_route_error_taxonomy_fixture_coverage_audit.py",
+    "inactive_playback_route_error_taxonomy_safety_gate.py",
 ]
 
 
@@ -96,6 +104,15 @@ def main() -> int:
     planner_status = status_from_report(reports["js_haskell_planner"])
     route_status = status_from_report(reports["route_comparator"])
     workflow_status = status_from_report(reports["workflow_safety"])
+    error_taxonomy_statuses = {
+        label: status_from_report(reports[label])
+        for label in [
+            "error_taxonomy_compare",
+            "error_taxonomy_envelope",
+            "error_taxonomy_fixture_coverage",
+            "error_taxonomy_safety",
+        ]
+    }
     failed_gates = extract_line(reports["ci_gate"], "failed_gates:")
     workflow_forbidden = extract_line(reports["workflow_safety"], "forbidden_hits:")
 
@@ -106,6 +123,9 @@ def main() -> int:
         ("route contract comparator", route_status),
         ("workflow safety audit", workflow_status),
     ]:
+        if status != "PASS":
+            blockers.append(f"{label} status is {status}")
+    for label, status in error_taxonomy_statuses.items():
         if status != "PASS":
             blockers.append(f"{label} status is {status}")
     if not files:
@@ -134,6 +154,10 @@ def main() -> int:
         f"- JS vs Haskell planner status: {planner_status}",
         f"- Route contract comparator status: {route_status}",
         f"- Workflow safety status: {workflow_status}",
+        *[
+            f"- {label.replace('_', ' ').title()} status: {status}"
+            for label, status in error_taxonomy_statuses.items()
+        ],
         f"- CI failed gates: {failed_gates or 'not reported'}",
         f"- Workflow forbidden hits: {workflow_forbidden or 'not reported'}",
         "",

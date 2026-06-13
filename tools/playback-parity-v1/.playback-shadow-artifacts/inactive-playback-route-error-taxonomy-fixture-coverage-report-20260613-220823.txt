@@ -1,0 +1,33 @@
+Status: PASS
+mode: read-only inactive playback route error taxonomy fixture coverage audit
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+fixture_path: tools/playback-parity-v1/inactive-playback-route-error-taxonomy-fixtures.json
+contract_path: tools/playback-parity-v1/inactive-playback-route-error-taxonomy-contract.json
+haskell_shadow: tools/playback-parity-v1/InactivePlaybackRouteErrorTaxonomy.hs
+javascript_shadow: tools/playback-parity-v1/inactive_playback_route_error_taxonomy_shadow_js.js
+fixture_count: 12
+observed_statuses: [400, 403, 404, 405, 422, 500, 502]
+observed_methods: ['DELETE', 'GET']
+observed_shapes: ['error-json']
+observed_reasons: ['ADAPTER_DENIED', 'MALFORMED_ID', 'METHOD_NOT_ALLOWED', 'MISSING_ID', 'MISSING_MEDIA_TYPE', 'MISSING_SOURCE_URL', 'RESPONSE_BODY_REJECTED', 'SHADOW_INTERNAL_SAFE_ERROR', 'STATUS_HEADER_REJECTED', 'UNKNOWN_ROUTE', 'UNSAFE_PLACEHOLDER_URL', 'UNSUPPORTED_MEDIA_TYPE']
+observed_categories: ['ADAPTER_DENIED', 'BODY_REJECTED', 'HEADER_REJECTED', 'METHOD_NOT_ALLOWED', 'NOT_FOUND', 'SHADOW_INTERNAL_ERROR', 'UNSAFE_URL', 'VALIDATION_ERROR']
+coverage:
+- missing id: present fixtures=['error_taxonomy_missing_id']
+- malformed id: present fixtures=['error_taxonomy_malformed_id']
+- missing media type: present fixtures=['error_taxonomy_missing_media_type']
+- unsupported media type: present fixtures=['error_taxonomy_unsupported_media_type']
+- missing source url: present fixtures=['error_taxonomy_missing_source_url']
+- unsafe placeholder url: present fixtures=['error_taxonomy_unsafe_placeholder_url']
+- adapter denied: present fixtures=['error_taxonomy_adapter_denied']
+- response body rejected: present fixtures=['error_taxonomy_response_body_rejected']
+- status header rejected: present fixtures=['error_taxonomy_status_header_rejected']
+- unknown route: present fixtures=['error_taxonomy_unknown_route']
+- method not allowed: present fixtures=['error_taxonomy_method_not_allowed']
+- internal safe shadow error: present fixtures=['error_taxonomy_internal_safe_shadow_error']
+shadow_checks: {'haskell_exists': True, 'javascript_exists': True, 'haskell_shadow_banner': True, 'js_no_server_listen': True, 'js_no_fetch': True, 'js_no_spawn': True, 'js_no_exec': True}
+failures: []

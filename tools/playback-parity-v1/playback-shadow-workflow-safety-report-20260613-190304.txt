@@ -1,0 +1,18 @@
+Status: PASS
+mode: read-only playback shadow workflow safety audit
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+workflow_path: .github/workflows/playback-shadow-ci.yml
+triggers: ['pull_request', 'workflow_dispatch']
+required_permissions: contents: read
+workflow_must_not_deploy: true
+workflow_must_not_start_server: true
+workflow_must_not_use_secrets: true
+upload_artifact_allowed: true
+github_step_summary_allowed: true
+pr_comments_avoided: true
+forbidden_hits: {}
+failures: []

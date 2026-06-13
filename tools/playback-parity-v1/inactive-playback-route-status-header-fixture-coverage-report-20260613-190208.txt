@@ -1,0 +1,28 @@
+Status: PASS
+mode: read-only inactive playback route status/header fixture coverage audit
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+fixture_path: tools/playback-parity-v1/inactive-playback-route-status-header-fixtures.json
+contract_path: tools/playback-parity-v1/inactive-playback-route-status-header-contract.json
+haskell_shadow: tools/playback-parity-v1/InactivePlaybackRouteStatusHeader.hs
+javascript_shadow: tools/playback-parity-v1/inactive_playback_route_status_header_shadow_js.js
+fixture_count: 12
+observed_statuses: [200, 206, 400, 403, 404, 405]
+observed_methods: ['DELETE', 'GET', 'POST']
+observed_shapes: ['error-json', 'live-hls', 'local-json', 'movie-json', 'raw-bytes', 'series-json']
+coverage:
+- valid inactive route request: present fixtures=['status_headers_movie_get_valid', 'status_headers_movie_post_valid']
+- missing required params: present fixtures=['status_headers_missing_route', 'status_headers_missing_stream_url']
+- malformed id: present fixtures=['status_headers_malformed_id']
+- unsafe URL placeholder: present fixtures=['status_headers_unsafe_url_placeholder']
+- adapter denied case: present fixtures=['status_headers_adapter_denied']
+- response-body accepted case: present fixtures=['status_headers_series_response_body_accepted']
+- cache-control expectations: present fixtures=['status_headers_local_cache_control']
+- content-type expectations: present fixtures=['status_headers_ftp_raw_range', 'status_headers_live_hls_content_type']
+- method/status edge case: present fixtures=['status_headers_unsupported_method']
+shadow_checks: {'haskell_exists': True, 'javascript_exists': True, 'haskell_shadow_banner': True, 'js_no_server_listen': True, 'js_no_fetch': True}
+failures: []

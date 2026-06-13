@@ -1,0 +1,29 @@
+Status: PASS
+mode: read-only inactive playback route status/header envelope gate
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+fixture_path: tools/playback-parity-v1/inactive-playback-route-status-header-fixtures.json
+contract_path: tools/playback-parity-v1/inactive-playback-route-status-header-contract.json
+decision_source: tools/playback-parity-v1/inactive_playback_route_status_header_shadow_js.js
+node_available: true
+js_status: passed
+fixture_count: 12
+decision_count: 12
+decision_summary:
+- status_headers_movie_get_valid: decision=accepted status=200 bodyShape=movie-json reasonCode=OK failures=[]
+- status_headers_movie_post_valid: decision=accepted status=200 bodyShape=movie-json reasonCode=OK failures=[]
+- status_headers_ftp_raw_range: decision=accepted status=206 bodyShape=raw-bytes reasonCode=PARTIAL_CONTENT failures=[]
+- status_headers_live_hls_content_type: decision=accepted status=200 bodyShape=live-hls reasonCode=OK failures=[]
+- status_headers_local_cache_control: decision=accepted status=200 bodyShape=local-json reasonCode=OK failures=[]
+- status_headers_series_response_body_accepted: decision=accepted status=200 bodyShape=series-json reasonCode=OK failures=[]
+- status_headers_missing_route: decision=rejected status=404 bodyShape=error-json reasonCode=MISSING_ROUTE failures=[]
+- status_headers_missing_stream_url: decision=rejected status=400 bodyShape=error-json reasonCode=MISSING_STREAM_URL failures=[]
+- status_headers_malformed_id: decision=rejected status=400 bodyShape=error-json reasonCode=MALFORMED_ID failures=[]
+- status_headers_unsafe_url_placeholder: decision=rejected status=400 bodyShape=error-json reasonCode=UNSAFE_STREAM_URL failures=[]
+- status_headers_adapter_denied: decision=rejected status=403 bodyShape=error-json reasonCode=ADAPTER_DENIED failures=[]
+- status_headers_unsupported_method: decision=rejected status=405 bodyShape=error-json reasonCode=UNSUPPORTED_METHOD failures=[]
+failures: []

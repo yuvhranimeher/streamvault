@@ -1,0 +1,419 @@
+Status: PASS
+mode: read-only inactive route fixture coverage review pack runner
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+command_count: 9
+failed_commands: []
+command_summary:
+- fixture_coverage_audit: exit_code=0 Status: PASS
+- response_envelope_gate: exit_code=0 Status: PASS
+- inactive_route_gate: exit_code=0 Status: PASS
+- inactive_route_safety: exit_code=0 Status: PASS
+- route_contract_js_vs_hs_compare: exit_code=0 Status: PASS
+- freeze_manifest: exit_code=0 Status: PASS
+- playback_shadow_ci: exit_code=0 Status: PASS
+- playback_shadow_review_pack: exit_code=0 Status: PASS
+- fixture_pr_summary: exit_code=0 Status: PASS
+
+[fixture_coverage_audit]
+exit_code: 0
+stdout:
+report_path: tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-190216.txt
+Status: PASS
+mode: read-only inactive playback route fixture coverage audit
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+fixture_path: tools/playback-parity-v1/playback-route-contract-fixtures.json
+inventory_path: tools/playback-parity-v1/playback-route-shadow-contract-inventory.json
+inactive_haskell: tools/playback-parity-v1/InactivePlaybackRouteV1.hs
+fixture_count: 16
+inventory_targets: ['/api/playback/local', '/api/playback/ftp', '/api/playback/movie', '/api/ftp/raw', 'live TV m3u8 playback', 'series episode playback']
+missing_inventory_targets: []
+coverage:
+- desktop movie direct: present fixtures=['route_desktop_movie_direct_json']
+- mobile movie HLS: present fixtures=['route_mobile_movie_hls_planning']
+- desktop series episode direct: present fixtures=['route_series_episode_planning']
+- mobile series episode HLS: present fixtures=['route_mobile_series_episode_hls_planning']
+- FTP raw stream metadata: present fixtures=['route_ftp_raw_stream_metadata']
+- local file playback metadata: present fixtures=['route_local_playback_metadata']
+- live TV HLS contract: present fixtures=['route_live_tv_hls_contract']
+- invalid missing streamUrl: present fixtures=['route_invalid_missing_streamUrl']
+- invalid unknown route: present fixtures=['route_invalid_unknown_route']
+- invalid unsupported clientType: present fixtures=['route_invalid_unsupported_clientType']
+- invalid unsupported sourceType: present fixtures=['route_invalid_unsupported_sourceType']
+- invalid unsafe/non-http streamUrl: present fixtures=['route_invalid_unsafe_non_http_streamUrl']
+- invalid missing route target: present fixtures=['route_invalid_missing_routeTarget']
+- invalid missing sourceType: present fixtures=['route_invalid_missing_sourceType']
+- invalid missing clientType: present fixtures=['route_invalid_missing_clientType']
+inactive_haskell_checks: {'exists': True, 'shadow_only_banner': True, 'missing_route_target_guard': True, 'unsupported_client_guard': True, 'unsupported_source_guard': True, 'unsafe_stream_guard': True, 'no_server_start': True, 'no_ffmpeg': True}
+failures: []
+stderr:
+(empty)
+
+[response_envelope_gate]
+exit_code: 0
+stdout:
+report_path: tools/playback-parity-v1/inactive-playback-route-response-envelope-report-20260613-190216.txt
+Status: PASS
+mode: read-only inactive playback route response envelope gate
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+fixture_path: tools/playback-parity-v1/playback-route-contract-fixtures.json
+decision_source: tools/playback-parity-v1/playback_route_contract_shadow_js.js
+node_available: true
+js_status: passed
+fixture_count: 16
+decision_count: 16
+decisions:
+- route_desktop_movie_direct_json: ok=True statusCode=200 errorCode= failures=[]
+- route_mobile_movie_hls_planning: ok=True statusCode=200 errorCode= failures=[]
+- route_movie_metadata_resolution: ok=True statusCode=200 errorCode= failures=[]
+- route_ftp_raw_stream_metadata: ok=True statusCode=200 errorCode= failures=[]
+- route_local_playback_metadata: ok=True statusCode=200 errorCode= failures=[]
+- route_series_episode_planning: ok=True statusCode=200 errorCode= failures=[]
+- route_mobile_series_episode_hls_planning: ok=True statusCode=200 errorCode= failures=[]
+- route_live_tv_hls_contract: ok=True statusCode=200 errorCode= failures=[]
+- route_invalid_missing_streamUrl: ok=False statusCode=400 errorCode=MISSING_STREAM_URL failures=[]
+- route_invalid_unknown_route: ok=False statusCode=404 errorCode=UNKNOWN_ROUTE failures=[]
+- route_invalid_unsupported_clientType: ok=False statusCode=422 errorCode=UNSUPPORTED_CLIENT_TYPE failures=[]
+- route_invalid_unsupported_sourceType: ok=False statusCode=422 errorCode=UNSUPPORTED_SOURCE_TYPE failures=[]
+- route_invalid_unsafe_non_http_streamUrl: ok=False statusCode=400 errorCode=UNSAFE_STREAM_URL failures=[]
+- route_invalid_missing_routeTarget: ok=False statusCode=400 errorCode=MISSING_ROUTE failures=[]
+- route_invalid_missing_sourceType: ok=False statusCode=400 errorCode=INVALID_FIXTURE failures=[]
+- route_invalid_missing_clientType: ok=False statusCode=400 errorCode=INVALID_FIXTURE failures=[]
+active_runtime_wiring_failures: []
+failures: []
+stderr:
+(empty)
+
+[inactive_route_gate]
+exit_code: 0
+stdout:
+report_path: tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260613-190220.txt
+Status: PASS
+mode: read-only inactive playback route v1 comparator gate
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+ghc_available: true
+node_available: true
+inactive_haskell: tools/playback-parity-v1/InactivePlaybackRouteV1.hs
+fixture_path: tools/playback-parity-v1/playback-route-contract-fixtures.json
+compile_status: passed
+inactive_run_status: passed
+js_run_status: passed
+existing_route_comparator_status: passed
+normalized_compare_status: passed
+inactive_decision_count: 16
+js_decision_count: 16
+existing_route_comparator_stdout:
+Status: PASS
+mode: read-only playback route contract JS vs Haskell comparison
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+node_available: true
+ghc_available: true
+haskell_compile: passed
+haskell_run: passed
+javascript_run: passed
+normalized_compare: passed
+fixture_path: tools/playback-parity-v1/playback-route-contract-fixtures.json
+haskell_planner: tools/playback-parity-v1/PlaybackRouteContractShadow.hs
+javascript_planner: tools/playback-parity-v1/playback_route_contract_shadow_js.js
+haskell_decision_count: 16
+javascript_decision_count: 16
+failures: []
+existing_route_comparator_stderr:
+(empty)
+failures: []
+stderr:
+(empty)
+
+[inactive_route_safety]
+exit_code: 0
+stdout:
+report_path: tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260613-190221.txt
+Status: PASS
+mode: inactive playback route v1 safety gate
+base_ref: haskell-playback-shadow-freeze-baseline-20260612-204551
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+inactive_haskell_exists: true
+changed_files: ['.github/workflows/playback-shadow-ci.yml', 'package.json', 'tools/playback-parity-v1/.playback-shadow-artifacts/manifest.txt', 'tools/playback-parity-v1/.playback-shadow-artifacts/playback-route-contract-js-vs-hs-report-20260612-182035.txt', 'tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-ci-report-20260613-103935.txt', 'tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-pr-summary-20260613-103935.md', 'tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-review-pack-report-20260613-103935.txt', 'tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-workflow-safety-report-20260613-103935.txt', 'tools/playback-parity-v1/InactivePlaybackRouteAdapter.hs', 'tools/playback-parity-v1/InactivePlaybackRouteResponseBody.hs', 'tools/playback-parity-v1/InactivePlaybackRouteStatusHeader.hs', 'tools/playback-parity-v1/InactivePlaybackRouteV1.hs', 'tools/playback-parity-v1/PlaybackRouteContractShadow.hs', 'tools/playback-parity-v1/README.md', 'tools/playback-parity-v1/inactive-playback-route-adapter-contract.md', 'tools/playback-parity-v1/inactive-playback-route-adapter-fixtures.json', 'tools/playback-parity-v1/inactive-playback-route-adapter-js-vs-hs-report-20260613-171309.txt', 'tools/playback-parity-v1/inactive-playback-route-adapter-js-vs-hs-report-20260613-171349.txt', 'tools/playback-parity-v1/inactive-playback-route-adapter-js-vs-hs-report-20260613-171407.txt', 'tools/playback-parity-v1/inactive-playback-route-adapter-js-vs-hs-report-20260613-171455.txt', 'tools/playback-parity-v1/inactive-playback-route-adapter-js-vs-hs-report-20260613-171541.txt', 'tools/playback-parity-v1/inactive-playback-route-adapter-js-vs-hs-report-20260613-183542.txt', 'tools/playback-parity-v1/inactive-playback-route-adapter-js-vs-hs-report-20260613-183630.txt', 'tools/playback-parity-v1/inactive-playback-route-adapter-js-vs-hs-report-20260613-183732.txt', 'tools/playback-parity-v1/inactive-playback-route-adapter-js-vs-hs-report-20260613-183744.txt', 'tools/playback-parity-v1/inactive-playback-route-adapter-safety-report-20260613-171309.txt', 'tools/playback-parity-v1/inactive-playback-route-adapter-safety-report-20260613-171349.txt', 'tools/playback-parity-v1/inactive-playback-route-adapter-safety-report-20260613-171408.txt', 'tools/playback-parity-v1/inactive-playback-route-adapter-safety-report-20260613-171456.txt', 'tools/playback-parity-v1/inactive-playback-route-adapter-safety-report-20260613-171542.txt', 'tools/playback-parity-v1/inactive-playback-route-adapter-safety-report-20260613-183542.txt', 'tools/playback-parity-v1/inactive-playback-route-adapter-safety-report-20260613-183630.txt', 'tools/playback-parity-v1/inactive-playback-route-adapter-safety-report-20260613-183732.txt', 'tools/playback-parity-v1/inactive-playback-route-adapter-safety-report-20260613-183744.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-004649.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-004748.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-004814.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-004855.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-094938.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-095014.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-095017.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-095046.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-095934.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-100003.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-100011.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-100037.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-100041.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-100106.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-100127.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-100155.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-100156.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-100222.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-100228.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-100254.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-100301.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-100326.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-102221.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-103306.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-103935.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-164438.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-171310.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-171346.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-171409.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-171451.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-171501.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-171539.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-183538.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-183626.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-183643.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-183644.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-183728.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-pr-summary-20260613-095933.md', 'tools/playback-parity-v1/inactive-playback-route-fixture-pr-summary-20260613-100007.md', 'tools/playback-parity-v1/inactive-playback-route-fixture-pr-summary-20260613-100011.md', 'tools/playback-parity-v1/inactive-playback-route-fixture-pr-summary-20260613-100041.md', 'tools/playback-parity-v1/inactive-playback-route-fixture-pr-summary-20260613-100225.md', 'tools/playback-parity-v1/inactive-playback-route-fixture-pr-summary-20260613-100257.md', 'tools/playback-parity-v1/inactive-playback-route-fixture-pr-summary-20260613-100301.md', 'tools/playback-parity-v1/inactive-playback-route-fixture-pr-summary-20260613-164408.md', 'tools/playback-parity-v1/inactive-playback-route-fixture-pr-summary-20260613-171500.md', 'tools/playback-parity-v1/inactive-playback-route-fixture-pr-summary-20260613-183741.md', 'tools/playback-parity-v1/inactive-playback-route-fixture-review-checklist.md', 'tools/playback-parity-v1/inactive-playback-route-response-body-contract.json', 'tools/playback-parity-v1/inactive-playback-route-response-body-contract.md', 'tools/playback-parity-v1/inactive-playback-route-response-body-envelope-report-20260613-183417.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-envelope-report-20260613-183545.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-envelope-report-20260613-183633.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-envelope-report-20260613-183735.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-envelope-report-20260613-183747.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-fixture-coverage-report-20260613-183417.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-fixture-coverage-report-20260613-183545.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-fixture-coverage-report-20260613-183633.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-fixture-coverage-report-20260613-183735.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-fixture-coverage-report-20260613-183748.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-fixtures.json', 'tools/playback-parity-v1/inactive-playback-route-response-body-js-vs-hs-report-20260613-183417.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-js-vs-hs-report-20260613-183545.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-js-vs-hs-report-20260613-183632.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-js-vs-hs-report-20260613-183735.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-js-vs-hs-report-20260613-183747.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-safety-report-20260613-183418.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-safety-report-20260613-183546.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-safety-report-20260613-183633.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-safety-report-20260613-183736.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-safety-report-20260613-183748.txt', 'tools/playback-parity-v1/inactive-playback-route-response-envelope-report-20260613-163509.txt', 'tools/playback-parity-v1/inactive-playback-route-response-envelope-report-20260613-164438.txt', 'tools/playback-parity-v1/inactive-playback-route-response-envelope-report-20260613-171310.txt', 'tools/playback-parity-v1/inactive-playback-route-response-envelope-report-20260613-171346.txt', 'tools/playback-parity-v1/inactive-playback-route-response-envelope-report-20260613-171408.txt', 'tools/playback-parity-v1/inactive-playback-route-response-envelope-report-20260613-171409.txt', 'tools/playback-parity-v1/inactive-playback-route-response-envelope-report-20260613-171451.txt', 'tools/playback-parity-v1/inactive-playback-route-response-envelope-report-20260613-171539.txt', 'tools/playback-parity-v1/inactive-playback-route-response-envelope-report-20260613-183538.txt', 'tools/playback-parity-v1/inactive-playback-route-response-envelope-report-20260613-183626.txt', 'tools/playback-parity-v1/inactive-playback-route-response-envelope-report-20260613-183642.txt', 'tools/playback-parity-v1/inactive-playback-route-response-envelope-report-20260613-183644.txt', 'tools/playback-parity-v1/inactive-playback-route-response-envelope-report-20260613-183729.txt', 'tools/playback-parity-v1/inactive-playback-route-response-envelope.md', 'tools/playback-parity-v1/inactive-playback-route-status-header-contract.json', 'tools/playback-parity-v1/inactive-playback-route-status-header-contract.md', 'tools/playback-parity-v1/inactive-playback-route-status-header-fixtures.json', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260612-213336.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260612-230601.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260612-230706.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260613-004653.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260613-004823.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260613-094945.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260613-095023.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260613-095938.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260613-100015.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260613-100046.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260613-100131.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260613-100200.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260613-100232.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260613-100306.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260613-163453.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260613-164414.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260613-171314.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260613-171414.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260613-171508.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260613-183641.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260613-183649.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-plan-20260612-213154.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260612-230514.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260612-230536.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260612-230605.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260612-230707.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260613-004649.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260613-004823.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260613-094946.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260613-095024.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260613-095939.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260613-100016.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260613-100046.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260613-100131.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260613-100201.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260613-100233.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260613-100306.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260613-164415.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260613-171315.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260613-171414.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260613-171509.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260613-183642.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260613-183650.txt', 'tools/playback-parity-v1/inactive-route-fixture-review-pack-report-20260613-100007.txt', 'tools/playback-parity-v1/inactive-route-fixture-review-pack-report-20260613-100041.txt', 'tools/playback-parity-v1/inactive-route-fixture-review-pack-report-20260613-100225.txt', 'tools/playback-parity-v1/inactive-route-fixture-review-pack-report-20260613-100257.txt', 'tools/playback-parity-v1/inactive-route-fixture-review-pack-report-20260613-164408.txt', 'tools/playback-parity-v1/inactive-route-fixture-review-pack-report-20260613-171500.txt', 'tools/playback-parity-v1/inactive-route-fixture-review-pack-report-20260613-183741.txt', 'tools/playback-parity-v1/inactive_playback_route_adapter_js_vs_hs_compare.py', 'tools/playback-parity-v1/inactive_playback_route_adapter_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_adapter_shadow_js.js', 'tools/playback-parity-v1/inactive_playback_route_fixture_coverage_audit.py', 'tools/playback-parity-v1/inactive_playback_route_fixture_pr_summary.py', 'tools/playback-parity-v1/inactive_playback_route_response_body_envelope_gate.py', 'tools/playback-parity-v1/inactive_playback_route_response_body_fixture_coverage_audit.py', 'tools/playback-parity-v1/inactive_playback_route_response_body_js_vs_hs_compare.py', 'tools/playback-parity-v1/inactive_playback_route_response_body_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_response_body_shadow_js.js', 'tools/playback-parity-v1/inactive_playback_route_response_envelope_gate.py', 'tools/playback-parity-v1/inactive_playback_route_status_header_envelope_gate.py', 'tools/playback-parity-v1/inactive_playback_route_status_header_fixture_coverage_audit.py', 'tools/playback-parity-v1/inactive_playback_route_status_header_js_vs_hs_compare.py', 'tools/playback-parity-v1/inactive_playback_route_status_header_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_status_header_shadow_js.js', 'tools/playback-parity-v1/inactive_playback_route_v1_gate.py', 'tools/playback-parity-v1/inactive_playback_route_v1_safety_gate.py', 'tools/playback-parity-v1/playback-route-contract-crosscheck-report-20260613-004704.txt', 'tools/playback-parity-v1/playback-route-contract-crosscheck-report-20260613-094946.txt', 'tools/playback-parity-v1/playback-route-contract-crosscheck-report-20260613-100132.txt', 'tools/playback-parity-v1/playback-route-contract-fixtures.json', 'tools/playback-parity-v1/playback-route-contract-js-vs-hs-report-20260612-182035.txt', 'tools/playback-parity-v1/playback-route-fixture-schema-report-20260613-004704.txt', 'tools/playback-parity-v1/playback-route-fixture-schema-report-20260613-094946.txt', 'tools/playback-parity-v1/playback-route-fixture-schema-report-20260613-100132.txt', 'tools/playback-parity-v1/playback-route-shadow-full-gate-report-20260613-004707.txt', 'tools/playback-parity-v1/playback-route-shadow-full-gate-report-20260613-094951.txt', 'tools/playback-parity-v1/playback-route-shadow-full-gate-report-20260613-100136.txt', 'tools/playback-parity-v1/playback-shadow-artifact-manifest-report-20260613-103915.txt', 'tools/playback-parity-v1/playback-shadow-artifact-manifest-report-20260613-103936.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260612-230628.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260612-230641.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260612-230725.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260612-230738.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-004735.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-004748.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-004841.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-004855.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-095002.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-095014.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-095035.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-095046.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-095952.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-100003.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-100027.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-100037.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-100056.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-100106.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-100146.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-100155.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-100212.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-100222.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-100244.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-100254.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-100316.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-100326.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-102211.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-102221.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-103256.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-103306.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-103925.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-103935.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-164438.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-171331.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-171346.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-171431.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-171450.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-171525.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-171538.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-183520.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-183538.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-183605.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-183626.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-183711.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260613-183728.txt', 'tools/playback-parity-v1/playback-shadow-freeze-baseline.md', 'tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260612-230611.txt', 'tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260612-230712.txt', 'tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260613-004714.txt', 'tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260613-004828.txt', 'tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260613-094952.txt', 'tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260613-095024.txt', 'tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260613-095941.txt', 'tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260613-100018.txt', 'tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260613-100047.txt', 'tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260613-100137.txt', 'tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260613-100203.txt', 'tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260613-100235.txt', 'tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260613-100307.txt', 'tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260613-163928.txt', 'tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260613-164415.txt', 'tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260613-171318.txt', 'tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260613-171417.txt', 'tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260613-171510.txt', 'tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260613-183635.txt', 'tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260613-183653.txt', 'tools/playback-parity-v1/playback-shadow-freeze-manifest.json', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260612-230641.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260612-230738.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260613-004749.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260613-004855.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260613-095014.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260613-095046.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260613-100004.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260613-100037.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260613-100106.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260613-100156.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260613-100222.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260613-100254.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260613-100326.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260613-102221.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260613-103306.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260613-103935.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260613-164439.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260613-171349.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260613-171456.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260613-171542.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260613-183546.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260613-183634.md', 'tools/playback-parity-v1/playback-shadow-pr-summary-20260613-183736.md', 'tools/playback-parity-v1/playback-shadow-readiness-index-20260612-230614.txt', 'tools/playback-parity-v1/playback-shadow-readiness-index-20260613-004720.txt', 'tools/playback-parity-v1/playback-shadow-readiness-index-20260613-004859.txt', 'tools/playback-parity-v1/playback-shadow-readiness-index-20260613-094952.txt', 'tools/playback-parity-v1/playback-shadow-readiness-index-20260613-095046.txt', 'tools/playback-parity-v1/playback-shadow-readiness-index-20260613-100137.txt', 'tools/playback-parity-v1/playback-shadow-readiness-index-20260613-100327.txt', 'tools/playback-parity-v1/playback-shadow-readiness-index-20260613-164439.txt', 'tools/playback-parity-v1/playback-shadow-readiness-index-20260613-171318.txt', 'tools/playback-parity-v1/playback-shadow-readiness-index-20260613-171542.txt', 'tools/playback-parity-v1/playback-shadow-readiness-index-20260613-183634.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260612-230641.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260612-230738.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-004749.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-004855.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-095014.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-095046.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-100004.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-100037.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-100106.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-100156.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-100222.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-100254.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-100326.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-102221.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-103306.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-103935.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-164439.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-171350.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-171456.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-171542.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-183546.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-183634.txt', 'tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-183736.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-230641.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-230645.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260612-230738.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-004748.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-004754.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-004855.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-095014.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-095046.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-100004.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-100037.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-100106.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-100155.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-100222.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-100225.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-100254.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-100326.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-102201.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-102221.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-103245.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-103306.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-103915.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-103935.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-164438.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-171349.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-171350.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-171456.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-171542.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-183546.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-183634.txt', 'tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-183736.txt', 'tools/playback-parity-v1/playback_route_contract_crosscheck.py', 'tools/playback-parity-v1/playback_route_contract_shadow_js.js', 'tools/playback-parity-v1/playback_route_fixture_schema_gate.py', 'tools/playback-parity-v1/playback_shadow_freeze_manifest_gate.py', 'tools/playback-parity-v1/playback_shadow_readiness_index.py', 'tools/playback-parity-v1/run_inactive_route_fixture_review_pack.py', 'tools/playback-parity-v1/run_playback_shadow_ci.py', 'tools/playback-parity-v1/run_playback_shadow_review_pack.py']
+active_runtime_file_count_scanned: 28
+allowed_npm_scripts: ['report:playback-inactive-route-fixtures', 'test:playback-inactive-route-adapter', 'test:playback-inactive-route-envelope', 'test:playback-inactive-route-fixture-review', 'test:playback-inactive-route-fixtures', 'test:playback-inactive-route-response-body', 'test:playback-inactive-route-status-headers', 'test:playback-inactive-route-v1']
+failures: []
+stderr:
+(empty)
+
+[route_contract_js_vs_hs_compare]
+exit_code: 0
+stdout:
+Status: PASS
+mode: read-only playback route contract JS vs Haskell comparison
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+node_available: true
+ghc_available: true
+haskell_compile: passed
+haskell_run: passed
+javascript_run: passed
+normalized_compare: passed
+fixture_path: tools/playback-parity-v1/playback-route-contract-fixtures.json
+haskell_planner: tools/playback-parity-v1/PlaybackRouteContractShadow.hs
+javascript_planner: tools/playback-parity-v1/playback_route_contract_shadow_js.js
+haskell_decision_count: 16
+javascript_decision_count: 16
+failures: []
+stderr:
+(empty)
+
+[freeze_manifest]
+exit_code: 0
+stdout:
+report_path: tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260613-190223.txt
+Status: PASS
+mode: read-only playback shadow freeze manifest gate
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+manifest_path: tools/playback-parity-v1/playback-shadow-freeze-manifest.json
+base_branch: haskell-playback-inactive-route-fixture-coverage-20260613-003827
+checked_file_count: 48
+checked_files: ['tools/playback-parity-v1/playback-planner-fixtures.json', 'tools/playback-parity-v1/playback-route-contract-fixtures.json', 'tools/playback-parity-v1/inactive-playback-route-adapter-fixtures.json', 'tools/playback-parity-v1/inactive-playback-route-response-body-fixtures.json', 'tools/playback-parity-v1/inactive-playback-route-status-header-fixtures.json', 'tools/playback-parity-v1/playback-shadow-planner-expected-output.json', 'tools/playback-parity-v1/PlaybackShadowPlanner.hs', 'tools/playback-parity-v1/PlaybackRouteContractShadow.hs', 'tools/playback-parity-v1/InactivePlaybackRouteAdapter.hs', 'tools/playback-parity-v1/InactivePlaybackRouteResponseBody.hs', 'tools/playback-parity-v1/InactivePlaybackRouteStatusHeader.hs', 'tools/playback-parity-v1/playback_shadow_planner_js.js', 'tools/playback-parity-v1/playback_route_contract_shadow_js.js', 'tools/playback-parity-v1/inactive_playback_route_adapter_shadow_js.js', 'tools/playback-parity-v1/inactive_playback_route_response_body_shadow_js.js', 'tools/playback-parity-v1/inactive_playback_route_status_header_shadow_js.js', 'tools/playback-parity-v1/playback_js_vs_hs_shadow_compare.py', 'tools/playback-parity-v1/playback_route_contract_js_vs_hs_compare.py', 'tools/playback-parity-v1/inactive_playback_route_adapter_js_vs_hs_compare.py', 'tools/playback-parity-v1/inactive_playback_route_response_body_js_vs_hs_compare.py', 'tools/playback-parity-v1/inactive_playback_route_status_header_js_vs_hs_compare.py', 'tools/playback-parity-v1/playback_planner_fixture_schema.py', 'tools/playback-parity-v1/playback_shadow_planner_gate.py', 'tools/playback-parity-v1/playback_route_inventory_schema_gate.py', 'tools/playback-parity-v1/playback_route_fixture_schema_gate.py', 'tools/playback-parity-v1/inactive_playback_route_response_envelope_gate.py', 'tools/playback-parity-v1/inactive_playback_route_fixture_coverage_audit.py', 'tools/playback-parity-v1/inactive_playback_route_adapter_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_response_body_envelope_gate.py', 'tools/playback-parity-v1/inactive_playback_route_response_body_fixture_coverage_audit.py', 'tools/playback-parity-v1/inactive_playback_route_response_body_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_status_header_envelope_gate.py', 'tools/playback-parity-v1/inactive_playback_route_status_header_fixture_coverage_audit.py', 'tools/playback-parity-v1/inactive_playback_route_status_header_safety_gate.py', 'tools/playback-parity-v1/playback_route_contract_crosscheck.py', 'tools/playback-parity-v1/playback_route_shadow_full_gate.py', 'tools/playback-parity-v1/run_playback_shadow_ci.py', 'tools/playback-parity-v1/run_playback_shadow_review_pack.py', 'tools/playback-parity-v1/playback_shadow_workflow_safety_audit.py', 'tools/playback-parity-v1/collect_playback_shadow_artifacts.py', 'tools/playback-parity-v1/playback_shadow_artifact_manifest.py', 'tools/playback-parity-v1/playback_shadow_readiness_index.py', 'tools/playback-parity-v1/inactive-playback-route-response-body-contract.md', 'tools/playback-parity-v1/inactive-playback-route-response-body-contract.json', 'tools/playback-parity-v1/inactive-playback-route-status-header-contract.md', 'tools/playback-parity-v1/inactive-playback-route-status-header-contract.json', 'tools/playback-parity-v1/playback-route-shadow-contract-inventory.json', '.github/workflows/playback-shadow-ci.yml']
+frozen_npm_scripts: ['test:playback-shadow', 'test:playback-shadow-review', 'collect:playback-shadow-artifacts', 'report:playback-shadow-artifacts', 'report:playback-shadow-readiness', 'test:playback-inactive-route-fixtures', 'test:playback-inactive-route-adapter', 'test:playback-inactive-route-response-body', 'test:playback-inactive-route-status-headers']
+workflow_checks: {'pull_request trigger': True, 'workflow_dispatch trigger': True, 'contents read permission': True, 'no contents write': True, 'no pull requests write': True, 'no secrets': True, 'no PR comments': True, 'no npm start': True, 'no node server': True}
+accepted_route_targets: ['/api/playback/local', '/api/playback/ftp', '/api/playback/movie', '/api/ftp/raw', 'live TV m3u8 playback', 'series episode playback']
+inventory_route_targets: ['/api/playback/local', '/api/playback/ftp', '/api/playback/movie', '/api/ftp/raw', 'live TV m3u8 playback', 'series episode playback']
+route_fixture_schema_exit_code: 0
+route_fixture_schema_stdout:
+Status: PASS
+mode: read-only playback route fixture schema gate
+server_started: no
+network_called: no
+runtime_playback_changed: no
+active_routes_added: no
+fixture_path: tools/playback-parity-v1/playback-route-contract-fixtures.json
+fixture_count: 16
+duplicate_fixture_names: []
+coverage_counts: {'direct': 6, 'hls': 2, 'live': 1, 'local': 1, 'raw_or_streaming': 2}
+missing_coverage: []
+fixtures:
+- route_desktop_movie_direct_json: routeTarget=/api/playback/ftp clientType=desktop sourceType=movie playbackMode=direct responseKind=json-only expectedValid=True actualSchemaValid=True failures=[]
+- route_mobile_movie_hls_planning: routeTarget=/api/playback/ftp clientType=mobile sourceType=movie playbackMode=hls responseKind=json-only expectedValid=True actualSchemaValid=True failures=[]
+- route_movie_metadata_resolution: routeTarget=/api/playback/movie clientType=desktop sourceType=movie playbackMode=direct responseKind=json-only expectedValid=True actualSchemaValid=True failures=[]
+- route_ftp_raw_stream_metadata: routeTarget=/api/ftp/raw clientType=desktop sourceType=movie playbackMode=direct responseKind=may-stream-bytes expectedValid=True actualSchemaValid=True failures=[]
+- route_local_playback_metadata: routeTarget=/api/playback/local clientType=desktop sourceType=movie playbackMode=direct responseKind=json-only expectedValid=True actualSchemaValid=True failures=[]
+- route_series_episode_planning: routeTarget=series episode playback clientType=desktop sourceType=series playbackMode=direct responseKind=json-only expectedValid=True actualSchemaValid=True failures=[]
+- route_mobile_series_episode_hls_planning: routeTarget=series episode playback clientType=mobile sourceType=series playbackMode=hls responseKind=json-only expectedValid=True actualSchemaValid=True failures=[]
+- route_live_tv_hls_contract: routeTarget=live TV m3u8 playback clientType=desktop sourceType=live playbackMode=live responseKind=may-stream-bytes expectedValid=True actualSchemaValid=True failures=[]
+- route_invalid_missing_streamUrl: routeTarget=/api/playback/ftp clientType=desktop sourceType=movie playbackMode=direct responseKind=json-only expectedValid=False actualSchemaValid=False failures=['missing_streamUrl']
+- route_invalid_unknown_route: routeTarget=/api/playback/unknown clientType=desktop sourceType=movie playbackMode=invalid responseKind=json-only expectedValid=False actualSchemaValid=False failures=['invalid_routeTarget']
+- route_invalid_unsupported_clientType: routeTarget=/api/playback/ftp clientType=tv sourceType=movie playbackMode=invalid responseKind=json-only expectedValid=False actualSchemaValid=False failures=['invalid_clientType']
+- route_invalid_unsupported_sourceType: routeTarget=/api/playback/ftp clientType=desktop sourceType=camera playbackMode=invalid responseKind=json-only expectedValid=False actualSchemaValid=False failures=['invalid_sourceType']
+- route_invalid_unsafe_non_http_streamUrl: routeTarget=/api/playback/ftp clientType=desktop sourceType=movie playbackMode=invalid responseKind=json-only expectedValid=False actualSchemaValid=False failures=['invalid_unsafe_streamUrl']
+- route_invalid_missing_routeTarget: routeTarget= clientType=desktop sourceType=movie playbackMode=invalid responseKind=json-only expectedValid=False actualSchemaValid=False failures=['missing_routeTarget']
+- route_invalid_missing_sourceType: routeTarget=/api/playback/ftp clientType=desktop sourceType= playbackMode=invalid responseKind=json-only expectedValid=False actualSchemaValid=False failures=['missing_sourceType']
+- route_invalid_missing_clientType: routeTarget=/api/playback/ftp clientType= sourceType=movie playbackMode=invalid responseKind=json-only expectedValid=False actualSchemaValid=False failures=['missing_clientType']
+unexpected_results: []
+route_fixture_schema_stderr:
+(empty)
+missing_safety_invariants: []
+failures: []
+stderr:
+(empty)
+
+[playback_shadow_ci]
+exit_code: 0
+stdout:
+report_path: tools/playback-parity-v1/playback-shadow-ci-report-20260613-190240.txt
+Status: PASS
+mode: read-only playback shadow local CI runner
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+gate_count: 20
+failed_gates: []
+gate_summary:
+- planner_fixture_schema: exit_code=0 Status: PASS
+- shadow_planner_gate: exit_code=0 Status: PASS
+- js_vs_haskell_shadow_compare: exit_code=0 Status: PASS
+- route_inventory_schema_gate: exit_code=0 Status: PASS
+- route_fixture_schema_gate: exit_code=0 Status: PASS
+- inactive_route_response_envelope_gate: exit_code=0 Status: PASS
+- inactive_route_fixture_coverage_audit: exit_code=0 Status: PASS
+- inactive_route_adapter_js_vs_hs_compare: exit_code=0 Status: PASS
+- inactive_route_adapter_safety_gate: exit_code=0 Status: PASS
+- inactive_route_response_body_js_vs_hs_compare: exit_code=0 Status: PASS
+- inactive_route_response_body_envelope_gate: exit_code=0 Status: PASS
+- inactive_route_response_body_fixture_coverage_audit: exit_code=0 Status: PASS
+- inactive_route_response_body_safety_gate: exit_code=0 Status: PASS
+- inactive_route_status_header_js_vs_hs_compare: exit_code=0 Status: PASS
+- inactive_route_status_header_envelope_gate: exit_code=0 Status: PASS
+- inactive_route_status_header_fixture_coverage_audit: exit_code=0 Status: PASS
+- inactive_route_status_header_safety_gate: exit_code=0 Status: PASS
+- route_contract_crosscheck: exit_code=0 Status: PASS
+- route_contract_js_vs_hs_compare: exit_code=0 Status: PASS
+- route_shadow_full_gate: exit_code=0 Status: PASS
+stderr:
+(empty)
+
+[playback_shadow_review_pack]
+exit_code: 0
+stdout:
+report_path: tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-190305.txt
+Status: PASS
+mode: read-only playback shadow review pack runner
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+command_count: 15
+failed_commands: []
+command_summary:
+- playback_shadow_ci: exit_code=0 Status: PASS
+- inactive_route_fixture_coverage_audit: exit_code=0 Status: PASS
+- inactive_route_response_envelope_gate: exit_code=0 Status: PASS
+- inactive_route_adapter_js_vs_hs_compare: exit_code=0 Status: PASS
+- inactive_route_adapter_safety_gate: exit_code=0 Status: PASS
+- inactive_route_response_body_js_vs_hs_compare: exit_code=0 Status: PASS
+- inactive_route_response_body_envelope_gate: exit_code=0 Status: PASS
+- inactive_route_response_body_fixture_coverage_audit: exit_code=0 Status: PASS
+- inactive_route_response_body_safety_gate: exit_code=0 Status: PASS
+- inactive_route_status_header_js_vs_hs_compare: exit_code=0 Status: PASS
+- inactive_route_status_header_envelope_gate: exit_code=0 Status: PASS
+- inactive_route_status_header_fixture_coverage_audit: exit_code=0 Status: PASS
+- inactive_route_status_header_safety_gate: exit_code=0 Status: PASS
+- workflow_safety_audit: exit_code=0 Status: PASS
+- pr_summary: exit_code=0 Status: PASS
+stderr:
+(empty)
+
+[fixture_pr_summary]
+exit_code: 0
+stdout:
+report_path: tools/playback-parity-v1/inactive-playback-route-fixture-pr-summary-20260613-190309.md
+# Inactive Playback Route Fixture Coverage PR Summary
+
+Status: PASS
+
+## Branch Context
+
+- Base branch: `haskell-playback-inactive-route-fixture-coverage-20260613-003827`
+- Current branch: `haskell-playback-inactive-route-status-header-shadow-20260613-184728`
+- HEAD: `c7c512d`
+
+## Fixture Coverage
+
+- Fixture count: 16
+- Invalid fixtures: ['route_invalid_missing_streamUrl', 'route_invalid_unknown_route', 'route_invalid_unsupported_clientType', 'route_invalid_unsupported_sourceType', 'route_invalid_unsafe_non_http_streamUrl', 'route_invalid_missing_routeTarget', 'route_invalid_missing_sourceType', 'route_invalid_missing_clientType']
+
+## New Coverage Cases
+
+- desktop movie direct: present fixtures=['route_desktop_movie_direct_json']
+- mobile movie HLS: present fixtures=['route_mobile_movie_hls_planning']
+- desktop series episode direct: present fixtures=['route_series_episode_planning']
+- mobile series episode HLS: present fixtures=['route_mobile_series_episode_hls_planning']
+- FTP raw stream metadata: present fixtures=['route_ftp_raw_stream_metadata']
+- local file playback metadata: present fixtures=['route_local_playback_metadata']
+- live TV HLS contract: present fixtures=['route_live_tv_hls_contract']
+- invalid missing streamUrl: present fixtures=['route_invalid_missing_streamUrl']
+- invalid unknown route: present fixtures=['route_invalid_unknown_route']
+- invalid unsupported clientType: present fixtures=['route_invalid_unsupported_clientType']
+- invalid unsupported sourceType: present fixtures=['route_invalid_unsupported_sourceType']
+- invalid unsafe/non-http streamUrl: present fixtures=['route_invalid_unsafe_non_http_streamUrl']
+- invalid missing route target: present fixtures=['route_invalid_missing_routeTarget']
+- invalid missing sourceType: present fixtures=['route_invalid_missing_sourceType']
+- invalid missing clientType: present fixtures=['route_invalid_missing_clientType']
+
+## Route Targets Covered
+
+- `/api/playback/local`
+- `/api/playback/ftp`
+- `/api/playback/movie`
+- `/api/ftp/raw`
+- `live TV m3u8 playback`
+- `series episode playback`
+
+## Gate Status
+
+- Fixture coverage audit status: PASS
+- JS/Haskell route comparator status: PASS
+- Inactive route gate status: PASS
+- Inactive safety status: PASS
+- CI gate status: PASS
+- Freeze manifest status: PASS
+- Review pack status: PASS
+- Workflow safety status: PASS
+
+## Latest Reports
+
+- fixture_coverage_audit: `tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260613-190256.txt`
+- inactive_route_gate: `tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260613-190220.txt`
+- inactive_route_safety: `tools/playback-parity-v1/inactive-playback-route-v1-safety-report-20260613-190221.txt`
+- route_comparator: `tools/playback-parity-v1/playback-route-contract-js-vs-hs-report-20260612-182035.txt`
+- freeze_manifest: `tools/playback-parity-v1/playback-shadow-freeze-manifest-report-20260613-190223.txt`
+- ci_gate: `tools/playback-parity-v1/playback-shadow-ci-report-20260613-190256.txt`
+- review_pack: `tools/playback-parity-v1/playback-shadow-review-pack-report-20260613-190305.txt`
+- workflow_safety: `tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260613-190304.txt`
+
+## Runtime Wiring Statement
+
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+
+This summary is read-only reviewer documentation for frozen fixture coverage.
+It does not register active HTTP routes, does not wire the inactive Haskell route into the Node server, and does not modify production frontend playback code.
+
+## Reviewer Checklist
+
+- [ ] Fixture coverage cases are present.
+- [ ] Invalid cases are present.
+- [ ] Fixtures use fake/local placeholder URLs only.
+- [ ] No active route wiring was added.
+- [ ] Production frontend playback code did not change.
+- [ ] Package dependency and version fields did not change.
+- [ ] No server startup was added.
+- [ ] No FTP/live URL calls were added.
+- [ ] No FFmpeg calls were added.
+- [ ] All fixture coverage gates pass.
+
+## Remaining Blockers
+
+- None.
+stderr:
+(empty)

@@ -36,6 +36,12 @@ Run the inactive route fixture coverage audit:
 npm run test:playback-inactive-route-fixtures
 ```
 
+Run the inactive route response envelope gate:
+
+```sh
+python3 tools/playback-parity-v1/inactive_playback_route_response_envelope_gate.py --write-report
+```
+
 ## Main Entry Points
 
 - `run_playback_shadow_ci.py` runs all read-only playback shadow gates.
@@ -48,6 +54,7 @@ npm run test:playback-inactive-route-fixtures
 
 - `playback_route_inventory_schema_gate.py` validates the route inventory schema.
 - `playback_route_fixture_schema_gate.py` validates route contract fixtures.
+- `inactive_playback_route_response_envelope_gate.py` validates the inactive route response envelope and error taxonomy.
 - `inactive_playback_route_fixture_coverage_audit.py` verifies inactive route fixture coverage v1.
 - `playback_route_contract_crosscheck.py` checks inventory and fixtures against each other.
 - `playback_route_shadow_full_gate.py` runs the route schema, crosscheck, and comparator gates together.
@@ -76,8 +83,8 @@ These tools do not:
 - require secrets or write permissions
 - post PR comments
 
-Freeze baseline extension: inactive route fixture coverage v1 remains
-shadow-only and fixture-only.
+Freeze baseline extension: inactive route fixture coverage v1 and inactive route
+response envelope v1 remain shadow-only and fixture-only.
 
 The preserved playback contract remains:
 

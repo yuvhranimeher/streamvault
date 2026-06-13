@@ -20,6 +20,7 @@ const ROUTE_TARGETS = new Set([
 ]);
 const CLIENT_TYPES = new Set(["desktop", "mobile"]);
 const SOURCE_TYPES = new Set(["movie", "series", "live"]);
+const PLAYBACK_MODES = new Set(["direct", "hls", "live", "invalid"]);
 const STREAM_URL_PREFIXES = ["http://", "https://", "ftp://", "local://"];
 
 function readFixtures(fixturePath) {
@@ -38,28 +39,31 @@ function routeDecision(fixture) {
   const responseKind = fixture.responseKind || "json-only";
 
   if (!fixture.routeTarget) {
-    return decision(fixture, "invalid", false, false, false, "Missing routeTarget; route contract is invalid.");
+    return decision(fixture, "invalid", false, false, false, "Missing routeTarget; route contract is invalid.", "MISSING_ROUTE");
   }
   if (!sourceType) {
-    return decision(fixture, "invalid", false, false, false, "Missing sourceType; route contract is invalid.");
+    return decision(fixture, "invalid", false, false, false, "Missing sourceType; route contract is invalid.", "INVALID_FIXTURE");
   }
   if (!clientType) {
-    return decision(fixture, "invalid", false, false, false, "Missing clientType; route contract is invalid.");
+    return decision(fixture, "invalid", false, false, false, "Missing clientType; route contract is invalid.", "INVALID_FIXTURE");
   }
   if (!streamUrl) {
-    return decision(fixture, "invalid", false, false, false, "Missing streamUrl; route contract is invalid.");
+    return decision(fixture, "invalid", false, false, false, "Missing streamUrl; route contract is invalid.", "MISSING_STREAM_URL");
   }
   if (!ROUTE_TARGETS.has(fixture.routeTarget)) {
-    return decision(fixture, "invalid", false, false, false, "Unknown routeTarget; route contract is invalid.");
+    return decision(fixture, "invalid", false, false, false, "Unknown routeTarget; route contract is invalid.", "UNKNOWN_ROUTE");
   }
   if (!CLIENT_TYPES.has(clientType)) {
-    return decision(fixture, "invalid", false, false, false, "Unsupported clientType; route contract is invalid.");
+    return decision(fixture, "invalid", false, false, false, "Unsupported clientType; route contract is invalid.", "UNSUPPORTED_CLIENT_TYPE");
   }
   if (!SOURCE_TYPES.has(sourceType)) {
-    return decision(fixture, "invalid", false, false, false, "Unsupported sourceType; route contract is invalid.");
+    return decision(fixture, "invalid", false, false, false, "Unsupported sourceType; route contract is invalid.", "UNSUPPORTED_SOURCE_TYPE");
   }
   if (!STREAM_URL_PREFIXES.some((prefix) => streamUrl.startsWith(prefix))) {
-    return decision(fixture, "invalid", false, false, false, "Unsafe streamUrl; route contract is invalid.");
+    return decision(fixture, "invalid", false, false, false, "Unsafe streamUrl; route contract is invalid.", "UNSAFE_STREAM_URL");
+  }
+  if (!PLAYBACK_MODES.has(fixture.playbackMode || "")) {
+    return decision(fixture, "invalid", false, false, false, "Unsupported playbackMode; route contract is invalid.", "UNSUPPORTED_PLAYBACK_MODE");
   }
   if (sourceType === "live" && streamUrl.includes(".m3u8")) {
     return decision(fixture, "live", true, false, false, "Live m3u8 route contract preserves live playback.");
@@ -85,9 +89,10 @@ function routeDecision(fixture) {
     "Fallback route contract preserves fixture flags."
   );
 
-  function decision(source, playbackMode, ok, requiresTranscode, shouldUseFfmpeg, reason) {
+  function decision(source, playbackMode, ok, requiresTranscode, shouldUseFfmpeg, reason, errorCode = "") {
     return {
       caseName: source.name || "",
+      route: source.routeTarget || "",
       routeTarget: source.routeTarget || "",
       futureHaskellMirrorName: source.futureHaskellMirrorName || "",
       riskLevel: source.riskLevel || "",
@@ -100,12 +105,30 @@ function routeDecision(fixture) {
       requiresTranscode,
       shouldUseFfmpeg,
       streamUrl,
+      statusCode: ok ? 200 : statusCodeFor(errorCode),
+      errorCode,
       expectedInputFields: Array.isArray(source.expectedInputFields) ? source.expectedInputFields : [],
       expectedOutputFields: Array.isArray(source.expectedOutputFields) ? source.expectedOutputFields : [],
       ok,
       reason,
+      safety: {
+        serverStarted: false,
+        networkCalled: false,
+        ffmpegStarted: false,
+        runtimePlaybackChanged: false,
+        activeRoutesAdded: false,
+        inactiveRouteWired: false,
+      },
     };
   }
+}
+
+function statusCodeFor(errorCode) {
+  if (errorCode === "UNKNOWN_ROUTE") return 404;
+  if (errorCode === "UNSUPPORTED_CLIENT_TYPE") return 422;
+  if (errorCode === "UNSUPPORTED_SOURCE_TYPE") return 422;
+  if (errorCode === "UNSUPPORTED_PLAYBACK_MODE") return 422;
+  return 400;
 }
 
 function main() {

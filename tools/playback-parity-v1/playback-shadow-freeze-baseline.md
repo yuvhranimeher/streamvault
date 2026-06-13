@@ -51,6 +51,20 @@ adds read-only coverage auditing for route fixture breadth only; it does not add
 active HTTP routes, does not wire Haskell route code into the server, does not
 start production services, and does not call FTP/live URLs or FFmpeg.
 
+## Freeze Baseline Extension: Inactive Route Response Envelope V1
+
+This baseline is also extended with inactive route response envelope v1. The
+extension defines read-only decision fields for route, source type, client type,
+playback mode, stream URL, transcode flags, status code, error code, reason, and
+safety flags. Invalid fixtures must use the frozen error taxonomy documented in
+`inactive-playback-route-response-envelope.md`.
+
+The response envelope is produced only by shadow tools and inactive Haskell/JS
+comparators. It does not add active HTTP routes, does not wire Haskell route code
+into the production server, does not modify runtime playback behavior, does not
+touch production frontend playback code, and does not call FTP/live URLs or
+FFmpeg.
+
 ## Accepted Inventory Schema
 
 The accepted route inventory is `playback-route-shadow-contract-inventory.json`.
@@ -78,8 +92,8 @@ npm run report:playback-shadow-readiness
 The underlying read-only gates include planner fixture validation, Haskell shadow
 planner validation, JS/Haskell planner comparison, route inventory schema,
 route fixture schema, route crosscheck, JS/Haskell route comparison, route full
-gate, inactive route fixture coverage audit, workflow safety, artifact manifest
-validation, and readiness indexing.
+gate, inactive route fixture coverage audit, inactive route response envelope
+gate, workflow safety, artifact manifest validation, and readiness indexing.
 
 ## Accepted Workflow Safety Rules
 
@@ -117,6 +131,7 @@ and the latest readiness index report.
 - fixture shape and expected planner decisions
 - route inventory target list
 - route fixture coverage
+- inactive route response envelope v1 and error taxonomy
 - JS/Haskell comparator behavior
 - read-only CI/review/artifact workflow
 - safety invariants listed in this document
@@ -126,6 +141,7 @@ and the latest readiness index report.
 
 - no active HTTP routes
 - no inactive Haskell HTTP routes yet
+- no active response envelope route
 - no production Haskell playback route wiring
 - no production traffic to Haskell playback code
 - no frontend playback behavior changes

@@ -1,0 +1,31 @@
+Status: PASS
+mode: read-only inactive playback route response body fixture coverage audit
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+fixture_path: tools/playback-parity-v1/inactive-playback-route-response-body-fixtures.json
+contract_path: tools/playback-parity-v1/inactive-playback-route-response-body-contract.json
+haskell_shadow: tools/playback-parity-v1/InactivePlaybackRouteResponseBody.hs
+javascript_shadow: tools/playback-parity-v1/inactive_playback_route_response_body_shadow_js.js
+fixture_count: 13
+contract_shapes: ['error-json', 'ftp-json', 'live-hls', 'local-json', 'movie-json', 'raw-bytes', 'series-json']
+fixture_shapes: ['error-json', 'ftp-json', 'live-hls', 'local-json', 'movie-json', 'raw-bytes', 'series-json']
+coverage:
+- movie JSON response body: present fixtures=['response_body_movie_json_direct']
+- FTP JSON desktop direct response body: present fixtures=['response_body_ftp_json_desktop_direct']
+- FTP JSON mobile HLS response body: present fixtures=['response_body_ftp_json_mobile_hls']
+- local JSON response body: present fixtures=['response_body_local_json_direct']
+- raw byte metadata response body: present fixtures=['response_body_ftp_raw_range']
+- series episode JSON response body: present fixtures=['response_body_series_episode_direct']
+- live HLS response body: present fixtures=['response_body_live_hls']
+- invalid missing route: present fixtures=['response_body_invalid_missing_route']
+- invalid missing streamUrl: present fixtures=['response_body_invalid_missing_streamUrl']
+- invalid unsupported clientType: present fixtures=['response_body_invalid_unsupported_clientType']
+- invalid unsupported sourceType: present fixtures=['response_body_invalid_unsupported_sourceType']
+- invalid unsupported playbackMode: present fixtures=['response_body_invalid_unsupported_playbackMode']
+- invalid unsafe streamUrl: present fixtures=['response_body_invalid_unsafe_streamUrl']
+shadow_checks: {'haskell_exists': True, 'javascript_exists': True, 'haskell_shadow_banner': True, 'js_no_server_listen': True, 'js_no_fetch': True}
+failures: []

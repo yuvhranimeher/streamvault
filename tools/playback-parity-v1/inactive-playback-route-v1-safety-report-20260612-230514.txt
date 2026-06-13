@@ -1,0 +1,14 @@
+Status: PASS
+mode: inactive playback route v1 safety gate
+base_ref: haskell-playback-shadow-freeze-baseline-20260612-204551
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+inactive_haskell_exists: true
+changed_files: ['tools/playback-parity-v1/InactivePlaybackRouteV1.hs', 'tools/playback-parity-v1/inactive-playback-route-v1-gate-report-20260612-213336.txt', 'tools/playback-parity-v1/inactive-playback-route-v1-plan-20260612-213154.txt', 'tools/playback-parity-v1/inactive_playback_route_v1_gate.py']
+active_runtime_file_count_scanned: 28
+allowed_npm_script: test:playback-inactive-route-v1
+failures: []

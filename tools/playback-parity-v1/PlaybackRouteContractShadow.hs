@@ -23,6 +23,7 @@ data Fixture = Fixture
 
 data Decision = Decision
   { decisionCaseName :: String
+  , decisionRoute :: String
   , decisionRouteTarget :: String
   , decisionFutureHaskellMirrorName :: String
   , decisionRiskLevel :: String
@@ -35,6 +36,8 @@ data Decision = Decision
   , decisionRequiresTranscode :: Bool
   , decisionShouldUseFfmpeg :: Bool
   , decisionStreamUrl :: String
+  , decisionStatusCode :: Int
+  , decisionErrorCode :: String
   , decisionExpectedInputFields :: [String]
   , decisionExpectedOutputFields :: [String]
   , decisionOk :: Bool
@@ -56,38 +59,41 @@ main = do
 planRouteContract :: Fixture -> Decision
 planRouteContract fixture
   | null (fixtureRouteTarget fixture) =
-      decision "invalid" False False False "Missing routeTarget; route contract is invalid."
+      decision "invalid" False False False "Missing routeTarget; route contract is invalid." "MISSING_ROUTE"
   | null (fixtureSourceType fixture) =
-      decision "invalid" False False False "Missing sourceType; route contract is invalid."
+      decision "invalid" False False False "Missing sourceType; route contract is invalid." "INVALID_FIXTURE"
   | null (fixtureClientType fixture) =
-      decision "invalid" False False False "Missing clientType; route contract is invalid."
+      decision "invalid" False False False "Missing clientType; route contract is invalid." "INVALID_FIXTURE"
   | null (fixtureStreamUrl fixture) =
-      decision "invalid" False False False "Missing streamUrl; route contract is invalid."
+      decision "invalid" False False False "Missing streamUrl; route contract is invalid." "MISSING_STREAM_URL"
   | not (fixtureRouteTarget fixture `elem` routeTargets) =
-      decision "invalid" False False False "Unknown routeTarget; route contract is invalid."
+      decision "invalid" False False False "Unknown routeTarget; route contract is invalid." "UNKNOWN_ROUTE"
   | not (fixtureClientType fixture `elem` clientTypes) =
-      decision "invalid" False False False "Unsupported clientType; route contract is invalid."
+      decision "invalid" False False False "Unsupported clientType; route contract is invalid." "UNSUPPORTED_CLIENT_TYPE"
   | not (fixtureSourceType fixture `elem` sourceTypes) =
-      decision "invalid" False False False "Unsupported sourceType; route contract is invalid."
+      decision "invalid" False False False "Unsupported sourceType; route contract is invalid." "UNSUPPORTED_SOURCE_TYPE"
   | not (safeStreamUrl (fixtureStreamUrl fixture)) =
-      decision "invalid" False False False "Unsafe streamUrl; route contract is invalid."
+      decision "invalid" False False False "Unsafe streamUrl; route contract is invalid." "UNSAFE_STREAM_URL"
+  | not (fixturePlaybackMode fixture `elem` playbackModes) =
+      decision "invalid" False False False "Unsupported playbackMode; route contract is invalid." "UNSUPPORTED_PLAYBACK_MODE"
   | fixtureSourceType fixture == "live" && ".m3u8" `isInfixOf` fixtureStreamUrl fixture =
-      decision "live" True False False "Live m3u8 route contract preserves live playback."
+      decision "live" True False False "Live m3u8 route contract preserves live playback." ""
   | fixtureClientType fixture == "mobile" && fixturePlaybackMode fixture == "hls" =
-      decision "hls" True True True "Mobile route contract allows HLS only when required."
+      decision "hls" True True True "Mobile route contract allows HLS only when required." ""
   | fixtureSourceType fixture == "series" =
-      decision "direct" True False False "Series episode route contract preserves direct playback."
+      decision "direct" True False False "Series episode route contract preserves direct playback." ""
   | fixtureRouteTarget fixture == "/api/ftp/raw" =
-      decision "direct" True False False "FTP raw route contract may stream bytes without transcoding."
+      decision "direct" True False False "FTP raw route contract may stream bytes without transcoding." ""
   | fixtureClientType fixture == "desktop" =
-      decision "direct" True False False "Desktop route contract preserves direct playback without FFmpeg."
+      decision "direct" True False False "Desktop route contract preserves direct playback without FFmpeg." ""
   | otherwise =
-      decision "direct" True (fixtureRequiresTranscode fixture) (fixtureShouldUseFfmpeg fixture) "Fallback route contract preserves fixture flags."
+      decision "direct" True (fixtureRequiresTranscode fixture) (fixtureShouldUseFfmpeg fixture) "Fallback route contract preserves fixture flags." ""
   where
     responseKind = fixtureResponseKind fixture
-    decision mode ok transcode ffmpeg reason =
+    decision mode ok transcode ffmpeg reason errorCode =
       Decision
         { decisionCaseName = fixtureName fixture
+        , decisionRoute = fixtureRouteTarget fixture
         , decisionRouteTarget = fixtureRouteTarget fixture
         , decisionFutureHaskellMirrorName = fixtureFutureHaskellMirrorName fixture
         , decisionRiskLevel = fixtureRiskLevel fixture
@@ -100,6 +106,8 @@ planRouteContract fixture
         , decisionRequiresTranscode = transcode
         , decisionShouldUseFfmpeg = ffmpeg
         , decisionStreamUrl = fixtureStreamUrl fixture
+        , decisionStatusCode = if ok then 200 else statusCodeFor errorCode
+        , decisionErrorCode = errorCode
         , decisionExpectedInputFields = fixtureExpectedInputFields fixture
         , decisionExpectedOutputFields = fixtureExpectedOutputFields fixture
         , decisionOk = ok
@@ -122,9 +130,19 @@ clientTypes = ["desktop", "mobile"]
 sourceTypes :: [String]
 sourceTypes = ["movie", "series", "live"]
 
+playbackModes :: [String]
+playbackModes = ["direct", "hls", "live", "invalid"]
+
 safeStreamUrl :: String -> Bool
 safeStreamUrl value =
   any (`prefixOf` value) ["http://", "https://", "ftp://", "local://"]
+
+statusCodeFor :: String -> Int
+statusCodeFor "UNKNOWN_ROUTE" = 404
+statusCodeFor "UNSUPPORTED_CLIENT_TYPE" = 422
+statusCodeFor "UNSUPPORTED_SOURCE_TYPE" = 422
+statusCodeFor "UNSUPPORTED_PLAYBACK_MODE" = 422
+statusCodeFor _ = 400
 
 decisionsJson :: [Decision] -> String
 decisionsJson decisions =
@@ -134,6 +152,7 @@ decisionJson :: Decision -> String
 decisionJson decision =
   "  {\n"
     ++ field "caseName" (jsonString (decisionCaseName decision)) True
+    ++ field "route" (jsonString (decisionRoute decision)) True
     ++ field "routeTarget" (jsonString (decisionRouteTarget decision)) True
     ++ field "futureHaskellMirrorName" (jsonString (decisionFutureHaskellMirrorName decision)) True
     ++ field "riskLevel" (jsonString (decisionRiskLevel decision)) True
@@ -146,11 +165,26 @@ decisionJson decision =
     ++ field "requiresTranscode" (jsonBool (decisionRequiresTranscode decision)) True
     ++ field "shouldUseFfmpeg" (jsonBool (decisionShouldUseFfmpeg decision)) True
     ++ field "streamUrl" (jsonString (decisionStreamUrl decision)) True
+    ++ field "statusCode" (show (decisionStatusCode decision)) True
+    ++ field "errorCode" (jsonString (decisionErrorCode decision)) True
     ++ arrayField "expectedInputFields" (decisionExpectedInputFields decision) True
     ++ arrayField "expectedOutputFields" (decisionExpectedOutputFields decision) True
     ++ field "ok" (jsonBool (decisionOk decision)) True
     ++ field "reason" (jsonString (decisionReason decision)) False
+    ++ ",\n"
+    ++ safetyField
     ++ "  }"
+
+safetyField :: String
+safetyField =
+  "    \"safety\": {\n"
+    ++ "      \"serverStarted\": false,\n"
+    ++ "      \"networkCalled\": false,\n"
+    ++ "      \"ffmpegStarted\": false,\n"
+    ++ "      \"runtimePlaybackChanged\": false,\n"
+    ++ "      \"activeRoutesAdded\": false,\n"
+    ++ "      \"inactiveRouteWired\": false\n"
+    ++ "    }\n"
 
 field :: String -> String -> Bool -> String
 field name value comma =

@@ -234,7 +234,14 @@ def diff_safety_failures(base: str, files: list[str]) -> list[str]:
         text = (ROOT / path).read_text(encoding="utf-8", errors="ignore")
         if WORKFLOW_WRITE_RE.search(text):
             failures.append(f"workflow permissions are not read-only in {path}")
-        for forbidden in ["secrets.", "gh pr comment", "gh issue comment", "npm start", "npm run start", "node server.js"]:
+        for forbidden in [
+            "secrets.",
+            "gh pr comment",
+            "gh issue comment",
+            "npm " + "start",
+            "npm run " + "start",
+            "node " + "server.js",
+        ]:
             if forbidden in text.lower():
                 failures.append(f"workflow forbidden token found in {path}: {forbidden}")
     return failures

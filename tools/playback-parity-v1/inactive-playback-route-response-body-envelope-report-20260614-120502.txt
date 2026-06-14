@@ -1,0 +1,30 @@
+Status: PASS
+mode: read-only inactive playback route response body envelope gate
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+fixture_path: tools/playback-parity-v1/inactive-playback-route-response-body-fixtures.json
+contract_path: tools/playback-parity-v1/inactive-playback-route-response-body-contract.json
+decision_source: tools/playback-parity-v1/inactive_playback_route_response_body_shadow_js.js
+node_available: true
+js_status: passed
+fixture_count: 13
+decision_count: 13
+decisions:
+- response_body_movie_json_direct: ok=True statusCode=200 shape=movie-json errorCode= failures=[]
+- response_body_ftp_json_desktop_direct: ok=True statusCode=200 shape=ftp-json errorCode= failures=[]
+- response_body_ftp_json_mobile_hls: ok=True statusCode=200 shape=ftp-json errorCode= failures=[]
+- response_body_local_json_direct: ok=True statusCode=200 shape=local-json errorCode= failures=[]
+- response_body_ftp_raw_range: ok=True statusCode=206 shape=raw-bytes errorCode= failures=[]
+- response_body_series_episode_direct: ok=True statusCode=200 shape=series-json errorCode= failures=[]
+- response_body_live_hls: ok=True statusCode=200 shape=live-hls errorCode= failures=[]
+- response_body_invalid_missing_route: ok=False statusCode=400 shape=error-json errorCode=MISSING_ROUTE failures=[]
+- response_body_invalid_missing_streamUrl: ok=False statusCode=400 shape=error-json errorCode=MISSING_STREAM_URL failures=[]
+- response_body_invalid_unsupported_clientType: ok=False statusCode=422 shape=error-json errorCode=UNSUPPORTED_CLIENT_TYPE failures=[]
+- response_body_invalid_unsupported_sourceType: ok=False statusCode=422 shape=error-json errorCode=UNSUPPORTED_SOURCE_TYPE failures=[]
+- response_body_invalid_unsupported_playbackMode: ok=False statusCode=422 shape=error-json errorCode=UNSUPPORTED_PLAYBACK_MODE failures=[]
+- response_body_invalid_unsafe_streamUrl: ok=False statusCode=400 shape=error-json errorCode=UNSAFE_STREAM_URL failures=[]
+failures: []

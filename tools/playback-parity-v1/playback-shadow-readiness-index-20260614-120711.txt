@@ -1,0 +1,154 @@
+Status: PASS
+mode: read-only playback shadow readiness index
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+
+gates_available:
+- playback_planner_fixture_schema.py: present
+- playback_shadow_planner_gate.py: present
+- playback_js_vs_hs_shadow_compare.py: present
+- playback_route_inventory_schema_gate.py: present
+- playback_route_fixture_schema_gate.py: present
+- inactive_playback_route_response_envelope_gate.py: present
+- inactive_playback_route_fixture_coverage_audit.py: present
+- inactive_playback_route_adapter_js_vs_hs_compare.py: present
+- inactive_playback_route_adapter_safety_gate.py: present
+- inactive_playback_route_response_body_js_vs_hs_compare.py: present
+- inactive_playback_route_response_body_envelope_gate.py: present
+- inactive_playback_route_response_body_fixture_coverage_audit.py: present
+- inactive_playback_route_response_body_safety_gate.py: present
+- inactive_playback_route_status_header_js_vs_hs_compare.py: present
+- inactive_playback_route_status_header_envelope_gate.py: present
+- inactive_playback_route_status_header_fixture_coverage_audit.py: present
+- inactive_playback_route_status_header_safety_gate.py: present
+- inactive_playback_route_error_taxonomy_js_vs_hs_compare.py: present
+- inactive_playback_route_error_taxonomy_envelope_gate.py: present
+- inactive_playback_route_error_taxonomy_fixture_coverage_audit.py: present
+- inactive_playback_route_error_taxonomy_safety_gate.py: present
+- inactive_playback_route_implementation_shadow_js_vs_hs_compare.py: present
+- inactive_playback_route_implementation_shadow_envelope_gate.py: present
+- inactive_playback_route_implementation_shadow_fixture_coverage_audit.py: present
+- inactive_playback_route_implementation_shadow_safety_gate.py: present
+- inactive_playback_route_implementation_shadow_report.py: present
+- inactive_playback_route_final_readiness_js_vs_hs_compare.py: present
+- inactive_playback_route_final_readiness_safety_gate.py: present
+- inactive_playback_route_final_readiness_report.py: present
+- inactive_playback_route_activation_plan_prerequisites.py: present
+- inactive_playback_route_activation_plan_dependency_checker.py: present
+- inactive_playback_route_activation_plan_safety_gate.py: present
+- inactive_playback_route_activation_plan_report.py: present
+- playback_route_contract_crosscheck.py: present
+- playback_route_contract_js_vs_hs_compare.py: present
+- playback_route_shadow_full_gate.py: present
+- run_playback_shadow_ci.py: present
+- run_playback_shadow_review_pack.py: present
+- playback_shadow_workflow_safety_audit.py: present
+- collect_playback_shadow_artifacts.py: present
+- playback_shadow_artifact_manifest.py: present
+
+latest_reports:
+- ci_report: tools/playback-parity-v1/playback-shadow-ci-report-20260614-120456.txt Status: PASS
+- review_pack_report: tools/playback-parity-v1/playback-shadow-review-pack-report-20260614-120626.txt Status: PASS
+- workflow_safety_report: tools/playback-parity-v1/playback-shadow-workflow-safety-report-20260614-120626.txt Status: PASS
+- artifact_manifest_report: tools/playback-parity-v1/playback-shadow-artifact-manifest-report-20260614-120711.txt Status: PASS
+- pr_summary: tools/playback-parity-v1/playback-shadow-pr-summary-20260614-120626.md Status: PASS
+- planner_compare_report: tools/playback-parity-v1/playback-js-vs-hs-shadow-compare-report-20260612-181036.txt Status: PASS
+- route_compare_report: tools/playback-parity-v1/playback-route-contract-js-vs-hs-report-20260612-182035.txt Status: PASS
+- route_inventory_schema_report: tools/playback-parity-v1/playback-route-inventory-schema-report-20260612-193421.txt Status: PASS
+- route_fixture_schema_report: tools/playback-parity-v1/playback-route-fixture-schema-report-20260613-100132.txt Status: PASS
+- inactive_route_response_envelope_report: tools/playback-parity-v1/inactive-playback-route-response-envelope-report-20260614-120456.txt Status: PASS
+- inactive_route_fixture_coverage_report: tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260614-120456.txt Status: PASS
+- inactive_route_adapter_compare_report: tools/playback-parity-v1/inactive-playback-route-adapter-js-vs-hs-report-20260614-120459.txt Status: PASS
+- inactive_route_adapter_safety_report: tools/playback-parity-v1/inactive-playback-route-adapter-safety-report-20260614-120459.txt Status: PASS
+- inactive_route_response_body_compare_report: tools/playback-parity-v1/inactive-playback-route-response-body-js-vs-hs-report-20260614-120502.txt Status: PASS
+- inactive_route_response_body_envelope_report: tools/playback-parity-v1/inactive-playback-route-response-body-envelope-report-20260614-120502.txt Status: PASS
+- inactive_route_response_body_fixture_coverage_report: tools/playback-parity-v1/inactive-playback-route-response-body-fixture-coverage-report-20260614-120502.txt Status: PASS
+- inactive_route_response_body_safety_report: tools/playback-parity-v1/inactive-playback-route-response-body-safety-report-20260614-120503.txt Status: PASS
+- inactive_route_status_header_compare_report: tools/playback-parity-v1/inactive-playback-route-status-header-js-vs-hs-report-20260614-120506.txt Status: PASS
+- inactive_route_status_header_envelope_report: tools/playback-parity-v1/inactive-playback-route-status-header-envelope-report-20260614-120506.txt Status: PASS
+- inactive_route_status_header_fixture_coverage_report: tools/playback-parity-v1/inactive-playback-route-status-header-fixture-coverage-report-20260614-120506.txt Status: PASS
+- inactive_route_status_header_safety_report: tools/playback-parity-v1/inactive-playback-route-status-header-safety-report-20260614-120507.txt Status: PASS
+- inactive_route_error_taxonomy_compare_report: tools/playback-parity-v1/inactive-playback-route-error-taxonomy-js-vs-hs-report-20260614-120509.txt Status: PASS
+- inactive_route_error_taxonomy_envelope_report: tools/playback-parity-v1/inactive-playback-route-error-taxonomy-envelope-report-20260614-120510.txt Status: PASS
+- inactive_route_error_taxonomy_fixture_coverage_report: tools/playback-parity-v1/inactive-playback-route-error-taxonomy-fixture-coverage-report-20260614-120510.txt Status: PASS
+- inactive_route_error_taxonomy_safety_report: tools/playback-parity-v1/inactive-playback-route-error-taxonomy-safety-report-20260614-120510.txt Status: PASS
+- inactive_route_implementation_shadow_compare_report: tools/playback-parity-v1/inactive-playback-route-implementation-shadow-js-vs-hs-report-20260614-120513.txt Status: PASS
+- inactive_route_implementation_shadow_envelope_report: tools/playback-parity-v1/inactive-playback-route-implementation-shadow-envelope-report-20260614-120514.txt Status: PASS
+- inactive_route_implementation_shadow_fixture_coverage_report: tools/playback-parity-v1/inactive-playback-route-implementation-shadow-fixture-coverage-report-20260614-120514.txt Status: PASS
+- inactive_route_implementation_shadow_safety_report: tools/playback-parity-v1/inactive-playback-route-implementation-shadow-safety-report-20260614-120514.txt Status: PASS
+- inactive_route_implementation_shadow_report: tools/playback-parity-v1/inactive-playback-route-implementation-shadow-report-20260614-120519.txt Status: PASS
+- inactive_route_final_readiness_compare_report: tools/playback-parity-v1/inactive-playback-route-final-readiness-js-vs-hs-report-20260614-120522.txt Status: PASS
+- inactive_route_final_readiness_safety_report: tools/playback-parity-v1/inactive-playback-route-final-readiness-safety-report-20260614-120522.txt Status: PASS
+- inactive_route_final_readiness_report: tools/playback-parity-v1/inactive-playback-route-final-readiness-report-20260614-120541.txt Status: PASS
+- inactive_route_activation_plan_prerequisites_report: tools/playback-parity-v1/inactive-playback-route-activation-plan-prerequisites-report-20260614-120627.txt Status: PASS
+- inactive_route_activation_plan_dependency_report: tools/playback-parity-v1/inactive-playback-route-activation-plan-dependency-report-20260614-120646.txt Status: PASS
+- inactive_route_activation_plan_safety_report: tools/playback-parity-v1/inactive-playback-route-activation-plan-safety-report-20260614-120647.txt Status: PASS
+- inactive_route_activation_plan_report: tools/playback-parity-v1/inactive-playback-route-activation-plan-report-20260614-120710.txt Status: PASS
+- route_crosscheck_report: tools/playback-parity-v1/playback-route-contract-crosscheck-report-20260613-100132.txt Status: PASS
+
+npm_scripts_available:
+- test:playback-shadow: python3 tools/playback-parity-v1/run_playback_shadow_ci.py --write-report
+- test:playback-shadow-review: python3 tools/playback-parity-v1/run_playback_shadow_review_pack.py --write-report
+- collect:playback-shadow-artifacts: python3 tools/playback-parity-v1/collect_playback_shadow_artifacts.py
+- report:playback-shadow-artifacts: python3 tools/playback-parity-v1/playback_shadow_artifact_manifest.py --write-report
+- report:playback-shadow-readiness: python3 tools/playback-parity-v1/playback_shadow_readiness_index.py --write-report
+- test:playback-inactive-route-fixtures: python3 tools/playback-parity-v1/inactive_playback_route_fixture_coverage_audit.py --write-report
+- test:playback-inactive-route-adapter: python3 tools/playback-parity-v1/inactive_playback_route_adapter_js_vs_hs_compare.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_adapter_safety_gate.py --write-report
+- test:playback-inactive-route-response-body: python3 tools/playback-parity-v1/inactive_playback_route_response_body_js_vs_hs_compare.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_response_body_envelope_gate.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_response_body_fixture_coverage_audit.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_response_body_safety_gate.py --write-report
+- test:playback-inactive-route-status-headers: python3 tools/playback-parity-v1/inactive_playback_route_status_header_js_vs_hs_compare.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_status_header_envelope_gate.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_status_header_fixture_coverage_audit.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_status_header_safety_gate.py --write-report
+- test:playback-inactive-route-error-taxonomy: python3 tools/playback-parity-v1/inactive_playback_route_error_taxonomy_js_vs_hs_compare.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_error_taxonomy_envelope_gate.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_error_taxonomy_fixture_coverage_audit.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_error_taxonomy_safety_gate.py --write-report
+- test:playback-inactive-route-final-readiness: python3 tools/playback-parity-v1/inactive_playback_route_final_readiness_js_vs_hs_compare.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_final_readiness_safety_gate.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_final_readiness_report.py --write-report
+- test:playback-inactive-route-implementation-shadow: python3 tools/playback-parity-v1/inactive_playback_route_implementation_shadow_js_vs_hs_compare.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_implementation_shadow_envelope_gate.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_implementation_shadow_fixture_coverage_audit.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_implementation_shadow_safety_gate.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_implementation_shadow_report.py --write-report
+- test:playback-inactive-route-activation-plan: python3 tools/playback-parity-v1/inactive_playback_route_activation_plan_prerequisites.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_activation_plan_dependency_checker.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_activation_plan_safety_gate.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_activation_plan_report.py --write-report
+
+workflow_status_summary:
+- workflow_file: .github/workflows/playback-shadow-ci.yml
+- pull_request_trigger: true
+- workflow_dispatch_trigger: true
+- contents_read_permission: true
+- upload_artifact: true
+- step_summary: true
+
+artifact_manifest_status:
+- artifact_dir: tools/playback-parity-v1/.playback-shadow-artifacts
+- manifest: tools/playback-parity-v1/.playback-shadow-artifacts/manifest.txt
+- manifest_status: Status: PASS
+- artifact_file: inactive-playback-route-activation-plan-dependency-report-20260614-120646.txt
+- artifact_file: inactive-playback-route-activation-plan-prerequisites-report-20260614-120627.txt
+- artifact_file: inactive-playback-route-activation-plan-report-20260614-120710.txt
+- artifact_file: inactive-playback-route-activation-plan-safety-report-20260614-120647.txt
+- artifact_file: inactive-playback-route-error-taxonomy-envelope-report-20260614-120510.txt
+- artifact_file: inactive-playback-route-error-taxonomy-fixture-coverage-report-20260614-120510.txt
+- artifact_file: inactive-playback-route-error-taxonomy-js-vs-hs-report-20260614-120509.txt
+- artifact_file: inactive-playback-route-error-taxonomy-safety-report-20260614-120510.txt
+- artifact_file: inactive-playback-route-final-readiness-js-vs-hs-report-20260614-120522.txt
+- artifact_file: inactive-playback-route-final-readiness-report-20260614-120541.txt
+- artifact_file: inactive-playback-route-final-readiness-safety-report-20260614-120522.txt
+- artifact_file: inactive-playback-route-implementation-shadow-envelope-report-20260614-120514.txt
+- artifact_file: inactive-playback-route-implementation-shadow-fixture-coverage-report-20260614-120514.txt
+- artifact_file: inactive-playback-route-implementation-shadow-js-vs-hs-report-20260614-120513.txt
+- artifact_file: inactive-playback-route-implementation-shadow-report-20260614-120519.txt
+- artifact_file: inactive-playback-route-implementation-shadow-safety-report-20260614-120514.txt
+- artifact_file: manifest.txt
+- artifact_file: playback-js-vs-hs-shadow-compare-report-20260612-181036.txt
+- artifact_file: playback-route-contract-js-vs-hs-report-20260612-182035.txt
+- artifact_file: playback-shadow-ci-report-20260614-120456.txt
+- artifact_file: playback-shadow-pr-summary-20260614-120626.md
+- artifact_file: playback-shadow-review-pack-report-20260614-120626.txt
+- artifact_file: playback-shadow-workflow-safety-report-20260614-120626.txt
+
+reviewer_next_steps:
+- Run npm run test:playback-shadow.
+- Run npm run test:playback-shadow-review.
+- Run npm run test:playback-inactive-route-final-readiness.
+- Run npm run test:playback-inactive-route-implementation-shadow.
+- Run npm run test:playback-inactive-route-activation-plan.
+- Run npm run collect:playback-shadow-artifacts.
+- Run npm run report:playback-shadow-artifacts.
+- Inspect tools/playback-parity-v1/README.md and playback-shadow-artifact-inspection.md.
+- Confirm no production runtime playback files changed before advancing to controlled activation.
+
+remaining_blockers: []

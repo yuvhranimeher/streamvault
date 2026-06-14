@@ -1,0 +1,31 @@
+Status: PASS
+mode: read-only inactive playback route implementation shadow fixture coverage audit
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+fixture_path: tools/playback-parity-v1/inactive-playback-route-implementation-shadow-fixtures.json
+contract_path: tools/playback-parity-v1/inactive-playback-route-implementation-shadow-contract.json
+haskell_shadow: tools/playback-parity-v1/InactivePlaybackRouteImplementationShadow.hs
+javascript_shadow: tools/playback-parity-v1/inactive_playback_route_implementation_shadow_js.js
+fixture_count: 12
+observed_statuses: [200, 206, 400, 404, 405, 502]
+observed_route_targets: ['/api/ftp/raw', '/api/playback/ftp', '/api/playback/local', '/api/playback/movie', '/api/playback/unknown', 'live TV m3u8 playback', 'series episode playback']
+observed_reason_codes: ['METHOD_NOT_ALLOWED', 'MISSING_ID', 'OK', 'PARTIAL_CONTENT', 'RESPONSE_BODY_REJECTED', 'STATUS_HEADER_REJECTED', 'UNKNOWN_ROUTE', 'UNSAFE_PLACEHOLDER_URL']
+coverage:
+- accepted movie route: present fixtures=['implementation_movie_desktop_direct']
+- accepted FTP mobile HLS route: present fixtures=['implementation_ftp_mobile_hls']
+- accepted local route: present fixtures=['implementation_local_direct']
+- accepted raw byte route: present fixtures=['implementation_ftp_raw_range']
+- accepted series route: present fixtures=['implementation_series_direct']
+- accepted live route: present fixtures=['implementation_live_hls']
+- missing id: present fixtures=['implementation_missing_id']
+- unsafe placeholder url: present fixtures=['implementation_unsafe_placeholder_url']
+- method not allowed: present fixtures=['implementation_method_not_allowed']
+- response body rejected: present fixtures=['implementation_response_body_rejected']
+- status header rejected: present fixtures=['implementation_status_header_rejected']
+- unknown route: present fixtures=['implementation_unknown_route']
+shadow_checks: {'haskell_exists': True, 'javascript_exists': True, 'haskell_shadow_banner': True, 'js_no_server_listen': True, 'js_no_fetch': True, 'js_no_spawn': True}
+failures: []

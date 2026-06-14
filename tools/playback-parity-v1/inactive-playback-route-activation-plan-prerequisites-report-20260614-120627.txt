@@ -1,0 +1,14 @@
+Status: PASS
+mode: read-only inactive playback route activation plan prerequisites
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+activation_performed: no
+contract_path: tools/playback-parity-v1/inactive-playback-route-activation-plan-contract.json
+boundary_path: tools/playback-parity-v1/inactive-playback-route-activation-runtime-boundary.json
+risk_path: tools/playback-parity-v1/inactive-playback-route-activation-risk-matrix.json
+future_activation_files: ['server.js', 'routes/inactive-playback-route-haskell.js', 'routes/inactive-playback-route-flags.js']
+feature_flag: STREAMVAULT_INACTIVE_HASKELL_PLAYBACK_ROUTE
+failures: []

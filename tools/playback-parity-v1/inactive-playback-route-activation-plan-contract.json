@@ -1,0 +1,65 @@
+{
+  "contractId": "inactive-playback-route-activation-plan-v1",
+  "mode": "read-only activation planning only",
+  "activationStatus": "not-active",
+  "requiredDocuments": [
+    "tools/playback-parity-v1/inactive-playback-route-activation-plan-contract.md",
+    "tools/playback-parity-v1/inactive-playback-route-activation-checklist.md",
+    "tools/playback-parity-v1/inactive-playback-route-activation-runtime-boundary.json",
+    "tools/playback-parity-v1/inactive-playback-route-activation-rollback-plan.md",
+    "tools/playback-parity-v1/inactive-playback-route-activation-risk-matrix.json"
+  ],
+  "futureActivationFiles": [
+    "server.js",
+    "routes/inactive-playback-route-haskell.js",
+    "routes/inactive-playback-route-flags.js"
+  ],
+  "mustNotTouchYet": [
+    "server.js",
+    "public/app.js",
+    "public/details.js",
+    "public/player.js",
+    "public/livetv.js",
+    "public/movies-page-fix.js",
+    "public/series-page-fix.js",
+    "routes/dashboard.js",
+    "middleware/tracker.js",
+    "lib/"
+  ],
+  "featureFlag": {
+    "name": "STREAMVAULT_INACTIVE_HASKELL_PLAYBACK_ROUTE",
+    "default": "off",
+    "allowedValues": ["off", "shadow", "canary", "on"],
+    "planningPhaseValue": "off"
+  },
+  "requiredGuarantees": [
+    "desktop direct-play original FTP URL preservation",
+    "mobile HLS preservation",
+    "no FFmpeg on desktop direct playback",
+    "no live URL activation during planning",
+    "no active runtime wiring during planning",
+    "emergency disable path documented"
+  ],
+  "requiredPreActivationGates": [
+    "npm run test:playback-shadow",
+    "npm run test:playback-shadow-review",
+    "npm run test:playback-inactive-route-final-readiness",
+    "npm run test:playback-inactive-route-implementation-shadow",
+    "npm run test:playback-inactive-route-activation-plan"
+  ],
+  "requiredPostActivationSmokeTests": [
+    "desktop FTP direct-play keeps proxy/raw URL and does not require FFmpeg",
+    "mobile FTP HLS still selects mobile HLS only when required",
+    "local playback route still returns existing source behavior",
+    "movie metadata playback route still returns existing envelope",
+    "raw byte range route still returns 206 with range headers",
+    "feature flag off returns existing Node behavior immediately"
+  ],
+  "validators": [
+    "tools/playback-parity-v1/inactive_playback_route_activation_plan_prerequisites.py",
+    "tools/playback-parity-v1/inactive_playback_route_activation_plan_dependency_checker.py",
+    "tools/playback-parity-v1/inactive_playback_route_activation_plan_safety_gate.py",
+    "tools/playback-parity-v1/inactive_playback_route_activation_plan_report.py"
+  ],
+  "npmScript": "test:playback-inactive-route-activation-plan"
+}

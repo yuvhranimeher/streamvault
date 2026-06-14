@@ -1,0 +1,75 @@
+{
+  "manifestId": "inactive-playback-route-activation-runtime-boundary-v1",
+  "planningOnly": true,
+  "activationStatus": "not-active",
+  "futureActivationFiles": [
+    {
+      "path": "server.js",
+      "futurePurpose": "Mount the inactive Haskell playback route bridge behind the feature flag.",
+      "allowedWhen": "future activation PR only"
+    },
+    {
+      "path": "routes/inactive-playback-route-haskell.js",
+      "futurePurpose": "New route bridge that adapts active Node requests to the proven Haskell shadow envelope.",
+      "allowedWhen": "future activation PR only"
+    },
+    {
+      "path": "routes/inactive-playback-route-flags.js",
+      "futurePurpose": "Small feature-flag helper that fails closed to existing Node playback behavior.",
+      "allowedWhen": "future activation PR only"
+    }
+  ],
+  "mustNotTouchYet": [
+    "server.js",
+    "public/app.js",
+    "public/details.js",
+    "public/player.js",
+    "public/livetv.js",
+    "public/movies-page-fix.js",
+    "public/series-page-fix.js",
+    "routes/dashboard.js",
+    "middleware/tracker.js"
+  ],
+  "mustNotTouchYetPrefixes": [
+    "public/",
+    "routes/",
+    "middleware/",
+    "src/",
+    "lib/"
+  ],
+  "featureFlag": {
+    "name": "STREAMVAULT_INACTIVE_HASKELL_PLAYBACK_ROUTE",
+    "default": "off",
+    "planningValue": "off",
+    "allowedValues": ["off", "shadow", "canary", "on"],
+    "unknownValueBehavior": "fail-closed-to-existing-node-playback"
+  },
+  "rollback": {
+    "primary": "Set STREAMVAULT_INACTIVE_HASKELL_PLAYBACK_ROUTE=off or unset it.",
+    "secondary": "Revert the future activation PR.",
+    "requiredFlagOffBehavior": "existing Node playback behavior"
+  },
+  "preActivationGates": [
+    "npm run test:playback-shadow",
+    "npm run test:playback-shadow-review",
+    "npm run test:playback-inactive-route-final-readiness",
+    "npm run test:playback-inactive-route-implementation-shadow",
+    "npm run test:playback-inactive-route-activation-plan"
+  ],
+  "postActivationSmokeTests": [
+    "desktop FTP direct-play keeps proxy/raw/direct source behavior",
+    "desktop direct playback does not invoke FFmpeg",
+    "mobile FTP playback still selects HLS only when required",
+    "local playback still returns existing source behavior",
+    "raw byte-range playback still returns 206 and range headers",
+    "feature flag off restores existing Node behavior"
+  ],
+  "planningForbiddenActions": [
+    "active route registration",
+    "frontend playback behavior change",
+    "FFmpeg behavior change",
+    "FTP or live URL activation",
+    "network call",
+    "Cloudflare or tunnel configuration change"
+  ]
+}

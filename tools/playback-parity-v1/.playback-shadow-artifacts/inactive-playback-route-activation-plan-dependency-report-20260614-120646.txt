@@ -1,0 +1,93 @@
+Status: PASS
+mode: read-only inactive playback route activation plan dependency checker
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+activation_performed: no
+required_commits:
+- 26c275b: ancestor
+- 1d12324: ancestor
+required_files:
+- tools/playback-parity-v1/inactive-playback-route-final-readiness-contract.json: present
+- tools/playback-parity-v1/inactive-playback-route-final-readiness-fixtures.json: present
+- tools/playback-parity-v1/inactive_playback_route_final_readiness_report.py: present
+- tools/playback-parity-v1/inactive-playback-route-implementation-shadow-contract.json: present
+- tools/playback-parity-v1/inactive-playback-route-implementation-shadow-fixtures.json: present
+- tools/playback-parity-v1/InactivePlaybackRouteImplementationShadow.hs: present
+- tools/playback-parity-v1/inactive_playback_route_implementation_shadow_report.py: present
+dependency_summary:
+- implementation_shadow_report: exit_code=0 Status: PASS
+- final_readiness_report: exit_code=0 Status: PASS
+failures: []
+
+[implementation_shadow_report]
+exit_code: 0
+stdout:
+Status: PASS
+mode: read-only inactive playback route implementation shadow report
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+frontend_playback_changed: no
+live_url_activated: no
+all_fixtures_safe: yes
+command_count: 4
+failed_commands: []
+command_summary:
+- implementation_shadow_js_vs_hs_compare: exit_code=0 Status: PASS
+- implementation_shadow_envelope_gate: exit_code=0 Status: PASS
+- implementation_shadow_fixture_coverage: exit_code=0 Status: PASS
+- implementation_shadow_safety_gate: exit_code=0 Status: PASS
+stderr:
+(empty)
+
+[final_readiness_report]
+exit_code: 0
+stdout:
+Status: PASS
+mode: read-only inactive playback route final readiness report
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+frontend_playback_changed: no
+live_url_activated: no
+all_fixtures_safe: yes
+command_count: 17
+failed_commands: []
+missing_required_readiness: []
+required_component_status:
+- adapter parity PASS
+- response body parity PASS
+- status/header parity PASS
+- error taxonomy parity PASS
+- implementation shadow parity PASS
+- implementation shadow safety PASS
+- final readiness safety PASS
+command_summary:
+- adapter_parity: exit_code=0 Status: PASS
+- inactive_route_fixture_coverage: exit_code=0 Status: PASS
+- response_body_parity: exit_code=0 Status: PASS
+- response_body_envelope: exit_code=0 Status: PASS
+- response_body_fixture_coverage: exit_code=0 Status: PASS
+- status_header_parity: exit_code=0 Status: PASS
+- status_header_envelope: exit_code=0 Status: PASS
+- status_header_fixture_coverage: exit_code=0 Status: PASS
+- error_taxonomy_parity: exit_code=0 Status: PASS
+- error_taxonomy_envelope: exit_code=0 Status: PASS
+- error_taxonomy_fixture_coverage: exit_code=0 Status: PASS
+- implementation_shadow_parity: exit_code=0 Status: PASS
+- implementation_shadow_envelope: exit_code=0 Status: PASS
+- implementation_shadow_fixture_coverage: exit_code=0 Status: PASS
+- implementation_shadow_safety_gate: exit_code=0 Status: PASS
+- final_readiness_js_vs_hs_compare: exit_code=0 Status: PASS
+- final_readiness_safety_gate: exit_code=0 Status: PASS
+stderr:
+(empty)

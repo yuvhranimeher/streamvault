@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify inactive playback route status/header parity remains shadow-only."""
+"""Verify activation planning adds no runtime wiring."""
 
 from __future__ import annotations
 
@@ -10,76 +10,30 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 
 ROOT = Path(__file__).resolve().parents[2]
 TOOL_DIR = ROOT / "tools" / "playback-parity-v1"
 BASE_BRANCH = "haskell-playback-inactive-route-fixture-coverage-20260613-003827"
-HS_PATH = TOOL_DIR / "InactivePlaybackRouteStatusHeader.hs"
-JS_PATH = TOOL_DIR / "inactive_playback_route_status_header_shadow_js.js"
-FIXTURE_PATH = TOOL_DIR / "inactive-playback-route-status-header-fixtures.json"
+BOUNDARY_PATH = TOOL_DIR / "inactive-playback-route-activation-runtime-boundary.json"
 PACKAGE_PATH = ROOT / "package.json"
 PACKAGE_LOCK_PATH = ROOT / "package-lock.json"
 
-ALLOWED_NEW_NPM_SCRIPTS = {
-    "test:playback-inactive-route-status-headers": (
-        "python3 tools/playback-parity-v1/inactive_playback_route_status_header_js_vs_hs_compare.py --write-report "
-        "&& python3 tools/playback-parity-v1/inactive_playback_route_status_header_envelope_gate.py --write-report "
-        "&& python3 tools/playback-parity-v1/inactive_playback_route_status_header_fixture_coverage_audit.py --write-report "
-        "&& python3 tools/playback-parity-v1/inactive_playback_route_status_header_safety_gate.py --write-report"
-    ),
-    "test:playback-inactive-route-error-taxonomy": (
-        "python3 tools/playback-parity-v1/inactive_playback_route_error_taxonomy_js_vs_hs_compare.py --write-report "
-        "&& python3 tools/playback-parity-v1/inactive_playback_route_error_taxonomy_envelope_gate.py --write-report "
-        "&& python3 tools/playback-parity-v1/inactive_playback_route_error_taxonomy_fixture_coverage_audit.py --write-report "
-        "&& python3 tools/playback-parity-v1/inactive_playback_route_error_taxonomy_safety_gate.py --write-report"
-    ),
-    "test:playback-inactive-route-final-readiness": (
-        "python3 tools/playback-parity-v1/inactive_playback_route_final_readiness_js_vs_hs_compare.py --write-report "
-        "&& python3 tools/playback-parity-v1/inactive_playback_route_final_readiness_safety_gate.py --write-report "
-        "&& python3 tools/playback-parity-v1/inactive_playback_route_final_readiness_report.py --write-report"
-    ),
-    "test:playback-inactive-route-implementation-shadow": (
-        "python3 tools/playback-parity-v1/inactive_playback_route_implementation_shadow_js_vs_hs_compare.py --write-report "
-        "&& python3 tools/playback-parity-v1/inactive_playback_route_implementation_shadow_envelope_gate.py --write-report "
-        "&& python3 tools/playback-parity-v1/inactive_playback_route_implementation_shadow_fixture_coverage_audit.py --write-report "
-        "&& python3 tools/playback-parity-v1/inactive_playback_route_implementation_shadow_safety_gate.py --write-report "
-        "&& python3 tools/playback-parity-v1/inactive_playback_route_implementation_shadow_report.py --write-report"
-    ),
+ACTIVATION_NPM_SCRIPT = {
     "test:playback-inactive-route-activation-plan": (
         "python3 tools/playback-parity-v1/inactive_playback_route_activation_plan_prerequisites.py --write-report "
         "&& python3 tools/playback-parity-v1/inactive_playback_route_activation_plan_dependency_checker.py --write-report "
         "&& python3 tools/playback-parity-v1/inactive_playback_route_activation_plan_safety_gate.py --write-report "
         "&& python3 tools/playback-parity-v1/inactive_playback_route_activation_plan_report.py --write-report"
-    ),
+    )
 }
 
-FORBIDDEN_PATH_PREFIXES = (
-    "public/",
-    "routes/",
-    "middleware/",
-    "src/",
-    "lib/",
-)
-FORBIDDEN_EXACT_PATHS = {
-    "server.js",
-    "public/app.js",
-    "public/player.js",
-}
-ACTIVE_RUNTIME_PREFIXES = (
-    "server.js",
-    "app/",
-    "lib/",
-    "middleware/",
-    "public/",
-    "routes/",
-    "src/",
-)
-ACTIVE_ROUTE_RE = re.compile(
-    r"\b(?:app|router)\s*\.\s*(?:get|post|put|patch|delete|all|use)\s*\(",
-    re.IGNORECASE,
-)
+ALLOWED_CHANGED_PREFIXES = ("tools/playback-parity-v1/",)
+ALLOWED_CHANGED_FILES = {"package.json", "package-lock.json"}
+FORBIDDEN_PATH_PREFIXES = ("public/", "routes/", "middleware/", "src/", "lib/")
+FORBIDDEN_EXACT_PATHS = {"server.js"}
+ACTIVE_RUNTIME_PREFIXES = ("server.js", "app/", "lib/", "middleware/", "public/", "routes/", "src/")
+ACTIVE_ROUTE_RE = re.compile(r"\b(?:app|router)\s*\.\s*(?:get|post|put|patch|delete|all|use)\s*\(", re.IGNORECASE)
 SERVER_START_RE = re.compile(
     r"\b(?:npm\s+(?:run\s+)?start|node\s+server\.js|app\.listen\s*\(|server\.listen\s*\()",
     re.IGNORECASE,
@@ -98,7 +52,7 @@ WORKFLOW_WRITE_RE = re.compile(r"(?m)^\s*(?:contents|pull-requests|issues|action
 
 def report_path() -> Path:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    return TOOL_DIR / f"inactive-playback-route-status-header-safety-report-{stamp}.txt"
+    return TOOL_DIR / f"inactive-playback-route-activation-plan-safety-report-{stamp}.txt"
 
 
 def run_git(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -124,13 +78,15 @@ def base_ref() -> str:
 
 def changed_files(base: str) -> list[str]:
     result = run_git(["diff", "--name-only", f"{base}...HEAD"])
-    if result.returncode != 0:
-        return []
-    files = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    files = [line.strip() for line in result.stdout.splitlines() if line.strip()] if result.returncode == 0 else []
     status = run_git(["status", "--short"])
     for line in status.stdout.splitlines():
         if line.startswith("?? "):
             files.append(line[3:].strip())
+        elif len(line) > 3 and line[2] == " ":
+            files.append(line[3:].strip())
+        elif len(line) > 2 and line[1] == " ":
+            files.append(line[2:].strip())
     return sorted(set(files))
 
 
@@ -163,13 +119,11 @@ def file_at(ref_name: str, path: str) -> str | None:
     return result.stdout
 
 
-def read_json(text: str | None, path: Path) -> tuple[dict[str, Any] | None, str | None]:
+def read_json(text: str | None, path: Path) -> tuple[Any | None, str | None]:
     try:
         parsed = json.loads(path.read_text(encoding="utf-8") if text is None else text)
     except (OSError, json.JSONDecodeError) as exc:
         return None, str(exc)
-    if not isinstance(parsed, dict):
-        return None, "expected top-level object"
     return parsed, None
 
 
@@ -187,11 +141,11 @@ def active_runtime_files() -> list[str]:
 def active_reference_failures() -> list[str]:
     failures: list[str] = []
     needles = [
-        "InactivePlaybackRouteStatusHeader",
-        "inactive_playback_route_status_header",
-        "inactive-playback-route-status-header",
-        "status_headers",
-        "status-header",
+        "InactivePlayback",
+        "inactive_playback",
+        "activation-plan",
+        "activation_plan",
+        "playback-route-shadow",
     ]
     for path in active_runtime_files():
         full_path = ROOT / path
@@ -202,7 +156,7 @@ def active_reference_failures() -> list[str]:
             continue
         for needle in needles:
             if needle in text:
-                failures.append(f"active runtime references status/header shadow {needle}: {path}")
+                failures.append(f"active runtime references activation planning needle {needle}: {path}")
     return failures
 
 
@@ -210,9 +164,8 @@ def package_failures(base: str) -> list[str]:
     failures: list[str] = []
     base_pkg, base_err = read_json(file_at(base, "package.json"), PACKAGE_PATH)
     head_pkg, head_err = read_json(None, PACKAGE_PATH)
-    if base_err or head_err or base_pkg is None or head_pkg is None:
+    if base_err or head_err or not isinstance(base_pkg, dict) or not isinstance(head_pkg, dict):
         return [f"package.json could not be parsed: base={base_err}, head={head_err}"]
-
     for key in ("version", "dependencies", "devDependencies", "optionalDependencies", "peerDependencies"):
         if base_pkg.get(key) != head_pkg.get(key):
             failures.append(f"package.json {key} changed")
@@ -220,16 +173,50 @@ def package_failures(base: str) -> list[str]:
     base_scripts = dict(base_pkg.get("scripts", {}))
     head_scripts = dict(head_pkg.get("scripts", {}))
     expected_scripts = dict(base_scripts)
-    for script_name, script_value in ALLOWED_NEW_NPM_SCRIPTS.items():
+    for script_name, script_value in ACTIVATION_NPM_SCRIPT.items():
         if script_name in head_scripts:
             expected_scripts[script_name] = script_value
     if head_scripts != expected_scripts:
-        failures.append("package.json scripts changed beyond inactive status/header npm script")
+        failures.append("package.json scripts changed beyond inactive activation plan npm script")
 
     if PACKAGE_LOCK_PATH.exists():
         lock_diff = run_git(["diff", "--name-only", f"{base}...HEAD", "--", "package-lock.json"])
         if lock_diff.returncode == 0 and lock_diff.stdout.strip():
             failures.append("package-lock.json changed")
+    return failures
+
+
+def changed_path_failures(files: list[str]) -> list[str]:
+    failures: list[str] = []
+    for path in files:
+        if path in ALLOWED_CHANGED_FILES or path.startswith(ALLOWED_CHANGED_PREFIXES):
+            continue
+        failures.append(f"changed file outside activation plan allowed scope: {path}")
+    return failures
+
+
+def boundary_failures(files: list[str]) -> list[str]:
+    boundary, err = read_json(None, BOUNDARY_PATH)
+    if err or not isinstance(boundary, dict):
+        return [f"activation runtime boundary could not be parsed: {err or 'expected object'}"]
+    failures: list[str] = []
+    future_paths = [
+        entry.get("path")
+        for entry in boundary.get("futureActivationFiles", [])
+        if isinstance(entry, dict)
+    ]
+    for path in future_paths:
+        if path in files:
+            failures.append(f"future activation runtime file changed during planning: {path}")
+    for path in boundary.get("mustNotTouchYet", []):
+        if path in files:
+            failures.append(f"must-not-touch file changed during planning: {path}")
+    for prefix in boundary.get("mustNotTouchYetPrefixes", []):
+        changed = [path for path in files if path.startswith(prefix)]
+        if changed:
+            failures.append(f"must-not-touch prefix changed during planning: {prefix}: {changed}")
+    if boundary.get("planningOnly") is not True or boundary.get("activationStatus") != "not-active":
+        failures.append("runtime boundary must remain planningOnly and not-active")
     return failures
 
 
@@ -248,9 +235,8 @@ def diff_safety_failures(base: str, files: list[str]) -> list[str]:
             continue
         if path.endswith((".md", ".txt", ".json")):
             continue
-        if path == "package.json" and any(script_name in line for script_name in ALLOWED_NEW_NPM_SCRIPTS):
+        if path == "package.json" and any(script_name in line for script_name in ACTIVATION_NPM_SCRIPT):
             continue
-
         if SERVER_START_RE.search(line):
             failures.append(f"server startup command added in {path}: {line.strip()}")
         if FFMPEG_COMMAND_RE.search(line):
@@ -265,82 +251,34 @@ def diff_safety_failures(base: str, files: list[str]) -> list[str]:
     return failures
 
 
-def fixture_failures() -> list[str]:
-    failures: list[str] = []
-    try:
-        fixtures = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        return [f"fixtures could not be parsed: {exc}"]
-    if not isinstance(fixtures, list):
-        return ["fixtures must be a JSON array"]
-
-    for fixture in fixtures:
-        if not isinstance(fixture, dict):
-            failures.append("fixture contains non-object entry")
-            continue
-        fixture_id = str(fixture.get("fixtureId") or "unknown")
-        stream_url = str(fixture.get("streamUrl") or "")
-        if "localhost" in stream_url or "127.0.0.1" in stream_url:
-            failures.append(f"{fixture_id}: localhost fixture URL is forbidden")
-        if stream_url.startswith("placeholder://"):
-            if fixture.get("expectedReasonCode") != "UNSAFE_STREAM_URL":
-                failures.append(f"{fixture_id}: placeholder URL must be an unsafe rejection fixture")
-            continue
-        if stream_url.startswith("local://") or stream_url == "":
-            continue
-        parsed = urlparse(stream_url)
-        if parsed.scheme in {"http", "https", "ftp"}:
-            if not (parsed.hostname or "").endswith(".example.test"):
-                failures.append(f"{fixture_id}: non-placeholder URL host must end with .example.test")
-        else:
-            failures.append(f"{fixture_id}: unsupported fixture URL scheme: {stream_url}")
-    return failures
-
-
-def shadow_file_failures() -> list[str]:
-    failures: list[str] = []
-    required = [HS_PATH, JS_PATH, FIXTURE_PATH]
-    for path in required:
-        if not path.exists():
-            failures.append(f"missing required file: {path.relative_to(ROOT)}")
-    if HS_PATH.exists():
-        text = HS_PATH.read_text(encoding="utf-8", errors="ignore")
-        if "INACTIVE SHADOW-ONLY ROUTE STATUS HEADER" not in text:
-            failures.append("Haskell status/header shadow banner missing")
-    if JS_PATH.exists():
-        text = JS_PATH.read_text(encoding="utf-8", errors="ignore")
-        for forbidden in ["listen(", "fetch(", "spawn(", "exec(", "execFile("]:
-            if forbidden in text:
-                failures.append(f"JS status/header shadow contains forbidden token: {forbidden}")
-    return failures
-
-
 def main() -> int:
     write_report = "--write-report" in sys.argv
     base = base_ref()
     files = changed_files(base)
     failures: list[str] = []
+    failures.extend(changed_path_failures(files))
+    failures.extend(boundary_failures(files))
     failures.extend(diff_safety_failures(base, files))
     failures.extend(active_reference_failures())
     failures.extend(package_failures(base))
-    failures.extend(fixture_failures())
-    failures.extend(shadow_file_failures())
 
     ok = not failures
     lines = [
         f"Status: {'PASS' if ok else 'FAIL'}",
-        "mode: read-only inactive playback route status/header safety gate",
+        "mode: read-only inactive playback route activation plan safety gate",
         "server_started: no",
         "network_called: no",
         "ffmpeg_started: no",
         "runtime_playback_changed: no",
         "active_routes_added: no",
+        "activation_performed: no",
         "inactive_route_wired: no",
         "frontend_playback_changed: no",
-        "localhost_url_activated: no",
+        "live_url_activated: no",
+        "planning_only: yes" if ok else "planning_only: no",
         f"base_ref: {base}",
         f"changed_files: {files}",
-        f"allowed_new_npm_scripts: {sorted(ALLOWED_NEW_NPM_SCRIPTS)}",
+        f"allowed_new_npm_scripts: {sorted(ACTIVATION_NPM_SCRIPT)}",
         f"active_runtime_scan_count: {len(active_runtime_files())}",
         f"failures: {failures}",
     ]

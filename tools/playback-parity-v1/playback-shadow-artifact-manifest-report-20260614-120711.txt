@@ -1,0 +1,34 @@
+Status: PASS
+mode: read-only playback shadow artifact manifest validator
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+artifact_dir: tools/playback-parity-v1/.playback-shadow-artifacts
+artifact_file_count: 23
+artifacts:
+- manifest: tools/playback-parity-v1/.playback-shadow-artifacts/manifest.txt Status: PASS
+- ci_report: tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-ci-report-20260614-120456.txt Status: PASS
+- pr_summary: tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-pr-summary-20260614-120626.md Status: PASS
+- review_pack_report: tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-review-pack-report-20260614-120626.txt Status: PASS
+- workflow_safety_report: tools/playback-parity-v1/.playback-shadow-artifacts/playback-shadow-workflow-safety-report-20260614-120626.txt Status: PASS
+- js_haskell_planner_compare: tools/playback-parity-v1/.playback-shadow-artifacts/playback-js-vs-hs-shadow-compare-report-20260612-181036.txt Status: PASS
+- route_contract_compare: tools/playback-parity-v1/.playback-shadow-artifacts/playback-route-contract-js-vs-hs-report-20260612-182035.txt Status: PASS
+- error_taxonomy_compare: tools/playback-parity-v1/.playback-shadow-artifacts/inactive-playback-route-error-taxonomy-js-vs-hs-report-20260614-120509.txt Status: PASS
+- error_taxonomy_envelope: tools/playback-parity-v1/.playback-shadow-artifacts/inactive-playback-route-error-taxonomy-envelope-report-20260614-120510.txt Status: PASS
+- error_taxonomy_fixture_coverage: tools/playback-parity-v1/.playback-shadow-artifacts/inactive-playback-route-error-taxonomy-fixture-coverage-report-20260614-120510.txt Status: PASS
+- error_taxonomy_safety: tools/playback-parity-v1/.playback-shadow-artifacts/inactive-playback-route-error-taxonomy-safety-report-20260614-120510.txt Status: PASS
+- final_readiness_compare: tools/playback-parity-v1/.playback-shadow-artifacts/inactive-playback-route-final-readiness-js-vs-hs-report-20260614-120522.txt Status: PASS
+- final_readiness_safety: tools/playback-parity-v1/.playback-shadow-artifacts/inactive-playback-route-final-readiness-safety-report-20260614-120522.txt Status: PASS
+- final_readiness_report: tools/playback-parity-v1/.playback-shadow-artifacts/inactive-playback-route-final-readiness-report-20260614-120541.txt Status: PASS
+- implementation_shadow_compare: tools/playback-parity-v1/.playback-shadow-artifacts/inactive-playback-route-implementation-shadow-js-vs-hs-report-20260614-120513.txt Status: PASS
+- implementation_shadow_envelope: tools/playback-parity-v1/.playback-shadow-artifacts/inactive-playback-route-implementation-shadow-envelope-report-20260614-120514.txt Status: PASS
+- implementation_shadow_fixture_coverage: tools/playback-parity-v1/.playback-shadow-artifacts/inactive-playback-route-implementation-shadow-fixture-coverage-report-20260614-120514.txt Status: PASS
+- implementation_shadow_safety: tools/playback-parity-v1/.playback-shadow-artifacts/inactive-playback-route-implementation-shadow-safety-report-20260614-120514.txt Status: PASS
+- implementation_shadow_report: tools/playback-parity-v1/.playback-shadow-artifacts/inactive-playback-route-implementation-shadow-report-20260614-120519.txt Status: PASS
+- activation_plan_prerequisites: tools/playback-parity-v1/.playback-shadow-artifacts/inactive-playback-route-activation-plan-prerequisites-report-20260614-120627.txt Status: PASS
+- activation_plan_dependency: tools/playback-parity-v1/.playback-shadow-artifacts/inactive-playback-route-activation-plan-dependency-report-20260614-120646.txt Status: PASS
+- activation_plan_safety: tools/playback-parity-v1/.playback-shadow-artifacts/inactive-playback-route-activation-plan-safety-report-20260614-120647.txt Status: PASS
+- activation_plan_report: tools/playback-parity-v1/.playback-shadow-artifacts/inactive-playback-route-activation-plan-report-20260614-120710.txt Status: PASS
+failures: []

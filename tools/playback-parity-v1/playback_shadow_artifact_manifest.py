@@ -32,6 +32,10 @@ EXPECTED = [
     ("implementation_shadow_fixture_coverage", "inactive-playback-route-implementation-shadow-fixture-coverage-report-*.txt"),
     ("implementation_shadow_safety", "inactive-playback-route-implementation-shadow-safety-report-*.txt"),
     ("implementation_shadow_report", "inactive-playback-route-implementation-shadow-report-*.txt"),
+    ("activation_plan_prerequisites", "inactive-playback-route-activation-plan-prerequisites-report-*.txt"),
+    ("activation_plan_dependency", "inactive-playback-route-activation-plan-dependency-report-*.txt"),
+    ("activation_plan_safety", "inactive-playback-route-activation-plan-safety-report-*.txt"),
+    ("activation_plan_report", "inactive-playback-route-activation-plan-report-*.txt"),
 ]
 
 
@@ -94,6 +98,10 @@ def main() -> int:
             "implementation-shadow-fixture-coverage",
             "implementation-shadow-safety",
             "implementation-shadow-report",
+            "activation-plan-prerequisites",
+            "activation-plan-dependency",
+            "activation-plan-safety",
+            "activation-plan-report",
         ]:
             if expected_text not in manifest_text:
                 failures.append(f"manifest missing entry: {expected_text}")

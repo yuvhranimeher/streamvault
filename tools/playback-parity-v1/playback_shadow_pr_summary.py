@@ -30,6 +30,10 @@ REPORT_PATTERNS = {
     "implementation_shadow_fixture_coverage": "inactive-playback-route-implementation-shadow-fixture-coverage-report-*.txt",
     "implementation_shadow_safety": "inactive-playback-route-implementation-shadow-safety-report-*.txt",
     "implementation_shadow_report": "inactive-playback-route-implementation-shadow-report-*.txt",
+    "activation_plan_prerequisites": "inactive-playback-route-activation-plan-prerequisites-report-*.txt",
+    "activation_plan_dependency": "inactive-playback-route-activation-plan-dependency-report-*.txt",
+    "activation_plan_safety": "inactive-playback-route-activation-plan-safety-report-*.txt",
+    "activation_plan_report": "inactive-playback-route-activation-plan-report-*.txt",
 }
 
 GATE_LIST = [
@@ -53,6 +57,10 @@ GATE_LIST = [
     "inactive_playback_route_implementation_shadow_fixture_coverage_audit.py",
     "inactive_playback_route_implementation_shadow_safety_gate.py",
     "inactive_playback_route_implementation_shadow_report.py",
+    "inactive_playback_route_activation_plan_prerequisites.py",
+    "inactive_playback_route_activation_plan_dependency_checker.py",
+    "inactive_playback_route_activation_plan_safety_gate.py",
+    "inactive_playback_route_activation_plan_report.py",
 ]
 
 
@@ -147,6 +155,15 @@ def main() -> int:
             "implementation_shadow_report",
         ]
     }
+    activation_plan_statuses = {
+        label: status_from_report(reports[label])
+        for label in [
+            "activation_plan_prerequisites",
+            "activation_plan_dependency",
+            "activation_plan_safety",
+            "activation_plan_report",
+        ]
+    }
     failed_gates = extract_line(reports["ci_gate"], "failed_gates:")
     workflow_forbidden = extract_line(reports["workflow_safety"], "forbidden_hits:")
 
@@ -166,6 +183,9 @@ def main() -> int:
         if status != "PASS":
             blockers.append(f"{label} status is {status}")
     for label, status in implementation_shadow_statuses.items():
+        if status != "PASS":
+            blockers.append(f"{label} status is {status}")
+    for label, status in activation_plan_statuses.items():
         if status != "PASS":
             blockers.append(f"{label} status is {status}")
     if not files:
@@ -205,6 +225,10 @@ def main() -> int:
         *[
             f"- {label.replace('_', ' ').title()} status: {status}"
             for label, status in implementation_shadow_statuses.items()
+        ],
+        *[
+            f"- {label.replace('_', ' ').title()} status: {status}"
+            for label, status in activation_plan_statuses.items()
         ],
         f"- CI failed gates: {failed_gates or 'not reported'}",
         f"- Workflow forbidden hits: {workflow_forbidden or 'not reported'}",
@@ -249,7 +273,7 @@ def main() -> int:
         "",
         "## Next Safe Migration Step",
         "",
-        "After review, add a PR-comment or artifact publishing layer for these summaries, still without changing playback runtime behavior.",
+        "After review, open a separate controlled activation PR behind the documented feature flag, with rollback and smoke tests prepared before any runtime wiring changes.",
     ]
     output = "\n".join(lines) + "\n"
     if write_report:

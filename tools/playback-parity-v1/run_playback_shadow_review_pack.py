@@ -111,6 +111,22 @@ COMMANDS = [
         [sys.executable, str(TOOL_DIR / "inactive_playback_route_final_readiness_report.py"), "--write-report"],
     ),
     (
+        "inactive_route_activation_plan_prerequisites",
+        [sys.executable, str(TOOL_DIR / "inactive_playback_route_activation_plan_prerequisites.py"), "--write-report"],
+    ),
+    (
+        "inactive_route_activation_plan_dependency_checker",
+        [sys.executable, str(TOOL_DIR / "inactive_playback_route_activation_plan_dependency_checker.py"), "--write-report"],
+    ),
+    (
+        "inactive_route_activation_plan_safety_gate",
+        [sys.executable, str(TOOL_DIR / "inactive_playback_route_activation_plan_safety_gate.py"), "--write-report"],
+    ),
+    (
+        "inactive_route_activation_plan_report",
+        [sys.executable, str(TOOL_DIR / "inactive_playback_route_activation_plan_report.py"), "--write-report"],
+    ),
+    (
         "workflow_safety_audit",
         [sys.executable, str(TOOL_DIR / "playback_shadow_workflow_safety_audit.py"), "--write-report"],
     ),

@@ -1,0 +1,15 @@
+Status: PASS
+mode: read-only inactive playback route status/header safety gate
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+frontend_playback_changed: no
+localhost_url_activated: no
+base_ref: 26c275bf1c58795bc4a5af203b2d255d5e653207
+changed_files: ['tools/playback-parity-v1/inactive-playback-route-activation-checklist.md', 'tools/playback-parity-v1/inactive-playback-route-activation-plan-contract.json', 'tools/playback-parity-v1/inactive-playback-route-activation-plan-contract.md', 'tools/playback-parity-v1/inactive-playback-route-activation-risk-matrix.json', 'tools/playback-parity-v1/inactive-playback-route-activation-rollback-plan.md', 'tools/playback-parity-v1/inactive-playback-route-activation-runtime-boundary.json', 'tools/playback-parity-v1/inactive-playback-route-adapter-js-vs-hs-report-20260614-120459.txt', 'tools/playback-parity-v1/inactive-playback-route-adapter-safety-report-20260614-120459.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260614-120456.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-envelope-report-20260614-120502.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-fixture-coverage-report-20260614-120502.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-js-vs-hs-report-20260614-120502.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-safety-report-20260614-120503.txt', 'tools/playback-parity-v1/inactive-playback-route-response-envelope-report-20260614-120456.txt', 'tools/playback-parity-v1/inactive-playback-route-status-header-envelope-report-20260614-120506.txt', 'tools/playback-parity-v1/inactive-playback-route-status-header-fixture-coverage-report-20260614-120506.txt', 'tools/playback-parity-v1/inactive-playback-route-status-header-js-vs-hs-report-20260614-120506.txt', 'tools/playback-parity-v1/inactive_playback_route_activation_plan_dependency_checker.py', 'tools/playback-parity-v1/inactive_playback_route_activation_plan_prerequisites.py', 'tools/playback-parity-v1/inactive_playback_route_activation_plan_report.py', 'tools/playback-parity-v1/inactive_playback_route_activation_plan_safety_gate.py', 'tools/playback-parity-v1/playback-shadow-ci-report-20260614-120321.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260614-120456.txt']
+allowed_new_npm_scripts: ['test:playback-inactive-route-activation-plan', 'test:playback-inactive-route-error-taxonomy', 'test:playback-inactive-route-final-readiness', 'test:playback-inactive-route-implementation-shadow', 'test:playback-inactive-route-status-headers']
+active_runtime_scan_count: 28
+failures: []

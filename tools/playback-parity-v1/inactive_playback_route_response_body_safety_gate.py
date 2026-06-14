@@ -52,7 +52,13 @@ ALLOWED_NEW_NPM_SCRIPTS = {
         "&& python3 tools/playback-parity-v1/inactive_playback_route_implementation_shadow_fixture_coverage_audit.py --write-report "
         "&& python3 tools/playback-parity-v1/inactive_playback_route_implementation_shadow_safety_gate.py --write-report "
         "&& python3 tools/playback-parity-v1/inactive_playback_route_implementation_shadow_report.py --write-report"
-    )
+    ),
+    "test:playback-inactive-route-activation-plan": (
+        "python3 tools/playback-parity-v1/inactive_playback_route_activation_plan_prerequisites.py --write-report "
+        "&& python3 tools/playback-parity-v1/inactive_playback_route_activation_plan_dependency_checker.py --write-report "
+        "&& python3 tools/playback-parity-v1/inactive_playback_route_activation_plan_safety_gate.py --write-report "
+        "&& python3 tools/playback-parity-v1/inactive_playback_route_activation_plan_report.py --write-report"
+    ),
 }
 
 FORBIDDEN_PATH_PREFIXES = (

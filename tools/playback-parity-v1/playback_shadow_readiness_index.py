@@ -46,6 +46,10 @@ GATES = [
     "inactive_playback_route_final_readiness_js_vs_hs_compare.py",
     "inactive_playback_route_final_readiness_safety_gate.py",
     "inactive_playback_route_final_readiness_report.py",
+    "inactive_playback_route_activation_plan_prerequisites.py",
+    "inactive_playback_route_activation_plan_dependency_checker.py",
+    "inactive_playback_route_activation_plan_safety_gate.py",
+    "inactive_playback_route_activation_plan_report.py",
     "playback_route_contract_crosscheck.py",
     "playback_route_contract_js_vs_hs_compare.py",
     "playback_route_shadow_full_gate.py",
@@ -90,6 +94,10 @@ REPORTS = [
     ("inactive_route_final_readiness_compare_report", "inactive-playback-route-final-readiness-js-vs-hs-report-*.txt"),
     ("inactive_route_final_readiness_safety_report", "inactive-playback-route-final-readiness-safety-report-*.txt"),
     ("inactive_route_final_readiness_report", "inactive-playback-route-final-readiness-report-*.txt"),
+    ("inactive_route_activation_plan_prerequisites_report", "inactive-playback-route-activation-plan-prerequisites-report-*.txt"),
+    ("inactive_route_activation_plan_dependency_report", "inactive-playback-route-activation-plan-dependency-report-*.txt"),
+    ("inactive_route_activation_plan_safety_report", "inactive-playback-route-activation-plan-safety-report-*.txt"),
+    ("inactive_route_activation_plan_report", "inactive-playback-route-activation-plan-report-*.txt"),
     ("route_crosscheck_report", "playback-route-contract-crosscheck-report-*.txt"),
 ]
 
@@ -106,6 +114,7 @@ NPM_SCRIPTS = [
     "test:playback-inactive-route-error-taxonomy",
     "test:playback-inactive-route-final-readiness",
     "test:playback-inactive-route-implementation-shadow",
+    "test:playback-inactive-route-activation-plan",
 ]
 
 
@@ -226,10 +235,11 @@ def main() -> int:
         "- Run npm run test:playback-shadow-review.",
         "- Run npm run test:playback-inactive-route-final-readiness.",
         "- Run npm run test:playback-inactive-route-implementation-shadow.",
+        "- Run npm run test:playback-inactive-route-activation-plan.",
         "- Run npm run collect:playback-shadow-artifacts.",
         "- Run npm run report:playback-shadow-artifacts.",
         "- Inspect tools/playback-parity-v1/README.md and playback-shadow-artifact-inspection.md.",
-        "- Confirm no production runtime playback files changed before advancing to implementation planning.",
+        "- Confirm no production runtime playback files changed before advancing to controlled activation.",
         "",
         f"remaining_blockers: {failures if failures else []}",
     ]

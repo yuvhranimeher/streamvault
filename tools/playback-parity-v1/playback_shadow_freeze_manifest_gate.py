@@ -29,6 +29,7 @@ REQUIRED_SAFETY_INVARIANTS = {
     "no secrets",
     "no write permissions",
     "no PR comment posting",
+    "inactive route activation plan v1 is planning-only",
     "desktop direct-play original FTP preserved",
     "mobile HLS only when required",
     "no automatic desktop transcoding",
@@ -155,8 +156,8 @@ def main() -> int:
     if missing_invariants:
         failures.append(f"missing safety invariants: {missing_invariants}")
 
-    if manifest.get("nextAllowedBranchType") != "inactive Haskell playback route implementation":
-        failures.append("nextAllowedBranchType must be inactive Haskell playback route implementation")
+    if manifest.get("nextAllowedBranchType") != "controlled inactive Haskell playback route activation":
+        failures.append("nextAllowedBranchType must be controlled inactive Haskell playback route activation")
 
     ok = not failures
     lines = [

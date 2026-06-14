@@ -1,0 +1,16 @@
+Status: PASS
+mode: read-only inactive playback route final readiness safety gate
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+frontend_playback_changed: no
+live_url_activated: no
+all_fixtures_safe: yes
+base_ref: b39cc29ac627f77ad766a3d3cc8b4c292ecec599
+changed_files: ['package.json', 'tools/playback-parity-v1/InactivePlaybackRouteFinalReadiness.hs', 'tools/playback-parity-v1/inactive-playback-route-final-readiness-contract.json', 'tools/playback-parity-v1/inactive-playback-route-final-readiness-contract.md', 'tools/playback-parity-v1/inactive-playback-route-final-readiness-fixtures.json', 'tools/playback-parity-v1/inactive-playback-route-final-readiness-js-vs-hs-report-20260614-102935.txt', 'tools/playback-parity-v1/inactive_playback_route_adapter_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_error_taxonomy_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_final_readiness_js_vs_hs_compare.py', 'tools/playback-parity-v1/inactive_playback_route_final_readiness_report.py', 'tools/playback-parity-v1/inactive_playback_route_final_readiness_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_final_readiness_shadow_js.js', 'tools/playback-parity-v1/inactive_playback_route_response_body_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_status_header_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_v1_safety_gate.py', 'tools/playback-parity-v1/playback-shadow-freeze-manifest.json', 'tools/playback-parity-v1/playback_shadow_pr_summary.py', 'tools/playback-parity-v1/playback_shadow_readiness_index.py', 'tools/playback-parity-v1/run_playback_shadow_ci.py', 'tools/playback-parity-v1/run_playback_shadow_review_pack.py']
+allowed_new_npm_scripts: ['test:playback-inactive-route-final-readiness']
+active_runtime_scan_count: 28
+failures: []

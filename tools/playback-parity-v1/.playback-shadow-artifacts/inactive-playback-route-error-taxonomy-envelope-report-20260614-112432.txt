@@ -1,0 +1,29 @@
+Status: PASS
+mode: read-only inactive playback route error taxonomy envelope gate
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+fixture_path: tools/playback-parity-v1/inactive-playback-route-error-taxonomy-fixtures.json
+contract_path: tools/playback-parity-v1/inactive-playback-route-error-taxonomy-contract.json
+decision_source: tools/playback-parity-v1/inactive_playback_route_error_taxonomy_shadow_js.js
+node_available: true
+js_status: passed
+fixture_count: 12
+decision_count: 12
+decision_summary:
+- error_taxonomy_missing_id: category=VALIDATION_ERROR status=400 reasonCode=MISSING_ID retryable=False failures=[]
+- error_taxonomy_malformed_id: category=VALIDATION_ERROR status=400 reasonCode=MALFORMED_ID retryable=False failures=[]
+- error_taxonomy_missing_media_type: category=VALIDATION_ERROR status=400 reasonCode=MISSING_MEDIA_TYPE retryable=False failures=[]
+- error_taxonomy_unsupported_media_type: category=VALIDATION_ERROR status=422 reasonCode=UNSUPPORTED_MEDIA_TYPE retryable=False failures=[]
+- error_taxonomy_missing_source_url: category=VALIDATION_ERROR status=400 reasonCode=MISSING_SOURCE_URL retryable=False failures=[]
+- error_taxonomy_unsafe_placeholder_url: category=UNSAFE_URL status=400 reasonCode=UNSAFE_PLACEHOLDER_URL retryable=False failures=[]
+- error_taxonomy_adapter_denied: category=ADAPTER_DENIED status=403 reasonCode=ADAPTER_DENIED retryable=False failures=[]
+- error_taxonomy_response_body_rejected: category=BODY_REJECTED status=502 reasonCode=RESPONSE_BODY_REJECTED retryable=True failures=[]
+- error_taxonomy_status_header_rejected: category=HEADER_REJECTED status=502 reasonCode=STATUS_HEADER_REJECTED retryable=True failures=[]
+- error_taxonomy_unknown_route: category=NOT_FOUND status=404 reasonCode=UNKNOWN_ROUTE retryable=False failures=[]
+- error_taxonomy_method_not_allowed: category=METHOD_NOT_ALLOWED status=405 reasonCode=METHOD_NOT_ALLOWED retryable=False failures=[]
+- error_taxonomy_internal_safe_shadow_error: category=SHADOW_INTERNAL_ERROR status=500 reasonCode=SHADOW_INTERNAL_SAFE_ERROR retryable=True failures=[]
+failures: []

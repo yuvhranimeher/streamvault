@@ -1,0 +1,20 @@
+Status: PASS
+mode: read-only inactive playback route implementation shadow JS vs Haskell comparison
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+node_available: true
+ghc_available: true
+haskell_compile: passed
+haskell_run: passed
+javascript_run: passed
+normalized_compare: passed
+fixture_path: tools/playback-parity-v1/inactive-playback-route-implementation-shadow-fixtures.json
+haskell_shadow: tools/playback-parity-v1/InactivePlaybackRouteImplementationShadow.hs
+javascript_shadow: tools/playback-parity-v1/inactive_playback_route_implementation_shadow_js.js
+haskell_decision_count: 12
+javascript_decision_count: 12
+failures: []

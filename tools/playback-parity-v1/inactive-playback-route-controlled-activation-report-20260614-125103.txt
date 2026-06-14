@@ -1,0 +1,13 @@
+Status: PASS
+mode: controlled inactive Haskell playback activation gate
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed_when_flag_off: no
+feature_flag: STREAMVAULT_INACTIVE_HASKELL_PLAYBACK_ROUTE
+default: off
+mount_path: /api/playback/inactive-haskell
+node_gate_stdout:
+CONTROLLED_ACTIVATION_GATE_PASS
+failures:
+[]

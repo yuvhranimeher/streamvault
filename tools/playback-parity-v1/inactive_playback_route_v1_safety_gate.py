@@ -57,6 +57,11 @@ ALLOWED_NPM_SCRIPTS = {
         "&& python3 tools/playback-parity-v1/inactive_playback_route_error_taxonomy_fixture_coverage_audit.py --write-report "
         "&& python3 tools/playback-parity-v1/inactive_playback_route_error_taxonomy_safety_gate.py --write-report"
     ),
+    "test:playback-inactive-route-final-readiness": (
+        "python3 tools/playback-parity-v1/inactive_playback_route_final_readiness_js_vs_hs_compare.py --write-report "
+        "&& python3 tools/playback-parity-v1/inactive_playback_route_final_readiness_safety_gate.py --write-report "
+        "&& python3 tools/playback-parity-v1/inactive_playback_route_final_readiness_report.py --write-report"
+    ),
 }
 
 ALLOWED_INACTIVE_ROUTE_FILES = {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify inactive playback route error taxonomy parity remains shadow-only."""
+"""Verify inactive playback route final readiness remains shadow-only."""
 
 from __future__ import annotations
 
@@ -16,19 +16,18 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parents[2]
 TOOL_DIR = ROOT / "tools" / "playback-parity-v1"
 BASE_BRANCH = "haskell-playback-inactive-route-fixture-coverage-20260613-003827"
-HS_PATH = TOOL_DIR / "InactivePlaybackRouteErrorTaxonomy.hs"
-JS_PATH = TOOL_DIR / "inactive_playback_route_error_taxonomy_shadow_js.js"
-FIXTURE_PATH = TOOL_DIR / "inactive-playback-route-error-taxonomy-fixtures.json"
+MANIFEST_PATH = TOOL_DIR / "inactive-playback-route-final-readiness-fixtures.json"
+CONTRACT_MD_PATH = TOOL_DIR / "inactive-playback-route-final-readiness-contract.md"
+CONTRACT_JSON_PATH = TOOL_DIR / "inactive-playback-route-final-readiness-contract.json"
+HS_PATH = TOOL_DIR / "InactivePlaybackRouteFinalReadiness.hs"
+JS_PATH = TOOL_DIR / "inactive_playback_route_final_readiness_shadow_js.js"
+COMPARE_PATH = TOOL_DIR / "inactive_playback_route_final_readiness_js_vs_hs_compare.py"
+SAFETY_PATH = TOOL_DIR / "inactive_playback_route_final_readiness_safety_gate.py"
+REPORT_SCRIPT_PATH = TOOL_DIR / "inactive_playback_route_final_readiness_report.py"
 PACKAGE_PATH = ROOT / "package.json"
 PACKAGE_LOCK_PATH = ROOT / "package-lock.json"
 
-ALLOWED_NEW_NPM_SCRIPTS = {
-    "test:playback-inactive-route-error-taxonomy": (
-        "python3 tools/playback-parity-v1/inactive_playback_route_error_taxonomy_js_vs_hs_compare.py --write-report "
-        "&& python3 tools/playback-parity-v1/inactive_playback_route_error_taxonomy_envelope_gate.py --write-report "
-        "&& python3 tools/playback-parity-v1/inactive_playback_route_error_taxonomy_fixture_coverage_audit.py --write-report "
-        "&& python3 tools/playback-parity-v1/inactive_playback_route_error_taxonomy_safety_gate.py --write-report"
-    ),
+FINAL_NPM_SCRIPT = {
     "test:playback-inactive-route-final-readiness": (
         "python3 tools/playback-parity-v1/inactive_playback_route_final_readiness_js_vs_hs_compare.py --write-report "
         "&& python3 tools/playback-parity-v1/inactive_playback_route_final_readiness_safety_gate.py --write-report "
@@ -57,6 +56,14 @@ ACTIVE_RUNTIME_PREFIXES = (
     "routes/",
     "src/",
 )
+ALLOWED_CHANGED_PREFIXES = (
+    "tools/playback-parity-v1/",
+)
+ALLOWED_CHANGED_FILES = {
+    "package.json",
+    "package-lock.json",
+}
+EXPECTED_COMPONENTS = {"adapter", "response_body", "status_header", "error_taxonomy"}
 ACTIVE_ROUTE_RE = re.compile(
     r"\b(?:app|router)\s*\.\s*(?:get|post|put|patch|delete|all|use)\s*\(",
     re.IGNORECASE,
@@ -79,7 +86,7 @@ WORKFLOW_WRITE_RE = re.compile(r"(?m)^\s*(?:contents|pull-requests|issues|action
 
 def report_path() -> Path:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    return TOOL_DIR / f"inactive-playback-route-error-taxonomy-safety-report-{stamp}.txt"
+    return TOOL_DIR / f"inactive-playback-route-final-readiness-safety-report-{stamp}.txt"
 
 
 def run_git(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -105,13 +112,15 @@ def base_ref() -> str:
 
 def changed_files(base: str) -> list[str]:
     result = run_git(["diff", "--name-only", f"{base}...HEAD"])
-    if result.returncode != 0:
-        return []
-    files = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    files = [line.strip() for line in result.stdout.splitlines() if line.strip()] if result.returncode == 0 else []
     status = run_git(["status", "--short"])
     for line in status.stdout.splitlines():
         if line.startswith("?? "):
             files.append(line[3:].strip())
+        elif len(line) > 3 and line[2] == " ":
+            files.append(line[3:].strip())
+        elif len(line) > 2 and line[1] == " ":
+            files.append(line[2:].strip())
     return sorted(set(files))
 
 
@@ -144,13 +153,11 @@ def file_at(ref_name: str, path: str) -> str | None:
     return result.stdout
 
 
-def read_json(text: str | None, path: Path) -> tuple[dict[str, Any] | None, str | None]:
+def read_json(text: str | None, path: Path) -> tuple[Any | None, str | None]:
     try:
         parsed = json.loads(path.read_text(encoding="utf-8") if text is None else text)
     except (OSError, json.JSONDecodeError) as exc:
         return None, str(exc)
-    if not isinstance(parsed, dict):
-        return None, "expected top-level object"
     return parsed, None
 
 
@@ -168,11 +175,12 @@ def active_runtime_files() -> list[str]:
 def active_reference_failures() -> list[str]:
     failures: list[str] = []
     needles = [
-        "InactivePlaybackRouteErrorTaxonomy",
-        "inactive_playback_route_error_taxonomy",
-        "inactive-playback-route-error-taxonomy",
-        "error-taxonomy",
-        "error_taxonomy",
+        "InactivePlaybackRouteFinalReadiness",
+        "inactive_playback_route_final_readiness",
+        "inactive-playback-route-final-readiness",
+        "final-readiness",
+        "final_readiness",
+        "playback-route-shadow",
     ]
     for path in active_runtime_files():
         full_path = ROOT / path
@@ -183,7 +191,7 @@ def active_reference_failures() -> list[str]:
             continue
         for needle in needles:
             if needle in text:
-                failures.append(f"active runtime references error taxonomy shadow {needle}: {path}")
+                failures.append(f"active runtime references final readiness shadow {needle}: {path}")
     return failures
 
 
@@ -191,7 +199,7 @@ def package_failures(base: str) -> list[str]:
     failures: list[str] = []
     base_pkg, base_err = read_json(file_at(base, "package.json"), PACKAGE_PATH)
     head_pkg, head_err = read_json(None, PACKAGE_PATH)
-    if base_err or head_err or base_pkg is None or head_pkg is None:
+    if base_err or head_err or not isinstance(base_pkg, dict) or not isinstance(head_pkg, dict):
         return [f"package.json could not be parsed: base={base_err}, head={head_err}"]
 
     for key in ("version", "dependencies", "devDependencies", "optionalDependencies", "peerDependencies"):
@@ -201,16 +209,25 @@ def package_failures(base: str) -> list[str]:
     base_scripts = dict(base_pkg.get("scripts", {}))
     head_scripts = dict(head_pkg.get("scripts", {}))
     expected_scripts = dict(base_scripts)
-    for script_name, script_value in ALLOWED_NEW_NPM_SCRIPTS.items():
+    for script_name, script_value in FINAL_NPM_SCRIPT.items():
         if script_name in head_scripts:
             expected_scripts[script_name] = script_value
     if head_scripts != expected_scripts:
-        failures.append("package.json scripts changed beyond inactive error taxonomy npm script")
+        failures.append("package.json scripts changed beyond inactive final readiness npm script")
 
     if PACKAGE_LOCK_PATH.exists():
         lock_diff = run_git(["diff", "--name-only", f"{base}...HEAD", "--", "package-lock.json"])
         if lock_diff.returncode == 0 and lock_diff.stdout.strip():
             failures.append("package-lock.json changed")
+    return failures
+
+
+def changed_path_failures(files: list[str]) -> list[str]:
+    failures: list[str] = []
+    for path in files:
+        if path in ALLOWED_CHANGED_FILES or path.startswith(ALLOWED_CHANGED_PREFIXES):
+            continue
+        failures.append(f"changed file outside final readiness allowed scope: {path}")
     return failures
 
 
@@ -229,7 +246,7 @@ def diff_safety_failures(base: str, files: list[str]) -> list[str]:
             continue
         if path.endswith((".md", ".txt", ".json")):
             continue
-        if path == "package.json" and any(script_name in line for script_name in ALLOWED_NEW_NPM_SCRIPTS):
+        if path == "package.json" and any(script_name in line for script_name in FINAL_NPM_SCRIPT):
             continue
 
         if SERVER_START_RE.search(line):
@@ -246,54 +263,114 @@ def diff_safety_failures(base: str, files: list[str]) -> list[str]:
     return failures
 
 
-def fixture_failures() -> list[str]:
+def manifest_failures() -> list[str]:
     failures: list[str] = []
-    try:
-        fixtures = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        return [f"fixtures could not be parsed: {exc}"]
-    if not isinstance(fixtures, list):
-        return ["fixtures must be a JSON array"]
+    manifest, err = read_json(None, MANIFEST_PATH)
+    if err or not isinstance(manifest, list):
+        return [f"final readiness fixture manifest could not be parsed: {err or 'expected array'}"]
 
-    for fixture in fixtures:
-        if not isinstance(fixture, dict):
-            failures.append("fixture contains non-object entry")
+    seen_components: set[str] = set()
+    required_fields = [
+        "component",
+        "displayName",
+        "requiredStatus",
+        "parityGate",
+        "fixtureGate",
+        "safetyGate",
+        "fixtureFile",
+        "contractFile",
+        "fixtureSafety",
+    ]
+    for entry in manifest:
+        if not isinstance(entry, dict):
+            failures.append("final readiness manifest contains non-object entry")
             continue
-        fixture_id = str(fixture.get("fixtureId") or "unknown")
-        stream_url = str(fixture.get("streamUrl") or "")
-        reason = str(fixture.get("expectedReasonCode") or "")
-        if "localhost" in stream_url or "127.0.0.1" in stream_url:
-            failures.append(f"{fixture_id}: localhost fixture URL is forbidden")
-        if stream_url.startswith("placeholder://"):
-            if reason != "UNSAFE_PLACEHOLDER_URL":
-                failures.append(f"{fixture_id}: placeholder URL must be an unsafe placeholder fixture")
+        component = str(entry.get("component") or "")
+        seen_components.add(component)
+        if entry.get("requiredStatus") != "PASS":
+            failures.append(f"{component}: requiredStatus must be PASS")
+        for field in required_fields:
+            value = entry.get(field)
+            if not isinstance(value, str):
+                failures.append(f"{component}: {field} must be a string")
+        for field in ["parityGate", "fixtureGate", "safetyGate", "fixtureFile", "contractFile"]:
+            value = entry.get(field)
+            if isinstance(value, str) and value and not (ROOT / value).exists():
+                failures.append(f"{component}: missing manifest file {field}: {value}")
+    if seen_components != EXPECTED_COMPONENTS:
+        failures.append(f"final readiness components mismatch: {sorted(seen_components)}")
+    return failures
+
+
+def collect_url_values(value: Any) -> list[str]:
+    values: list[str] = []
+    if isinstance(value, dict):
+        for nested in value.values():
+            values.extend(collect_url_values(nested))
+    elif isinstance(value, list):
+        for nested in value:
+            values.extend(collect_url_values(nested))
+    elif isinstance(value, str) and "://" in value:
+        values.append(value)
+    return values
+
+
+def fixture_safety_failures() -> list[str]:
+    failures: list[str] = []
+    manifest, err = read_json(None, MANIFEST_PATH)
+    if err or not isinstance(manifest, list):
+        return [f"cannot inspect final fixture manifest URLs: {err or 'expected array'}"]
+
+    for entry in manifest:
+        if not isinstance(entry, dict):
             continue
-        if stream_url.startswith("local://") or stream_url == "":
+        fixture_file = entry.get("fixtureFile")
+        component = str(entry.get("component") or "unknown")
+        if not isinstance(fixture_file, str):
             continue
-        parsed = urlparse(stream_url)
-        if parsed.scheme in {"http", "https", "ftp"}:
-            if not (parsed.hostname or "").endswith(".example.test"):
-                failures.append(f"{fixture_id}: non-placeholder URL host must end with .example.test")
-        else:
-            failures.append(f"{fixture_id}: unsupported fixture URL scheme: {stream_url}")
+        fixture_path = ROOT / fixture_file
+        fixtures, fixture_err = read_json(None, fixture_path)
+        if fixture_err:
+            failures.append(f"{component}: fixture file could not be parsed: {fixture_err}")
+            continue
+        fixture_items = fixtures if isinstance(fixtures, list) else [fixtures]
+        for index, fixture in enumerate(fixture_items):
+            marker = json.dumps(fixture, sort_keys=True).lower()
+            for url_value in collect_url_values(fixture):
+                label = f"{component}:{index}:{url_value}"
+                if "localhost" in url_value or "127.0.0.1" in url_value:
+                    failures.append(f"{label}: localhost or loopback URL is forbidden")
+                    continue
+                parsed = urlparse(url_value)
+                if parsed.scheme == "local":
+                    continue
+                if parsed.scheme == "placeholder":
+                    if "unsafe" not in marker:
+                        failures.append(f"{label}: placeholder URL must be an explicit unsafe fixture")
+                    continue
+                if parsed.scheme in {"http", "https", "ftp"}:
+                    if not (parsed.hostname or "").endswith(".example.test"):
+                        failures.append(f"{label}: URL host must end with .example.test")
+                    continue
+                failures.append(f"{label}: unsupported fixture URL scheme")
     return failures
 
 
 def shadow_file_failures() -> list[str]:
     failures: list[str] = []
-    required = [HS_PATH, JS_PATH, FIXTURE_PATH]
+    required = [MANIFEST_PATH, CONTRACT_MD_PATH, CONTRACT_JSON_PATH, HS_PATH, JS_PATH, COMPARE_PATH, SAFETY_PATH, REPORT_SCRIPT_PATH]
     for path in required:
         if not path.exists():
             failures.append(f"missing required file: {path.relative_to(ROOT)}")
     if HS_PATH.exists():
         text = HS_PATH.read_text(encoding="utf-8", errors="ignore")
-        if "INACTIVE SHADOW-ONLY ROUTE ERROR TAXONOMY" not in text:
-            failures.append("Haskell error taxonomy shadow banner missing")
+        if "INACTIVE SHADOW-ONLY ROUTE FINAL READINESS" not in text:
+            failures.append("Haskell final readiness shadow banner missing")
     if JS_PATH.exists():
         text = JS_PATH.read_text(encoding="utf-8", errors="ignore")
         for forbidden in ["listen(", "fetch(", "spawn(", "exec(", "execFile("]:
             if forbidden in text:
-                failures.append(f"JS error taxonomy shadow contains forbidden token: {forbidden}")
+                failures.append(f"JS final readiness shadow contains forbidden token: {forbidden}")
     return failures
 
 
@@ -302,16 +379,18 @@ def main() -> int:
     base = base_ref()
     files = changed_files(base)
     failures: list[str] = []
+    failures.extend(changed_path_failures(files))
     failures.extend(diff_safety_failures(base, files))
     failures.extend(active_reference_failures())
     failures.extend(package_failures(base))
-    failures.extend(fixture_failures())
+    failures.extend(manifest_failures())
+    failures.extend(fixture_safety_failures())
     failures.extend(shadow_file_failures())
 
     ok = not failures
     lines = [
         f"Status: {'PASS' if ok else 'FAIL'}",
-        "mode: read-only inactive playback route error taxonomy safety gate",
+        "mode: read-only inactive playback route final readiness safety gate",
         "server_started: no",
         "network_called: no",
         "ffmpeg_started: no",
@@ -319,10 +398,11 @@ def main() -> int:
         "active_routes_added: no",
         "inactive_route_wired: no",
         "frontend_playback_changed: no",
-        "localhost_url_activated: no",
+        "live_url_activated: no",
+        "all_fixtures_safe: yes" if ok else "all_fixtures_safe: no",
         f"base_ref: {base}",
         f"changed_files: {files}",
-        f"allowed_new_npm_scripts: {sorted(ALLOWED_NEW_NPM_SCRIPTS)}",
+        f"allowed_new_npm_scripts: {sorted(FINAL_NPM_SCRIPT)}",
         f"active_runtime_scan_count: {len(active_runtime_files())}",
         f"failures: {failures}",
     ]

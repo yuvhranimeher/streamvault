@@ -38,6 +38,9 @@ GATES = [
     "inactive_playback_route_error_taxonomy_envelope_gate.py",
     "inactive_playback_route_error_taxonomy_fixture_coverage_audit.py",
     "inactive_playback_route_error_taxonomy_safety_gate.py",
+    "inactive_playback_route_final_readiness_js_vs_hs_compare.py",
+    "inactive_playback_route_final_readiness_safety_gate.py",
+    "inactive_playback_route_final_readiness_report.py",
     "playback_route_contract_crosscheck.py",
     "playback_route_contract_js_vs_hs_compare.py",
     "playback_route_shadow_full_gate.py",
@@ -74,6 +77,9 @@ REPORTS = [
     ("inactive_route_error_taxonomy_envelope_report", "inactive-playback-route-error-taxonomy-envelope-report-*.txt"),
     ("inactive_route_error_taxonomy_fixture_coverage_report", "inactive-playback-route-error-taxonomy-fixture-coverage-report-*.txt"),
     ("inactive_route_error_taxonomy_safety_report", "inactive-playback-route-error-taxonomy-safety-report-*.txt"),
+    ("inactive_route_final_readiness_compare_report", "inactive-playback-route-final-readiness-js-vs-hs-report-*.txt"),
+    ("inactive_route_final_readiness_safety_report", "inactive-playback-route-final-readiness-safety-report-*.txt"),
+    ("inactive_route_final_readiness_report", "inactive-playback-route-final-readiness-report-*.txt"),
     ("route_crosscheck_report", "playback-route-contract-crosscheck-report-*.txt"),
 ]
 
@@ -88,6 +94,7 @@ NPM_SCRIPTS = [
     "test:playback-inactive-route-response-body",
     "test:playback-inactive-route-status-headers",
     "test:playback-inactive-route-error-taxonomy",
+    "test:playback-inactive-route-final-readiness",
 ]
 
 
@@ -206,6 +213,7 @@ def main() -> int:
         "reviewer_next_steps:",
         "- Run npm run test:playback-shadow.",
         "- Run npm run test:playback-shadow-review.",
+        "- Run npm run test:playback-inactive-route-final-readiness.",
         "- Run npm run collect:playback-shadow-artifacts.",
         "- Run npm run report:playback-shadow-artifacts.",
         "- Inspect tools/playback-parity-v1/README.md and playback-shadow-artifact-inspection.md.",

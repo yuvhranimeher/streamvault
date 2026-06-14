@@ -1,0 +1,23 @@
+{
+  "contractId": "inactive-playback-route-final-readiness-v1",
+  "mode": "read-only shadow-only inactive playback route readiness",
+  "requiredParityStatuses": [
+    "adapter parity PASS",
+    "response body parity PASS",
+    "status/header parity PASS",
+    "error taxonomy parity PASS"
+  ],
+  "requiredSafetyStatuses": [
+    "no active runtime wiring",
+    "no live URL activation",
+    "no frontend/server behavior changes",
+    "all fixtures are safe"
+  ],
+  "fixtureManifest": "tools/playback-parity-v1/inactive-playback-route-final-readiness-fixtures.json",
+  "javascriptAggregator": "tools/playback-parity-v1/inactive_playback_route_final_readiness_shadow_js.js",
+  "haskellAggregator": "tools/playback-parity-v1/InactivePlaybackRouteFinalReadiness.hs",
+  "comparator": "tools/playback-parity-v1/inactive_playback_route_final_readiness_js_vs_hs_compare.py",
+  "safetyGate": "tools/playback-parity-v1/inactive_playback_route_final_readiness_safety_gate.py",
+  "reportGenerator": "tools/playback-parity-v1/inactive_playback_route_final_readiness_report.py",
+  "npmScript": "test:playback-inactive-route-final-readiness"
+}

@@ -1,7 +1,7 @@
 {
   "mode": "read-only playback shadow freeze manifest",
   "baseBranch": "haskell-playback-inactive-route-fixture-coverage-20260613-003827",
-  "nextAllowedBranchType": "inactive Haskell playback route implementation",
+  "nextAllowedBranchType": "controlled inactive Haskell playback route activation",
   "frozenFixtureFiles": [
     "tools/playback-parity-v1/playback-planner-fixtures.json",
     "tools/playback-parity-v1/playback-route-contract-fixtures.json",
@@ -24,7 +24,13 @@
     "tools/playback-parity-v1/inactive-playback-route-final-readiness-contract.md",
     "tools/playback-parity-v1/inactive-playback-route-final-readiness-contract.json",
     "tools/playback-parity-v1/inactive-playback-route-implementation-shadow-contract.md",
-    "tools/playback-parity-v1/inactive-playback-route-implementation-shadow-contract.json"
+    "tools/playback-parity-v1/inactive-playback-route-implementation-shadow-contract.json",
+    "tools/playback-parity-v1/inactive-playback-route-activation-plan-contract.md",
+    "tools/playback-parity-v1/inactive-playback-route-activation-plan-contract.json",
+    "tools/playback-parity-v1/inactive-playback-route-activation-checklist.md",
+    "tools/playback-parity-v1/inactive-playback-route-activation-runtime-boundary.json",
+    "tools/playback-parity-v1/inactive-playback-route-activation-rollback-plan.md",
+    "tools/playback-parity-v1/inactive-playback-route-activation-risk-matrix.json"
   ],
   "frozenHaskellPlannerFiles": [
     "tools/playback-parity-v1/PlaybackShadowPlanner.hs",
@@ -79,6 +85,10 @@
     "tools/playback-parity-v1/inactive_playback_route_implementation_shadow_fixture_coverage_audit.py",
     "tools/playback-parity-v1/inactive_playback_route_implementation_shadow_safety_gate.py",
     "tools/playback-parity-v1/inactive_playback_route_implementation_shadow_report.py",
+    "tools/playback-parity-v1/inactive_playback_route_activation_plan_prerequisites.py",
+    "tools/playback-parity-v1/inactive_playback_route_activation_plan_dependency_checker.py",
+    "tools/playback-parity-v1/inactive_playback_route_activation_plan_safety_gate.py",
+    "tools/playback-parity-v1/inactive_playback_route_activation_plan_report.py",
     "tools/playback-parity-v1/playback_route_contract_crosscheck.py",
     "tools/playback-parity-v1/playback_route_shadow_full_gate.py",
     "tools/playback-parity-v1/run_playback_shadow_ci.py",
@@ -100,7 +110,8 @@
     "test:playback-inactive-route-status-headers",
     "test:playback-inactive-route-error-taxonomy",
     "test:playback-inactive-route-final-readiness",
-    "test:playback-inactive-route-implementation-shadow"
+    "test:playback-inactive-route-implementation-shadow",
+    "test:playback-inactive-route-activation-plan"
   ],
   "frozenWorkflowFile": ".github/workflows/playback-shadow-ci.yml",
   "acceptedRouteTargets": [
@@ -130,6 +141,7 @@
     "inactive route error taxonomy parity v1 is shadow-only",
     "inactive route final readiness parity v1 is shadow-only",
     "inactive route implementation shadow v1 is shadow-only",
+    "inactive route activation plan v1 is planning-only",
     "desktop direct-play original FTP preserved",
     "mobile HLS only when required",
     "no automatic desktop transcoding"

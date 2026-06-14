@@ -32,6 +32,10 @@ REPORTS = [
     ("implementation-shadow-fixture-coverage", "inactive-playback-route-implementation-shadow-fixture-coverage-report-*.txt"),
     ("implementation-shadow-safety", "inactive-playback-route-implementation-shadow-safety-report-*.txt"),
     ("implementation-shadow-report", "inactive-playback-route-implementation-shadow-report-*.txt"),
+    ("activation-plan-prerequisites", "inactive-playback-route-activation-plan-prerequisites-report-*.txt"),
+    ("activation-plan-dependency", "inactive-playback-route-activation-plan-dependency-report-*.txt"),
+    ("activation-plan-safety", "inactive-playback-route-activation-plan-safety-report-*.txt"),
+    ("activation-plan-report", "inactive-playback-route-activation-plan-report-*.txt"),
 ]
 
 

@@ -1,0 +1,48 @@
+{
+  "matrixId": "inactive-playback-route-activation-risk-matrix-v1",
+  "planningOnly": true,
+  "risks": [
+    {
+      "id": "desktop-direct-play-regression",
+      "severity": "high",
+      "description": "Desktop FTP direct-play could accidentally switch to a transcode path.",
+      "mitigation": "Feature flag defaults off; activation smoke tests must verify proxy/raw/direct source preservation.",
+      "verification": "desktop FTP direct-play smoke test and no desktop FFmpeg assertion"
+    },
+    {
+      "id": "mobile-hls-regression",
+      "severity": "high",
+      "description": "Mobile HLS selection could change for clients that still require HLS.",
+      "mitigation": "Preserve existing mobile client detection and run mobile HLS smoke tests before canary.",
+      "verification": "mobile FTP HLS smoke test"
+    },
+    {
+      "id": "ffmpeg-desktop-activation",
+      "severity": "high",
+      "description": "Desktop direct playback could start FFmpeg when direct playback should be preserved.",
+      "mitigation": "Activation must keep desktop direct-play on existing direct/proxy/raw behavior unless source-seek is explicitly required.",
+      "verification": "no FFmpeg process during desktop direct-play smoke test"
+    },
+    {
+      "id": "live-url-activation",
+      "severity": "medium",
+      "description": "Planning or activation could accidentally alter live playback URLs.",
+      "mitigation": "Activation plan excludes live-specific changes and requires unchanged live smoke test behavior.",
+      "verification": "live playback unchanged smoke test"
+    },
+    {
+      "id": "runtime-wiring-without-flag",
+      "severity": "high",
+      "description": "A future activation could register the route without a fail-closed feature flag.",
+      "mitigation": "Boundary manifest requires STREAMVAULT_INACTIVE_HASKELL_PLAYBACK_ROUTE and flag-off behavior.",
+      "verification": "flag-off smoke test and runtime boundary review"
+    },
+    {
+      "id": "rollback-path-unclear",
+      "severity": "medium",
+      "description": "Operators could lack a fast emergency disable path.",
+      "mitigation": "Rollback plan defines flag-off first, revert second.",
+      "verification": "emergency disable checklist item completed before activation"
+    }
+  ]
+}

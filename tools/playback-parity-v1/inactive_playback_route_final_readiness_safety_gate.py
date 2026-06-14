@@ -24,6 +24,8 @@ CONTROLLED_ACTIVATION_ALLOWED_FILES = {
     "routes/inactive-playback-route-haskell.js",
     "tools/playback-parity-v1/inactive_playback_route_controlled_activation_gate.py",
     "tools/playback-parity-v1/test_inactive_playback_route_controlled_activation.js",
+    "tools/playback-parity-v1/test_inactive_playback_route_controlled_activation_smoke.js",
+    "tools/playback-parity-v1/inactive_playback_route_controlled_activation_smoke_gate.py",
     "tools/playback-parity-v1/inactive_playback_route_status_header_safety_gate.py",
     "tools/playback-parity-v1/inactive_playback_route_response_body_safety_gate.py",
     "tools/playback-parity-v1/inactive_playback_route_implementation_shadow_safety_gate.py",
@@ -48,6 +50,8 @@ def is_controlled_activation_allowed_file(path: str) -> bool:
     if path in CONTROLLED_ACTIVATION_ALLOWED_FILES:
         return True
     if path.startswith("tools/playback-parity-v1/inactive-playback-route-controlled-activation-report-"):
+        return True
+    if path.startswith("tools/playback-parity-v1/inactive-playback-route-controlled-activation-smoke-report-"):
         return True
     if path.startswith("tools/playback-parity-v1/__pycache__/"):
         return True

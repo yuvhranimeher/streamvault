@@ -79,6 +79,18 @@ COMMANDS = [
         [sys.executable, str(TOOL_DIR / "inactive_playback_route_error_taxonomy_safety_gate.py"), "--write-report"],
     ),
     (
+        "inactive_route_final_readiness_js_vs_hs_compare",
+        [sys.executable, str(TOOL_DIR / "inactive_playback_route_final_readiness_js_vs_hs_compare.py"), "--write-report"],
+    ),
+    (
+        "inactive_route_final_readiness_safety_gate",
+        [sys.executable, str(TOOL_DIR / "inactive_playback_route_final_readiness_safety_gate.py"), "--write-report"],
+    ),
+    (
+        "inactive_route_final_readiness_report",
+        [sys.executable, str(TOOL_DIR / "inactive_playback_route_final_readiness_report.py"), "--write-report"],
+    ),
+    (
         "workflow_safety_audit",
         [sys.executable, str(TOOL_DIR / "playback_shadow_workflow_safety_audit.py"), "--write-report"],
     ),

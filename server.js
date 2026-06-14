@@ -8,6 +8,7 @@ const { spawn } = require('child_process');
 
 const tracker         = require('./middleware/tracker');
 const dashboardRoutes = require('./routes/dashboard');
+const { createInactivePlaybackRouteHaskellRouter } = require('./routes/inactive-playback-route-haskell');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -1586,6 +1587,7 @@ app.use((_, res, next) => {
   next();
 });
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/playback/inactive-haskell', createInactivePlaybackRouteHaskellRouter());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── Poster proxy/cache route used by app.js svOptimizeImageUrl() ──────────────

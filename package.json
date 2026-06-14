@@ -34,7 +34,8 @@
     "test:playback-inactive-route-activation-plan": "python3 tools/playback-parity-v1/inactive_playback_route_activation_plan_prerequisites.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_activation_plan_dependency_checker.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_activation_plan_safety_gate.py --write-report && python3 tools/playback-parity-v1/inactive_playback_route_activation_plan_report.py --write-report",
     "report:playback-inactive-route-fixtures": "python3 tools/playback-parity-v1/inactive_playback_route_fixture_pr_summary.py --write-report",
     "test:playback-inactive-route-fixture-review": "python3 tools/playback-parity-v1/run_inactive_route_fixture_review_pack.py --write-report",
-    "details:shadow:summary": "node tools/details-parity-v1/summarize-details-shadow-output.js"
+    "details:shadow:summary": "node tools/details-parity-v1/summarize-details-shadow-output.js",
+    "test:playback-inactive-route-controlled-activation": "python3 tools/playback-parity-v1/inactive_playback_route_controlled_activation_gate.py"
   },
   "dependencies": {
     "axios": "^1.15.0",

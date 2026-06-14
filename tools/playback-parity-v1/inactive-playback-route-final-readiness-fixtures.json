@@ -46,5 +46,17 @@
     "fixtureFile": "tools/playback-parity-v1/inactive-playback-route-error-taxonomy-fixtures.json",
     "contractFile": "tools/playback-parity-v1/inactive-playback-route-error-taxonomy-contract.json",
     "fixtureSafety": "example-test-local-or-placeholder-only"
+  },
+  {
+    "component": "implementation_shadow",
+    "displayName": "Implementation shadow parity",
+    "requiredStatus": "PASS",
+    "parityGate": "tools/playback-parity-v1/inactive_playback_route_implementation_shadow_js_vs_hs_compare.py",
+    "envelopeGate": "tools/playback-parity-v1/inactive_playback_route_implementation_shadow_envelope_gate.py",
+    "fixtureGate": "tools/playback-parity-v1/inactive_playback_route_implementation_shadow_fixture_coverage_audit.py",
+    "safetyGate": "tools/playback-parity-v1/inactive_playback_route_implementation_shadow_safety_gate.py",
+    "fixtureFile": "tools/playback-parity-v1/inactive-playback-route-implementation-shadow-fixtures.json",
+    "contractFile": "tools/playback-parity-v1/inactive-playback-route-implementation-shadow-contract.json",
+    "fixtureSafety": "example-test-local-or-placeholder-only"
   }
 ]

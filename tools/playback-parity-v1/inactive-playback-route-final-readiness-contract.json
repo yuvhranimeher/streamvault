@@ -5,7 +5,8 @@
     "adapter parity PASS",
     "response body parity PASS",
     "status/header parity PASS",
-    "error taxonomy parity PASS"
+    "error taxonomy parity PASS",
+    "implementation shadow parity PASS"
   ],
   "requiredSafetyStatuses": [
     "no active runtime wiring",
@@ -19,5 +20,6 @@
   "comparator": "tools/playback-parity-v1/inactive_playback_route_final_readiness_js_vs_hs_compare.py",
   "safetyGate": "tools/playback-parity-v1/inactive_playback_route_final_readiness_safety_gate.py",
   "reportGenerator": "tools/playback-parity-v1/inactive_playback_route_final_readiness_report.py",
-  "npmScript": "test:playback-inactive-route-final-readiness"
+  "npmScript": "test:playback-inactive-route-final-readiness",
+  "implementationShadowNpmScript": "test:playback-inactive-route-implementation-shadow"
 }

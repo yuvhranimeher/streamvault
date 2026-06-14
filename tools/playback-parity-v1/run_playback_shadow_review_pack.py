@@ -79,6 +79,26 @@ COMMANDS = [
         [sys.executable, str(TOOL_DIR / "inactive_playback_route_error_taxonomy_safety_gate.py"), "--write-report"],
     ),
     (
+        "inactive_route_implementation_shadow_js_vs_hs_compare",
+        [sys.executable, str(TOOL_DIR / "inactive_playback_route_implementation_shadow_js_vs_hs_compare.py"), "--write-report"],
+    ),
+    (
+        "inactive_route_implementation_shadow_envelope_gate",
+        [sys.executable, str(TOOL_DIR / "inactive_playback_route_implementation_shadow_envelope_gate.py"), "--write-report"],
+    ),
+    (
+        "inactive_route_implementation_shadow_fixture_coverage_audit",
+        [sys.executable, str(TOOL_DIR / "inactive_playback_route_implementation_shadow_fixture_coverage_audit.py"), "--write-report"],
+    ),
+    (
+        "inactive_route_implementation_shadow_safety_gate",
+        [sys.executable, str(TOOL_DIR / "inactive_playback_route_implementation_shadow_safety_gate.py"), "--write-report"],
+    ),
+    (
+        "inactive_route_implementation_shadow_report",
+        [sys.executable, str(TOOL_DIR / "inactive_playback_route_implementation_shadow_report.py"), "--write-report"],
+    ),
+    (
         "inactive_route_final_readiness_js_vs_hs_compare",
         [sys.executable, str(TOOL_DIR / "inactive_playback_route_final_readiness_js_vs_hs_compare.py"), "--write-report"],
     ),

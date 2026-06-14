@@ -32,6 +32,13 @@ FINAL_NPM_SCRIPT = {
         "python3 tools/playback-parity-v1/inactive_playback_route_final_readiness_js_vs_hs_compare.py --write-report "
         "&& python3 tools/playback-parity-v1/inactive_playback_route_final_readiness_safety_gate.py --write-report "
         "&& python3 tools/playback-parity-v1/inactive_playback_route_final_readiness_report.py --write-report"
+    ),
+    "test:playback-inactive-route-implementation-shadow": (
+        "python3 tools/playback-parity-v1/inactive_playback_route_implementation_shadow_js_vs_hs_compare.py --write-report "
+        "&& python3 tools/playback-parity-v1/inactive_playback_route_implementation_shadow_envelope_gate.py --write-report "
+        "&& python3 tools/playback-parity-v1/inactive_playback_route_implementation_shadow_fixture_coverage_audit.py --write-report "
+        "&& python3 tools/playback-parity-v1/inactive_playback_route_implementation_shadow_safety_gate.py --write-report "
+        "&& python3 tools/playback-parity-v1/inactive_playback_route_implementation_shadow_report.py --write-report"
     )
 }
 
@@ -63,7 +70,7 @@ ALLOWED_CHANGED_FILES = {
     "package.json",
     "package-lock.json",
 }
-EXPECTED_COMPONENTS = {"adapter", "response_body", "status_header", "error_taxonomy"}
+EXPECTED_COMPONENTS = {"adapter", "response_body", "status_header", "error_taxonomy", "implementation_shadow"}
 ACTIVE_ROUTE_RE = re.compile(
     r"\b(?:app|router)\s*\.\s*(?:get|post|put|patch|delete|all|use)\s*\(",
     re.IGNORECASE,

@@ -24,6 +24,10 @@ COMMANDS = [
     ("error_taxonomy_parity", TOOL_DIR / "inactive_playback_route_error_taxonomy_js_vs_hs_compare.py"),
     ("error_taxonomy_envelope", TOOL_DIR / "inactive_playback_route_error_taxonomy_envelope_gate.py"),
     ("error_taxonomy_fixture_coverage", TOOL_DIR / "inactive_playback_route_error_taxonomy_fixture_coverage_audit.py"),
+    ("implementation_shadow_parity", TOOL_DIR / "inactive_playback_route_implementation_shadow_js_vs_hs_compare.py"),
+    ("implementation_shadow_envelope", TOOL_DIR / "inactive_playback_route_implementation_shadow_envelope_gate.py"),
+    ("implementation_shadow_fixture_coverage", TOOL_DIR / "inactive_playback_route_implementation_shadow_fixture_coverage_audit.py"),
+    ("implementation_shadow_safety_gate", TOOL_DIR / "inactive_playback_route_implementation_shadow_safety_gate.py"),
     ("final_readiness_js_vs_hs_compare", TOOL_DIR / "inactive_playback_route_final_readiness_js_vs_hs_compare.py"),
     ("final_readiness_safety_gate", TOOL_DIR / "inactive_playback_route_final_readiness_safety_gate.py"),
 ]
@@ -33,6 +37,8 @@ REQUIRED_COMPONENTS = {
     "response_body_parity": "response body parity PASS",
     "status_header_parity": "status/header parity PASS",
     "error_taxonomy_parity": "error taxonomy parity PASS",
+    "implementation_shadow_parity": "implementation shadow parity PASS",
+    "implementation_shadow_safety_gate": "implementation shadow safety PASS",
     "final_readiness_safety_gate": "final readiness safety PASS",
 }
 

@@ -10,6 +10,7 @@
     "tools/playback-parity-v1/inactive-playback-route-status-header-fixtures.json",
     "tools/playback-parity-v1/inactive-playback-route-error-taxonomy-fixtures.json",
     "tools/playback-parity-v1/inactive-playback-route-final-readiness-fixtures.json",
+    "tools/playback-parity-v1/inactive-playback-route-implementation-shadow-fixtures.json",
     "tools/playback-parity-v1/playback-shadow-planner-expected-output.json"
   ],
   "frozenInventoryFile": "tools/playback-parity-v1/playback-route-shadow-contract-inventory.json",
@@ -21,7 +22,9 @@
     "tools/playback-parity-v1/inactive-playback-route-error-taxonomy-contract.md",
     "tools/playback-parity-v1/inactive-playback-route-error-taxonomy-contract.json",
     "tools/playback-parity-v1/inactive-playback-route-final-readiness-contract.md",
-    "tools/playback-parity-v1/inactive-playback-route-final-readiness-contract.json"
+    "tools/playback-parity-v1/inactive-playback-route-final-readiness-contract.json",
+    "tools/playback-parity-v1/inactive-playback-route-implementation-shadow-contract.md",
+    "tools/playback-parity-v1/inactive-playback-route-implementation-shadow-contract.json"
   ],
   "frozenHaskellPlannerFiles": [
     "tools/playback-parity-v1/PlaybackShadowPlanner.hs",
@@ -30,7 +33,8 @@
     "tools/playback-parity-v1/InactivePlaybackRouteResponseBody.hs",
     "tools/playback-parity-v1/InactivePlaybackRouteStatusHeader.hs",
     "tools/playback-parity-v1/InactivePlaybackRouteErrorTaxonomy.hs",
-    "tools/playback-parity-v1/InactivePlaybackRouteFinalReadiness.hs"
+    "tools/playback-parity-v1/InactivePlaybackRouteFinalReadiness.hs",
+    "tools/playback-parity-v1/InactivePlaybackRouteImplementationShadow.hs"
   ],
   "frozenJsPlannerFiles": [
     "tools/playback-parity-v1/playback_shadow_planner_js.js",
@@ -39,7 +43,8 @@
     "tools/playback-parity-v1/inactive_playback_route_response_body_shadow_js.js",
     "tools/playback-parity-v1/inactive_playback_route_status_header_shadow_js.js",
     "tools/playback-parity-v1/inactive_playback_route_error_taxonomy_shadow_js.js",
-    "tools/playback-parity-v1/inactive_playback_route_final_readiness_shadow_js.js"
+    "tools/playback-parity-v1/inactive_playback_route_final_readiness_shadow_js.js",
+    "tools/playback-parity-v1/inactive_playback_route_implementation_shadow_js.js"
   ],
   "frozenComparatorScripts": [
     "tools/playback-parity-v1/playback_js_vs_hs_shadow_compare.py",
@@ -48,7 +53,8 @@
     "tools/playback-parity-v1/inactive_playback_route_response_body_js_vs_hs_compare.py",
     "tools/playback-parity-v1/inactive_playback_route_status_header_js_vs_hs_compare.py",
     "tools/playback-parity-v1/inactive_playback_route_error_taxonomy_js_vs_hs_compare.py",
-    "tools/playback-parity-v1/inactive_playback_route_final_readiness_js_vs_hs_compare.py"
+    "tools/playback-parity-v1/inactive_playback_route_final_readiness_js_vs_hs_compare.py",
+    "tools/playback-parity-v1/inactive_playback_route_implementation_shadow_js_vs_hs_compare.py"
   ],
   "frozenCiReviewScripts": [
     "tools/playback-parity-v1/playback_planner_fixture_schema.py",
@@ -69,6 +75,10 @@
     "tools/playback-parity-v1/inactive_playback_route_error_taxonomy_safety_gate.py",
     "tools/playback-parity-v1/inactive_playback_route_final_readiness_safety_gate.py",
     "tools/playback-parity-v1/inactive_playback_route_final_readiness_report.py",
+    "tools/playback-parity-v1/inactive_playback_route_implementation_shadow_envelope_gate.py",
+    "tools/playback-parity-v1/inactive_playback_route_implementation_shadow_fixture_coverage_audit.py",
+    "tools/playback-parity-v1/inactive_playback_route_implementation_shadow_safety_gate.py",
+    "tools/playback-parity-v1/inactive_playback_route_implementation_shadow_report.py",
     "tools/playback-parity-v1/playback_route_contract_crosscheck.py",
     "tools/playback-parity-v1/playback_route_shadow_full_gate.py",
     "tools/playback-parity-v1/run_playback_shadow_ci.py",
@@ -89,7 +99,8 @@
     "test:playback-inactive-route-response-body",
     "test:playback-inactive-route-status-headers",
     "test:playback-inactive-route-error-taxonomy",
-    "test:playback-inactive-route-final-readiness"
+    "test:playback-inactive-route-final-readiness",
+    "test:playback-inactive-route-implementation-shadow"
   ],
   "frozenWorkflowFile": ".github/workflows/playback-shadow-ci.yml",
   "acceptedRouteTargets": [
@@ -118,6 +129,7 @@
     "inactive route status/header parity v1 is shadow-only",
     "inactive route error taxonomy parity v1 is shadow-only",
     "inactive route final readiness parity v1 is shadow-only",
+    "inactive route implementation shadow v1 is shadow-only",
     "desktop direct-play original FTP preserved",
     "mobile HLS only when required",
     "no automatic desktop transcoding"

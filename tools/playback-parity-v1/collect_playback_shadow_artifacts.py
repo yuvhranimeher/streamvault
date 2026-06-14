@@ -24,6 +24,14 @@ REPORTS = [
     ("error-taxonomy-envelope", "inactive-playback-route-error-taxonomy-envelope-report-*.txt"),
     ("error-taxonomy-fixture-coverage", "inactive-playback-route-error-taxonomy-fixture-coverage-report-*.txt"),
     ("error-taxonomy-safety", "inactive-playback-route-error-taxonomy-safety-report-*.txt"),
+    ("final-readiness-compare", "inactive-playback-route-final-readiness-js-vs-hs-report-*.txt"),
+    ("final-readiness-safety", "inactive-playback-route-final-readiness-safety-report-*.txt"),
+    ("final-readiness-report", "inactive-playback-route-final-readiness-report-*.txt"),
+    ("implementation-shadow-compare", "inactive-playback-route-implementation-shadow-js-vs-hs-report-*.txt"),
+    ("implementation-shadow-envelope", "inactive-playback-route-implementation-shadow-envelope-report-*.txt"),
+    ("implementation-shadow-fixture-coverage", "inactive-playback-route-implementation-shadow-fixture-coverage-report-*.txt"),
+    ("implementation-shadow-safety", "inactive-playback-route-implementation-shadow-safety-report-*.txt"),
+    ("implementation-shadow-report", "inactive-playback-route-implementation-shadow-report-*.txt"),
 ]
 
 

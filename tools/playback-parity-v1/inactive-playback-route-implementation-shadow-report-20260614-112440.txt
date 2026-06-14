@@ -1,0 +1,138 @@
+Status: PASS
+mode: read-only inactive playback route implementation shadow report
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+frontend_playback_changed: no
+live_url_activated: no
+all_fixtures_safe: yes
+command_count: 4
+failed_commands: []
+command_summary:
+- implementation_shadow_js_vs_hs_compare: exit_code=0 Status: PASS
+- implementation_shadow_envelope_gate: exit_code=0 Status: PASS
+- implementation_shadow_fixture_coverage: exit_code=0 Status: PASS
+- implementation_shadow_safety_gate: exit_code=0 Status: PASS
+
+[implementation_shadow_js_vs_hs_compare]
+exit_code: 0
+stdout:
+Status: PASS
+mode: read-only inactive playback route implementation shadow JS vs Haskell comparison
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+node_available: true
+ghc_available: true
+haskell_compile: passed
+haskell_run: passed
+javascript_run: passed
+normalized_compare: passed
+fixture_path: tools/playback-parity-v1/inactive-playback-route-implementation-shadow-fixtures.json
+haskell_shadow: tools/playback-parity-v1/InactivePlaybackRouteImplementationShadow.hs
+javascript_shadow: tools/playback-parity-v1/inactive_playback_route_implementation_shadow_js.js
+haskell_decision_count: 12
+javascript_decision_count: 12
+failures: []
+stderr:
+(empty)
+
+[implementation_shadow_envelope_gate]
+exit_code: 0
+stdout:
+Status: PASS
+mode: read-only inactive playback route implementation shadow envelope gate
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+fixture_path: tools/playback-parity-v1/inactive-playback-route-implementation-shadow-fixtures.json
+contract_path: tools/playback-parity-v1/inactive-playback-route-implementation-shadow-contract.json
+decision_source: tools/playback-parity-v1/inactive_playback_route_implementation_shadow_js.js
+node_available: true
+js_status: passed
+fixture_count: 12
+decision_count: 12
+decision_summary:
+- implementation_movie_desktop_direct: routeDecision=accepted status=200 reasonCode=OK failures=[]
+- implementation_ftp_mobile_hls: routeDecision=accepted status=200 reasonCode=OK failures=[]
+- implementation_local_direct: routeDecision=accepted status=200 reasonCode=OK failures=[]
+- implementation_ftp_raw_range: routeDecision=accepted status=206 reasonCode=PARTIAL_CONTENT failures=[]
+- implementation_series_direct: routeDecision=accepted status=200 reasonCode=OK failures=[]
+- implementation_live_hls: routeDecision=accepted status=200 reasonCode=OK failures=[]
+- implementation_missing_id: routeDecision=rejected status=400 reasonCode=MISSING_ID failures=[]
+- implementation_unsafe_placeholder_url: routeDecision=rejected status=400 reasonCode=UNSAFE_PLACEHOLDER_URL failures=[]
+- implementation_method_not_allowed: routeDecision=rejected status=405 reasonCode=METHOD_NOT_ALLOWED failures=[]
+- implementation_response_body_rejected: routeDecision=rejected status=502 reasonCode=RESPONSE_BODY_REJECTED failures=[]
+- implementation_status_header_rejected: routeDecision=rejected status=502 reasonCode=STATUS_HEADER_REJECTED failures=[]
+- implementation_unknown_route: routeDecision=rejected status=404 reasonCode=UNKNOWN_ROUTE failures=[]
+failures: []
+stderr:
+(empty)
+
+[implementation_shadow_fixture_coverage]
+exit_code: 0
+stdout:
+Status: PASS
+mode: read-only inactive playback route implementation shadow fixture coverage audit
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+fixture_path: tools/playback-parity-v1/inactive-playback-route-implementation-shadow-fixtures.json
+contract_path: tools/playback-parity-v1/inactive-playback-route-implementation-shadow-contract.json
+haskell_shadow: tools/playback-parity-v1/InactivePlaybackRouteImplementationShadow.hs
+javascript_shadow: tools/playback-parity-v1/inactive_playback_route_implementation_shadow_js.js
+fixture_count: 12
+observed_statuses: [200, 206, 400, 404, 405, 502]
+observed_route_targets: ['/api/ftp/raw', '/api/playback/ftp', '/api/playback/local', '/api/playback/movie', '/api/playback/unknown', 'live TV m3u8 playback', 'series episode playback']
+observed_reason_codes: ['METHOD_NOT_ALLOWED', 'MISSING_ID', 'OK', 'PARTIAL_CONTENT', 'RESPONSE_BODY_REJECTED', 'STATUS_HEADER_REJECTED', 'UNKNOWN_ROUTE', 'UNSAFE_PLACEHOLDER_URL']
+coverage:
+- accepted movie route: present fixtures=['implementation_movie_desktop_direct']
+- accepted FTP mobile HLS route: present fixtures=['implementation_ftp_mobile_hls']
+- accepted local route: present fixtures=['implementation_local_direct']
+- accepted raw byte route: present fixtures=['implementation_ftp_raw_range']
+- accepted series route: present fixtures=['implementation_series_direct']
+- accepted live route: present fixtures=['implementation_live_hls']
+- missing id: present fixtures=['implementation_missing_id']
+- unsafe placeholder url: present fixtures=['implementation_unsafe_placeholder_url']
+- method not allowed: present fixtures=['implementation_method_not_allowed']
+- response body rejected: present fixtures=['implementation_response_body_rejected']
+- status header rejected: present fixtures=['implementation_status_header_rejected']
+- unknown route: present fixtures=['implementation_unknown_route']
+shadow_checks: {'haskell_exists': True, 'javascript_exists': True, 'haskell_shadow_banner': True, 'js_no_server_listen': True, 'js_no_fetch': True, 'js_no_spawn': True}
+failures: []
+stderr:
+(empty)
+
+[implementation_shadow_safety_gate]
+exit_code: 0
+stdout:
+Status: PASS
+mode: read-only inactive playback route implementation shadow safety gate
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+frontend_playback_changed: no
+live_url_activated: no
+all_fixtures_safe: yes
+base_ref: a6b1aab6aaede2641ee7526cb84cdcabbdb53601
+changed_files: ['package.json', 'tools/playback-parity-v1/InactivePlaybackRouteImplementationShadow.hs', 'tools/playback-parity-v1/collect_playback_shadow_artifacts.py', 'tools/playback-parity-v1/inactive-playback-route-adapter-js-vs-hs-report-20260614-112420.txt', 'tools/playback-parity-v1/inactive-playback-route-adapter-safety-report-20260614-112421.txt', 'tools/playback-parity-v1/inactive-playback-route-error-taxonomy-envelope-report-20260614-112432.txt', 'tools/playback-parity-v1/inactive-playback-route-error-taxonomy-fixture-coverage-report-20260614-112432.txt', 'tools/playback-parity-v1/inactive-playback-route-error-taxonomy-js-vs-hs-report-20260614-112432.txt', 'tools/playback-parity-v1/inactive-playback-route-error-taxonomy-safety-report-20260614-112433.txt', 'tools/playback-parity-v1/inactive-playback-route-final-readiness-contract.json', 'tools/playback-parity-v1/inactive-playback-route-final-readiness-contract.md', 'tools/playback-parity-v1/inactive-playback-route-final-readiness-fixtures.json', 'tools/playback-parity-v1/inactive-playback-route-final-readiness-js-vs-hs-report-20260614-112138.txt', 'tools/playback-parity-v1/inactive-playback-route-final-readiness-report-20260614-112158.txt', 'tools/playback-parity-v1/inactive-playback-route-final-readiness-safety-report-20260614-112139.txt', 'tools/playback-parity-v1/inactive-playback-route-fixture-coverage-report-20260614-112417.txt', 'tools/playback-parity-v1/inactive-playback-route-implementation-shadow-contract.json', 'tools/playback-parity-v1/inactive-playback-route-implementation-shadow-contract.md', 'tools/playback-parity-v1/inactive-playback-route-implementation-shadow-envelope-report-20260614-112130.txt', 'tools/playback-parity-v1/inactive-playback-route-implementation-shadow-envelope-report-20260614-112436.txt', 'tools/playback-parity-v1/inactive-playback-route-implementation-shadow-fixture-coverage-report-20260614-112131.txt', 'tools/playback-parity-v1/inactive-playback-route-implementation-shadow-fixture-coverage-report-20260614-112436.txt', 'tools/playback-parity-v1/inactive-playback-route-implementation-shadow-fixtures.json', 'tools/playback-parity-v1/inactive-playback-route-implementation-shadow-js-vs-hs-report-20260614-112130.txt', 'tools/playback-parity-v1/inactive-playback-route-implementation-shadow-js-vs-hs-report-20260614-112435.txt', 'tools/playback-parity-v1/inactive-playback-route-implementation-shadow-report-20260614-112134.txt', 'tools/playback-parity-v1/inactive-playback-route-implementation-shadow-safety-report-20260614-112131.txt', 'tools/playback-parity-v1/inactive-playback-route-implementation-shadow-safety-report-20260614-112436.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-envelope-report-20260614-112425.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-fixture-coverage-report-20260614-112425.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-js-vs-hs-report-20260614-112425.txt', 'tools/playback-parity-v1/inactive-playback-route-response-body-safety-report-20260614-112426.txt', 'tools/playback-parity-v1/inactive-playback-route-response-envelope-report-20260614-112418.txt', 'tools/playback-parity-v1/inactive-playback-route-status-header-envelope-report-20260614-112428.txt', 'tools/playback-parity-v1/inactive-playback-route-status-header-fixture-coverage-report-20260614-112429.txt', 'tools/playback-parity-v1/inactive-playback-route-status-header-js-vs-hs-report-20260614-112428.txt', 'tools/playback-parity-v1/inactive-playback-route-status-header-safety-report-20260614-112429.txt', 'tools/playback-parity-v1/inactive_playback_route_adapter_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_error_taxonomy_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_final_readiness_report.py', 'tools/playback-parity-v1/inactive_playback_route_final_readiness_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_implementation_shadow_envelope_gate.py', 'tools/playback-parity-v1/inactive_playback_route_implementation_shadow_fixture_coverage_audit.py', 'tools/playback-parity-v1/inactive_playback_route_implementation_shadow_js.js', 'tools/playback-parity-v1/inactive_playback_route_implementation_shadow_js_vs_hs_compare.py', 'tools/playback-parity-v1/inactive_playback_route_implementation_shadow_report.py', 'tools/playback-parity-v1/inactive_playback_route_implementation_shadow_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_response_body_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_status_header_safety_gate.py', 'tools/playback-parity-v1/inactive_playback_route_v1_safety_gate.py', 'tools/playback-parity-v1/playback-shadow-ci-report-20260614-112308.txt', 'tools/playback-parity-v1/playback-shadow-ci-report-20260614-112417.txt', 'tools/playback-parity-v1/playback-shadow-freeze-manifest.json', 'tools/playback-parity-v1/playback_shadow_artifact_manifest.py', 'tools/playback-parity-v1/playback_shadow_pr_summary.py', 'tools/playback-parity-v1/playback_shadow_readiness_index.py', 'tools/playback-parity-v1/run_playback_shadow_ci.py', 'tools/playback-parity-v1/run_playback_shadow_review_pack.py']
+allowed_new_npm_scripts: ['test:playback-inactive-route-implementation-shadow']
+active_runtime_scan_count: 28
+failures: []
+stderr:
+(empty)

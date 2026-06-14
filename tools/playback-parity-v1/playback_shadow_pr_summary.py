@@ -25,6 +25,11 @@ REPORT_PATTERNS = {
     "final_readiness_compare": "inactive-playback-route-final-readiness-js-vs-hs-report-*.txt",
     "final_readiness_safety": "inactive-playback-route-final-readiness-safety-report-*.txt",
     "final_readiness_report": "inactive-playback-route-final-readiness-report-*.txt",
+    "implementation_shadow_compare": "inactive-playback-route-implementation-shadow-js-vs-hs-report-*.txt",
+    "implementation_shadow_envelope": "inactive-playback-route-implementation-shadow-envelope-report-*.txt",
+    "implementation_shadow_fixture_coverage": "inactive-playback-route-implementation-shadow-fixture-coverage-report-*.txt",
+    "implementation_shadow_safety": "inactive-playback-route-implementation-shadow-safety-report-*.txt",
+    "implementation_shadow_report": "inactive-playback-route-implementation-shadow-report-*.txt",
 }
 
 GATE_LIST = [
@@ -43,6 +48,11 @@ GATE_LIST = [
     "inactive_playback_route_final_readiness_js_vs_hs_compare.py",
     "inactive_playback_route_final_readiness_safety_gate.py",
     "inactive_playback_route_final_readiness_report.py",
+    "inactive_playback_route_implementation_shadow_js_vs_hs_compare.py",
+    "inactive_playback_route_implementation_shadow_envelope_gate.py",
+    "inactive_playback_route_implementation_shadow_fixture_coverage_audit.py",
+    "inactive_playback_route_implementation_shadow_safety_gate.py",
+    "inactive_playback_route_implementation_shadow_report.py",
 ]
 
 
@@ -127,6 +137,16 @@ def main() -> int:
             "final_readiness_report",
         ]
     }
+    implementation_shadow_statuses = {
+        label: status_from_report(reports[label])
+        for label in [
+            "implementation_shadow_compare",
+            "implementation_shadow_envelope",
+            "implementation_shadow_fixture_coverage",
+            "implementation_shadow_safety",
+            "implementation_shadow_report",
+        ]
+    }
     failed_gates = extract_line(reports["ci_gate"], "failed_gates:")
     workflow_forbidden = extract_line(reports["workflow_safety"], "forbidden_hits:")
 
@@ -143,6 +163,9 @@ def main() -> int:
         if status != "PASS":
             blockers.append(f"{label} status is {status}")
     for label, status in final_readiness_statuses.items():
+        if status != "PASS":
+            blockers.append(f"{label} status is {status}")
+    for label, status in implementation_shadow_statuses.items():
         if status != "PASS":
             blockers.append(f"{label} status is {status}")
     if not files:
@@ -178,6 +201,10 @@ def main() -> int:
         *[
             f"- {label.replace('_', ' ').title()} status: {status}"
             for label, status in final_readiness_statuses.items()
+        ],
+        *[
+            f"- {label.replace('_', ' ').title()} status: {status}"
+            for label, status in implementation_shadow_statuses.items()
         ],
         f"- CI failed gates: {failed_gates or 'not reported'}",
         f"- Workflow forbidden hits: {workflow_forbidden or 'not reported'}",

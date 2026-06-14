@@ -1,0 +1,19 @@
+Status: PASS
+mode: read-only inactive playback route final readiness JS vs Haskell comparison
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+node_available: true
+ghc_available: true
+haskell_compile: passed
+haskell_run: passed
+javascript_run: passed
+normalized_compare: passed
+fixture_path: tools/playback-parity-v1/inactive-playback-route-final-readiness-fixtures.json
+haskell_shadow: tools/playback-parity-v1/InactivePlaybackRouteFinalReadiness.hs
+javascript_shadow: tools/playback-parity-v1/inactive_playback_route_final_readiness_shadow_js.js
+component_count: 5
+failures: []

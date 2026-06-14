@@ -14,6 +14,7 @@ frontend playback behavior.
 - Response body parity must report `Status: PASS`.
 - Status/header parity must report `Status: PASS`.
 - Error taxonomy parity must report `Status: PASS`.
+- Implementation shadow parity must report `Status: PASS`.
 
 ## Required Safety Inputs
 

@@ -1,0 +1,34 @@
+{
+  "contractId": "inactive-playback-route-implementation-shadow-v1",
+  "mode": "read-only shadow-only inactive playback route implementation",
+  "requiredOutputFields": [
+    "fixtureId",
+    "routeDecision",
+    "ok",
+    "status",
+    "headers",
+    "body",
+    "errorTaxonomy",
+    "adapterDecision",
+    "responseBodyDecision",
+    "statusHeaderDecision",
+    "safetyNotes"
+  ],
+  "requiredSafetyNotes": [
+    "shadow-only",
+    "fixture-only",
+    "no-server",
+    "no-network",
+    "no-ffmpeg",
+    "no-active-runtime-wiring",
+    "no-live-url-activation"
+  ],
+  "fixtureManifest": "tools/playback-parity-v1/inactive-playback-route-implementation-shadow-fixtures.json",
+  "javascriptShadow": "tools/playback-parity-v1/inactive_playback_route_implementation_shadow_js.js",
+  "haskellShadow": "tools/playback-parity-v1/InactivePlaybackRouteImplementationShadow.hs",
+  "comparator": "tools/playback-parity-v1/inactive_playback_route_implementation_shadow_js_vs_hs_compare.py",
+  "envelopeGate": "tools/playback-parity-v1/inactive_playback_route_implementation_shadow_envelope_gate.py",
+  "fixtureCoverageAudit": "tools/playback-parity-v1/inactive_playback_route_implementation_shadow_fixture_coverage_audit.py",
+  "safetyGate": "tools/playback-parity-v1/inactive_playback_route_implementation_shadow_safety_gate.py",
+  "npmScript": "test:playback-inactive-route-implementation-shadow"
+}

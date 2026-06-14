@@ -24,6 +24,14 @@ EXPECTED = [
     ("error_taxonomy_envelope", "inactive-playback-route-error-taxonomy-envelope-report-*.txt"),
     ("error_taxonomy_fixture_coverage", "inactive-playback-route-error-taxonomy-fixture-coverage-report-*.txt"),
     ("error_taxonomy_safety", "inactive-playback-route-error-taxonomy-safety-report-*.txt"),
+    ("final_readiness_compare", "inactive-playback-route-final-readiness-js-vs-hs-report-*.txt"),
+    ("final_readiness_safety", "inactive-playback-route-final-readiness-safety-report-*.txt"),
+    ("final_readiness_report", "inactive-playback-route-final-readiness-report-*.txt"),
+    ("implementation_shadow_compare", "inactive-playback-route-implementation-shadow-js-vs-hs-report-*.txt"),
+    ("implementation_shadow_envelope", "inactive-playback-route-implementation-shadow-envelope-report-*.txt"),
+    ("implementation_shadow_fixture_coverage", "inactive-playback-route-implementation-shadow-fixture-coverage-report-*.txt"),
+    ("implementation_shadow_safety", "inactive-playback-route-implementation-shadow-safety-report-*.txt"),
+    ("implementation_shadow_report", "inactive-playback-route-implementation-shadow-report-*.txt"),
 ]
 
 
@@ -78,6 +86,14 @@ def main() -> int:
             "error-taxonomy-envelope",
             "error-taxonomy-fixture-coverage",
             "error-taxonomy-safety",
+            "final-readiness-compare",
+            "final-readiness-safety",
+            "final-readiness-report",
+            "implementation-shadow-compare",
+            "implementation-shadow-envelope",
+            "implementation-shadow-fixture-coverage",
+            "implementation-shadow-safety",
+            "implementation-shadow-report",
         ]:
             if expected_text not in manifest_text:
                 failures.append(f"manifest missing entry: {expected_text}")

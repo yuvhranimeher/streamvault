@@ -1,0 +1,29 @@
+Status: PASS
+mode: read-only inactive playback route implementation shadow envelope gate
+server_started: no
+network_called: no
+ffmpeg_started: no
+runtime_playback_changed: no
+active_routes_added: no
+inactive_route_wired: no
+fixture_path: tools/playback-parity-v1/inactive-playback-route-implementation-shadow-fixtures.json
+contract_path: tools/playback-parity-v1/inactive-playback-route-implementation-shadow-contract.json
+decision_source: tools/playback-parity-v1/inactive_playback_route_implementation_shadow_js.js
+node_available: true
+js_status: passed
+fixture_count: 12
+decision_count: 12
+decision_summary:
+- implementation_movie_desktop_direct: routeDecision=accepted status=200 reasonCode=OK failures=[]
+- implementation_ftp_mobile_hls: routeDecision=accepted status=200 reasonCode=OK failures=[]
+- implementation_local_direct: routeDecision=accepted status=200 reasonCode=OK failures=[]
+- implementation_ftp_raw_range: routeDecision=accepted status=206 reasonCode=PARTIAL_CONTENT failures=[]
+- implementation_series_direct: routeDecision=accepted status=200 reasonCode=OK failures=[]
+- implementation_live_hls: routeDecision=accepted status=200 reasonCode=OK failures=[]
+- implementation_missing_id: routeDecision=rejected status=400 reasonCode=MISSING_ID failures=[]
+- implementation_unsafe_placeholder_url: routeDecision=rejected status=400 reasonCode=UNSAFE_PLACEHOLDER_URL failures=[]
+- implementation_method_not_allowed: routeDecision=rejected status=405 reasonCode=METHOD_NOT_ALLOWED failures=[]
+- implementation_response_body_rejected: routeDecision=rejected status=502 reasonCode=RESPONSE_BODY_REJECTED failures=[]
+- implementation_status_header_rejected: routeDecision=rejected status=502 reasonCode=STATUS_HEADER_REJECTED failures=[]
+- implementation_unknown_route: routeDecision=rejected status=404 reasonCode=UNKNOWN_ROUTE failures=[]
+failures: []

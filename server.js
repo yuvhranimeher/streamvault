@@ -1773,95 +1773,517 @@ app.post('/api/channels/reload', (req, res) => {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // LIVE TV PROXY
-// ═══════════════════════════════════════════════════════════════════════════════
+// Robust HLS proxy: rewrites segments, nested playlists, keys, and maps.
 
-function fetchBuffer(url) {
+const SV_LIVE_DEBUG = process.env.SV_LIVE_DEBUG === '1';
+const SV_LIVE_PLAYLIST_MAX_BYTES = 1024 * 1024;
+const SV_LIVE_MEDIA_SEGMENT_WINDOW = Math.max(5, Number(process.env.SV_LIVE_MEDIA_SEGMENT_WINDOW || 6));
+const SV_LIVE_SEGMENT_CACHE_TTL_MS = Math.max(15000, Number(process.env.SV_LIVE_SEGMENT_CACHE_TTL_MS || 60000));
+const SV_LIVE_SEGMENT_CACHE_MAX_PER_CHANNEL = Math.max(4, Number(process.env.SV_LIVE_SEGMENT_CACHE_MAX_PER_CHANNEL || 10));
+const SV_LIVE_SEGMENT_CACHE_MAX_BYTES = Math.max(32 * 1024 * 1024, Number(process.env.SV_LIVE_SEGMENT_CACHE_MAX_BYTES || 192 * 1024 * 1024));
+const SV_LIVE_SEGMENT_CACHE_MAX_SEGMENT_BYTES = Math.max(1024 * 1024, Number(process.env.SV_LIVE_SEGMENT_CACHE_MAX_SEGMENT_BYTES || 20 * 1024 * 1024));
+const svLiveHttpAgent = new http.Agent({ keepAlive: true, maxSockets: 32, keepAliveMsecs: 10000 });
+const svLiveHttpsAgent = new https.Agent({ keepAlive: true, maxSockets: 32, keepAliveMsecs: 10000 });
+const svLiveSegmentCache = new Map();
+const svLiveSegmentInflight = new Map();
+let svLiveSegmentCacheBytes = 0;
+
+function svLiveDebugLog(message, data = {}) {
+  if (!SV_LIVE_DEBUG) return;
+  console.log('[Live Debug]', message, data);
+}
+
+function svLiveHeaders(sourceUrl) {
+  let origin = '';
+  try { origin = new URL(sourceUrl).origin; } catch {}
+  return {
+    'User-Agent': 'Mozilla/5.0 StreamVault-LiveTV/1.0',
+    'Accept': '*/*',
+    ...(origin ? { 'Referer': origin + '/', 'Origin': origin } : {})
+  };
+}
+
+function svLiveSegmentContentType(sourceUrl, upstreamType) {
+  const type = String(upstreamType || '').trim();
+  if (/\.m4s(?:$|[?#])/i.test(sourceUrl)) return type || 'video/iso.segment';
+  if (/\.ts(?:$|[?#])/i.test(sourceUrl)) return 'video/MP2T';
+  return type || 'video/MP2T';
+}
+
+function svLiveSetSegmentHeaders(res, meta = {}, cacheState = 'MISS') {
+  if (res.headersSent) return false;
+  const status = meta.status || 200;
+  res.status(status);
+  res.setHeader('Content-Type', meta.contentType || 'video/MP2T');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges, Content-Length, Content-Type, X-SV-Upstream-Status, X-SV-Upstream-Ms, X-SV-Live-Cache');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.setHeader('X-SV-Live-Cache', cacheState);
+  res.setHeader('X-SV-Upstream-Status', String(meta.upstreamStatus || status));
+  res.setHeader('X-SV-Upstream-Ms', String(meta.upstreamMs ?? 0));
+  if (meta.acceptRanges) res.setHeader('Accept-Ranges', meta.acceptRanges);
+  if (meta.contentLength) res.setHeader('Content-Length', meta.contentLength);
+  if (meta.contentRange) res.setHeader('Content-Range', meta.contentRange);
+  return true;
+}
+
+function svLivePruneSegmentCache() {
+  const now = Date.now();
+  for (const [key, entry] of svLiveSegmentCache) {
+    if (now - entry.createdAt > SV_LIVE_SEGMENT_CACHE_TTL_MS) {
+      svLiveSegmentCache.delete(key);
+      svLiveSegmentCacheBytes -= entry.bytes || 0;
+    }
+  }
+
+  const byChannel = new Map();
+  for (const [key, entry] of svLiveSegmentCache) {
+    if (!byChannel.has(entry.channelId)) byChannel.set(entry.channelId, []);
+    byChannel.get(entry.channelId).push([key, entry]);
+  }
+  for (const entries of byChannel.values()) {
+    entries.sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
+    for (const [key, entry] of entries.slice(SV_LIVE_SEGMENT_CACHE_MAX_PER_CHANNEL)) {
+      if (svLiveSegmentCache.delete(key)) svLiveSegmentCacheBytes -= entry.bytes || 0;
+    }
+  }
+
+  if (svLiveSegmentCacheBytes > SV_LIVE_SEGMENT_CACHE_MAX_BYTES) {
+    const entries = [...svLiveSegmentCache.entries()].sort((a, b) =>
+      (a[1].lastAccess || a[1].createdAt || 0) - (b[1].lastAccess || b[1].createdAt || 0)
+    );
+    for (const [key, entry] of entries) {
+      if (svLiveSegmentCacheBytes <= SV_LIVE_SEGMENT_CACHE_MAX_BYTES) break;
+      if (svLiveSegmentCache.delete(key)) svLiveSegmentCacheBytes -= entry.bytes || 0;
+    }
+  }
+  if (svLiveSegmentCacheBytes < 0) svLiveSegmentCacheBytes = 0;
+}
+
+function svLiveStoreSegment(channelId, sourceUrl, meta, body) {
+  if (!Buffer.isBuffer(body) || !body.length) return;
+  if (body.length > SV_LIVE_SEGMENT_CACHE_MAX_SEGMENT_BYTES) return;
+  if ((meta.status || 200) < 200 || (meta.status || 200) >= 300) return;
+
+  const key = sourceUrl;
+  const prev = svLiveSegmentCache.get(key);
+  if (prev) svLiveSegmentCacheBytes -= prev.bytes || 0;
+  const entry = {
+    channelId,
+    sourceUrl,
+    body,
+    bytes: body.length,
+    createdAt: Date.now(),
+    lastAccess: Date.now(),
+    meta: {
+      ...meta,
+      contentLength: String(body.length),
+      upstreamMs: meta.upstreamMs || 0
+    }
+  };
+  svLiveSegmentCache.set(key, entry);
+  svLiveSegmentCacheBytes += body.length;
+  svLivePruneSegmentCache();
+}
+
+function svLiveServeCachedSegment(sourceUrl, res) {
+  const entry = svLiveSegmentCache.get(sourceUrl);
+  if (!entry) return false;
+  if (Date.now() - entry.createdAt > SV_LIVE_SEGMENT_CACHE_TTL_MS) {
+    svLiveSegmentCache.delete(sourceUrl);
+    svLiveSegmentCacheBytes -= entry.bytes || 0;
+    return false;
+  }
+  entry.lastAccess = Date.now();
+  svLiveSetSegmentHeaders(res, entry.meta, 'HIT');
+  res.end(entry.body);
+  return true;
+}
+
+function svLiveInflightAddClient(inflight, res, cacheState = 'DEDUP') {
+  if (res.destroyed || res.writableEnded) return;
+  inflight.clients.add(res);
+  res.on('close', () => {
+    inflight.clients.delete(res);
+    if (!inflight.done && inflight.clients.size === 0) {
+      try { inflight.request?.destroy(); } catch {}
+    }
+  });
+  if (inflight.meta && !res.headersSent) {
+    svLiveSetSegmentHeaders(res, inflight.meta, cacheState);
+    for (const chunk of inflight.chunks) {
+      if (res.destroyed || res.writableEnded) break;
+      res.write(chunk);
+    }
+  }
+}
+
+function svAssertHttpUrl(raw) {
+  const u = new URL(String(raw || '').trim());
+  if (!['http:', 'https:'].includes(u.protocol)) throw new Error('Unsupported live URL');
+  return u.href;
+}
+
+function svResolveUrl(base, relative) {
+  return new URL(String(relative || '').trim(), base).href;
+}
+
+function svLiveProxyPath(channelId, upstreamUrl) {
+  const isPlaylist = /\.m3u8(?:$|[?#])/i.test(upstreamUrl);
+  return isPlaylist
+    ? `/live/${encodeURIComponent(channelId)}/playlist.m3u8?src=${encodeURIComponent(upstreamUrl)}`
+    : `/live/${encodeURIComponent(channelId)}/segment?url=${encodeURIComponent(upstreamUrl)}`;
+}
+
+function svRewriteLiveUri(channelId, baseUrl, uri) {
+  return svLiveProxyPath(channelId, svResolveUrl(baseUrl, uri));
+}
+
+async function svFetchBuffer(url) {
   return new Promise((resolve, reject) => {
-    const mod = url.startsWith('https://') ? https : http;
-    const req = mod.get(url, { timeout: 10000 }, res => {
+    let sourceUrl;
+    try { sourceUrl = svAssertHttpUrl(url); } catch (e) { return reject(e); }
+
+    const startedAt = Date.now();
+    const mod = sourceUrl.startsWith('https://') ? https : http;
+    const req = mod.get(sourceUrl, {
+      timeout: 15000,
+      headers: svLiveHeaders(sourceUrl),
+      agent: sourceUrl.startsWith('https://') ? svLiveHttpsAgent : svLiveHttpAgent,
+    }, res => {
       const chunks = [];
-      res.on('data', c => chunks.push(c));
-      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
+      let total = 0;
+      res.on('data', c => {
+        total += c.length;
+        if (total > SV_LIVE_PLAYLIST_MAX_BYTES) {
+          req.destroy(new Error('Playlist too large'));
+          return;
+        }
+        chunks.push(c);
+      });
+      res.on('end', () => resolve({
+        status: res.statusCode,
+        headers: res.headers,
+        body: Buffer.concat(chunks),
+        finalUrl: sourceUrl,
+        elapsedMs: Date.now() - startedAt
+      }));
     });
+
     req.on('error', reject);
     req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
   });
 }
 
-function resolveUrl(base, relative) {
-  if (/^https?:\/\//.test(relative)) return relative;
-  const baseDir = base.substring(0, base.lastIndexOf('/') + 1);
-  return baseDir + relative;
+function rewriteM3u8(content, channelId, sourceBaseUrl) {
+  return String(content || '').replace(/\r\n/g, '\n').split('\n').map(line => {
+    const trimmed = line.trim();
+    if (!trimmed) return line;
+
+    if (trimmed.startsWith('#')) {
+      return line.replace(/\bURI=(?:"([^"]+)"|([^,\s]+))/gi, (_, quotedUri, bareUri) =>
+        `URI="${svRewriteLiveUri(channelId, sourceBaseUrl, quotedUri || bareUri)}"`
+      );
+    }
+
+    return svRewriteLiveUri(channelId, sourceBaseUrl, trimmed);
+  }).join('\n');
 }
 
-function rewriteM3u8(content, channelId, sourceBaseUrl) {
-  const lines = content.split('\n');
-  return lines.map(line => {
+function svTrimLiveMediaPlaylist(content, maxSegments = SV_LIVE_MEDIA_SEGMENT_WINDOW) {
+  const lines = String(content || '').replace(/\r\n/g, '\n').split('\n');
+  if (lines.some(line => line.includes('#EXT-X-STREAM-INF'))) return lines.join('\n');
+  if (lines.some(line => /^#EXT-X-(KEY|MAP)\b/i.test(line.trim()))) return lines.join('\n');
+
+  const segmentTag = line => /^#EXT(?:INF|-X-PROGRAM-DATE-TIME|-X-BYTERANGE|-X-DISCONTINUITY)/i.test(line.trim());
+  const prefix = [];
+  const suffix = [];
+  const segments = [];
+  let pending = [];
+  let sawSegment = false;
+
+  for (const line of lines) {
     const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) return line;
+    if (!trimmed) continue;
 
-    const absoluteUrl = resolveUrl(sourceBaseUrl, trimmed);
-
-    if (trimmed.toLowerCase().includes('.m3u8')) {
-      return `/live/${channelId}/playlist.m3u8?src=${encodeURIComponent(absoluteUrl)}`;
+    if (trimmed.startsWith('#')) {
+      if (segmentTag(line)) pending.push(line);
+      else if (sawSegment) suffix.push(line);
+      else prefix.push(line);
+      continue;
     }
-    return `/live/${channelId}/segment?url=${encodeURIComponent(absoluteUrl)}`;
-  }).join('\n');
+
+    sawSegment = true;
+    segments.push([...pending, line]);
+    pending = [];
+  }
+
+  if (segments.length <= maxSegments) return lines.join('\n');
+
+  const dropped = segments.length - maxSegments;
+  const adjustedPrefix = prefix.map(line =>
+    line.replace(/^#EXT-X-MEDIA-SEQUENCE:(\d+)/i, (_, n) => `#EXT-X-MEDIA-SEQUENCE:${Number(n) + dropped}`)
+  );
+
+  return [...adjustedPrefix, ...segments.slice(-maxSegments).flat(), ...suffix].join('\n');
+}
+
+
+async function svFetchM3u8Text(url) {
+  const result = await svFetchBuffer(url);
+  const text = result.body.toString('utf8');
+
+  if (result.status < 200 || result.status >= 300) {
+    throw new Error('Upstream playlist HTTP ' + result.status);
+  }
+
+  if (!text.includes('#EXTM3U')) {
+    throw new Error('Upstream is not an M3U8 playlist');
+  }
+
+  return {
+    status: result.status,
+    url: result.finalUrl || url,
+    text,
+    bytes: result.body.length,
+    elapsedMs: result.elapsedMs || 0
+  };
 }
 
 app.get('/live/:channelId/playlist.m3u8', async (req, res) => {
   const ch = channels.find(c => c.id === req.params.channelId);
-  const sourceUrl = req.query.src || (ch && ch.url);
+  const sourceUrl = String(req.query.src || (ch && ch.url) || '').trim();
 
   const ip2 = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
   tracker.trackStreamStart(ip2, req.params.channelId, ch?.name || req.params.channelId, 'live', req.headers['user-agent'] || '');
 
-  if (!sourceUrl) {
-    return res.status(404).send(
-      ch
-        ? `Channel "${ch.name}" has no URL configured. Add the .m3u8 URL to channels.json.`
-        : `Channel "${req.params.channelId}" not found in channels.json`
-    );
-  }
+  if (!sourceUrl) return res.status(404).send('Channel URL missing');
 
   try {
-    const result = await fetchBuffer(sourceUrl);
-    const baseUrl = sourceUrl.substring(0, sourceUrl.lastIndexOf('/') + 1);
-    const rewritten = rewriteM3u8(result.body.toString('utf8'), req.params.channelId, baseUrl);
+    const fetched = await svFetchM3u8Text(sourceUrl);
+    const isMaster = fetched.text.includes('#EXT-X-STREAM-INF');
+    const playlistText = isMaster ? fetched.text : svTrimLiveMediaPlaylist(fetched.text);
+    const rewritten = rewriteM3u8(playlistText, req.params.channelId, fetched.url);
 
-    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-    res.setHeader('Cache-Control', 'no-cache, no-store');
+    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('X-SV-Live-Playlist-Type', isMaster ? 'master' : 'media');
+    if (!isMaster) res.setHeader('X-SV-Live-Segment-Window', String(SV_LIVE_MEDIA_SEGMENT_WINDOW));
+    res.setHeader('X-SV-Upstream-Status', String(fetched.status || 0));
+    res.setHeader('X-SV-Upstream-Ms', String(fetched.elapsedMs || 0));
+    svLiveDebugLog('playlist', {
+      channel: req.params.channelId,
+      type: isMaster ? 'master' : 'media',
+      source: sourceUrl,
+      fetched: fetched.url,
+      status: fetched.status,
+      ms: fetched.elapsedMs,
+      bytes: fetched.bytes
+    });
     res.send(rewritten);
   } catch (e) {
-    console.error(`[Live] Playlist fetch error for ${req.params.channelId}:`, e.message);
-    res.status(502).send('Cannot reach channel source. Make sure the server is on the ISP network.');
+    console.error('[Live] Playlist fetch error for ' + req.params.channelId + ':', e.message);
+    res.status(502).send('Cannot reach channel source: ' + e.message);
   }
 });
+
+function svStreamLiveSegmentWithRetry(channelId, sourceUrl, res, attempt = 0, redirectsLeft = 5) {
+  svLivePruneSegmentCache();
+  if (svLiveServeCachedSegment(sourceUrl, res)) return;
+
+  const existing = svLiveSegmentInflight.get(sourceUrl);
+  if (existing) {
+    svLiveInflightAddClient(existing, res, 'DEDUP');
+    return;
+  }
+
+  const mod = sourceUrl.startsWith('https://') ? https : http;
+  const startedAt = Date.now();
+  const chunks = [];
+  const inflight = {
+    channelId,
+    sourceUrl,
+    clients: new Set(),
+    chunks,
+    cachedBytes: 0,
+    meta: null,
+    request: null,
+    done: false
+  };
+  svLiveSegmentInflight.set(sourceUrl, inflight);
+  svLiveInflightAddClient(inflight, res, 'MISS');
+
+  const retryClients = (nextUrl = sourceUrl, nextAttempt = attempt + 1, delay = 250) => {
+    const clients = [...inflight.clients].filter(client => !client.destroyed && !client.writableEnded);
+    inflight.clients.clear();
+    inflight.done = true;
+    svLiveSegmentInflight.delete(sourceUrl);
+    setTimeout(() => {
+      for (const client of clients) {
+        if (!client.headersSent) svStreamLiveSegmentWithRetry(channelId, nextUrl, client, nextAttempt, redirectsLeft);
+        else {
+          try { client.destroy(); } catch {}
+        }
+      }
+    }, delay);
+  };
+
+  const failClients = (status, message, err) => {
+    inflight.done = true;
+    svLiveSegmentInflight.delete(sourceUrl);
+    for (const client of [...inflight.clients]) {
+      if (client.destroyed || client.writableEnded) continue;
+      if (!client.headersSent) client.status(status).end(message);
+      else {
+        try { client.destroy(err); } catch {}
+      }
+    }
+    inflight.clients.clear();
+  };
+
+  const proxyReq = mod.get(sourceUrl, {
+    timeout: 45000,
+    agent: sourceUrl.startsWith('https://') ? svLiveHttpsAgent : svLiveHttpAgent,
+    headers: {
+      ...svLiveHeaders(sourceUrl),
+      'Connection': 'keep-alive',
+      'Cache-Control': 'no-cache'
+    }
+  }, proxyRes => {
+    const status = proxyRes.statusCode || 502;
+    const location = proxyRes.headers.location;
+
+    if ([301, 302, 303, 307, 308].includes(status) && location && redirectsLeft > 0 && !res.headersSent) {
+      proxyRes.resume();
+      const nextUrl = new URL(location, sourceUrl).href;
+      inflight.done = true;
+      svLiveSegmentInflight.delete(sourceUrl);
+      for (const client of [...inflight.clients]) {
+        if (!client.destroyed && !client.writableEnded && !client.headersSent) {
+          svStreamLiveSegmentWithRetry(channelId, nextUrl, client, attempt, redirectsLeft - 1);
+        }
+      }
+      inflight.clients.clear();
+      return;
+    }
+
+    if (status >= 400 && attempt < 2) {
+      proxyRes.resume();
+      svLiveDebugLog('retry segment status', { status, attempt: attempt + 1, url: sourceUrl });
+      retryClients(sourceUrl, attempt + 1);
+      return;
+    }
+
+    const meta = {
+      status,
+      contentType: svLiveSegmentContentType(sourceUrl, proxyRes.headers['content-type']),
+      acceptRanges: proxyRes.headers['accept-ranges'],
+      contentLength: proxyRes.headers['content-length'],
+      contentRange: proxyRes.headers['content-range'],
+      upstreamStatus: status,
+      upstreamMs: Date.now() - startedAt
+    };
+    inflight.meta = meta;
+    for (const client of [...inflight.clients]) svLiveSetSegmentHeaders(client, meta, client === res ? 'MISS' : 'DEDUP');
+
+    svLiveDebugLog('segment', {
+      status,
+      ms: Date.now() - startedAt,
+      bytes: proxyRes.headers['content-length'] || '',
+      url: sourceUrl
+    });
+
+    proxyRes.on('error', e => {
+      console.error('[Live] upstream segment stream error:', e.message);
+      failClients(502, 'Segment stream failed', e);
+    });
+
+    proxyRes.on('data', chunk => {
+      if ((status >= 200 && status < 300) && inflight.cachedBytes + chunk.length <= SV_LIVE_SEGMENT_CACHE_MAX_SEGMENT_BYTES) {
+        chunks.push(chunk);
+        inflight.cachedBytes += chunk.length;
+      }
+      for (const client of [...inflight.clients]) {
+        if (client.destroyed || client.writableEnded) {
+          inflight.clients.delete(client);
+          continue;
+        }
+        client.write(chunk);
+      }
+    });
+
+    proxyRes.on('end', () => {
+      inflight.done = true;
+      svLiveSegmentInflight.delete(sourceUrl);
+      if (status >= 200 && status < 300 && chunks.length) {
+        svLiveStoreSegment(channelId, sourceUrl, meta, Buffer.concat(chunks));
+      }
+      for (const client of [...inflight.clients]) {
+        if (!client.destroyed && !client.writableEnded) client.end();
+      }
+      inflight.clients.clear();
+    });
+  });
+  inflight.request = proxyReq;
+
+  proxyReq.on('error', e => {
+    if (attempt < 2) {
+      svLiveDebugLog('retry segment error', { error: e.message, attempt: attempt + 1, url: sourceUrl });
+      retryClients(sourceUrl, attempt + 1);
+      return;
+    }
+
+    console.error('[Live] Segment fetch error:', e.message);
+    failClients(502, 'Segment fetch failed', e);
+  });
+
+  proxyReq.on('timeout', () => {
+    proxyReq.destroy(new Error('Segment timeout'));
+  });
+}
 
 app.get('/live/:channelId/segment', (req, res) => {
   const url = req.query.url;
   if (!url) return res.status(400).send('Missing url param');
 
-  const mod = url.startsWith('https://') ? https : http;
-  const proxyReq = mod.get(url, { timeout: 15000 }, proxyRes => {
-    res.setHeader('Content-Type', proxyRes.headers['content-type'] || 'video/mp2t');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'no-cache');
-    proxyRes.pipe(res);
-  });
-  proxyReq.on('error', e => {
-    console.error(`[Live] Segment fetch error:`, e.message);
-    if (!res.headersSent) res.status(502).end();
-  });
-  proxyReq.on('timeout', () => {
-    proxyReq.destroy();
-    if (!res.headersSent) res.status(504).end();
-  });
-  res.on('close', () => proxyReq.destroy());
+  let sourceUrl;
+  try {
+    sourceUrl = svAssertHttpUrl(url);
+  } catch (e) {
+    return res.status(400).send(e.message);
+  }
+
+  svStreamLiveSegmentWithRetry(req.params.channelId, sourceUrl, res, 0);
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
+
+
+app.get('/api/live-test/:channelId', async (req, res) => {
+  const ch = channels.find(c => c.id === req.params.channelId);
+  const sourceUrl = req.query.src || (ch && ch.url);
+  if (!sourceUrl) return res.status(404).json({ ok:false, error:'Channel missing' });
+
+  try {
+    const result = await svFetchBuffer(sourceUrl);
+    const text = result.body.toString('utf8');
+    res.json({
+      ok: true,
+      channel: ch?.name || req.params.channelId,
+      status: result.status,
+      bytes: result.body.length,
+      hasM3U: text.includes('#EXTM3U'),
+      mediaLines: text.split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).length,
+      keyLines: text.split('\n').filter(l => l.includes('#EXT-X-KEY')).length,
+      mapLines: text.split('\n').filter(l => l.includes('#EXT-X-MAP')).length,
+      preview: rewriteM3u8(text, req.params.channelId, result.finalUrl || sourceUrl).split('\n').slice(0, 15)
+    });
+  } catch (e) {
+    res.status(502).json({ ok:false, error:e.message });
+  }
+});
+
 // API: MOVIES (with cartoon filter applied)
 // ═══════════════════════════════════════════════════════════════════════════════
 const mobileHlsSessions = new Map();

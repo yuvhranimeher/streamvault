@@ -1775,21 +1775,35 @@ app.post('/api/channels/reload', (req, res) => {
 // LIVE TV PROXY
 // Robust HLS proxy: rewrites segments, nested playlists, keys, and maps.
 
-const FIFA_LIVE_COMPETITION = 'FIFA World Cup 2026';
-const FIFA_LIVE_CACHE_MS = Math.min(60000, Math.max(30000, Number(process.env.FIFA_LIVE_CACHE_MS || 45000)));
+const FIFA_LIVE_COMPETITION = 'FIFA / Football Live';
+const FIFA_LIVE_REAL_UNAVAILABLE = 'Real live football data is unavailable right now';
+const FIFA_LIVE_FAST_CACHE_MS = Math.min(30000, Math.max(20000, Number(process.env.FIFA_LIVE_CACHE_MS || 25000)));
+const FIFA_LIVE_SLOW_CACHE_MS = Math.min(15 * 60 * 1000, Math.max(5 * 60 * 1000, Number(process.env.FIFA_LIVE_SLOW_CACHE_MS || 5 * 60 * 1000)));
+const FIFA_LIVE_UPSTREAM_TIMEOUT_MS = Math.min(12000, Math.max(4000, Number(process.env.FIFA_LIVE_TIMEOUT_MS || 7000)));
+const FIFA_LIVE_API_FOOTBALL_BASE = 'https://v3.football.api-sports.io';
+const FIFA_LIVE_ESPN_BASE = 'https://site.api.espn.com/apis/site/v2/sports/soccer';
 let fifaLiveCache = null;
 let fifaLiveLastGood = null;
 let fifaLiveInFlight = null;
+let fifaLiveLastWarnAt = 0;
+const fifaMatchDetailCache = new Map();
+const fifaMatchDetailInflight = new Map();
+const FIFA_LIVE_DETAIL_FAST_CACHE_MS = Math.min(30000, Math.max(20000, Number(process.env.FIFA_LIVE_DETAIL_FAST_CACHE_MS || 25000)));
+const FIFA_LIVE_DETAIL_SLOW_CACHE_MS = Math.min(15 * 60 * 1000, Math.max(5 * 60 * 1000, Number(process.env.FIFA_LIVE_DETAIL_SLOW_CACHE_MS || 10 * 60 * 1000)));
+const FIFA_LIVE_DETAIL_UNAVAILABLE = 'Detailed match data is unavailable for this fixture right now.';
 
 function svFifaFirst(...values) {
-  return values.find(value => value !== undefined && value !== null && value !== '');
+  for (const value of values) {
+    if (value === undefined || value === null) continue;
+    const text = String(value).trim();
+    if (!text || text.toLowerCase() === 'undefined' || text.toLowerCase() === 'null') continue;
+    return value;
+  }
+  return '';
 }
 
-function svFifaArray(...values) {
-  for (const value of values) {
-    if (Array.isArray(value)) return value;
-  }
-  return [];
+function svFifaArray(value) {
+  return Array.isArray(value) ? value : [];
 }
 
 function svFifaNumber(value, fallback = null) {
@@ -1798,194 +1812,72 @@ function svFifaNumber(value, fallback = null) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function svFifaTeamName(value, fallback) {
-  if (typeof value === 'string') return value || fallback;
-  return svFifaFirst(value?.name, value?.shortName, value?.displayName, value?.teamName, fallback);
+function svFifaIsoDate(date = new Date()) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+  return date.toISOString();
 }
 
-function svFifaIsLive(match, statusText, minute) {
-  if (match?.live === true || match?.isLive === true) return true;
-  const status = String(statusText || '').toLowerCase();
-  return /\b(live|in.?play|1h|2h|first half|second half|halftime|half time|ht)\b/.test(status) ||
-    (minute !== null && minute !== undefined && !/\b(ft|full.?time|ended|finished|postponed)\b/.test(status));
+function svFifaApiDate(date = new Date()) {
+  return date.toISOString().slice(0, 10);
 }
 
-function svFifaNormalizeMatch(match, index, fallbackLive = false) {
-  const home = svFifaFirst(match?.homeTeam, match?.home, match?.home_team, match?.teams?.home, match?.competitors?.[0]);
-  const away = svFifaFirst(match?.awayTeam, match?.away, match?.away_team, match?.teams?.away, match?.competitors?.[1]);
-  const statusText = svFifaFirst(match?.status, match?.state, match?.statusText, match?.fixture?.status?.long, match?.fixture?.status?.short, fallbackLive ? 'Live' : 'Scheduled');
-  const minute = svFifaFirst(match?.minute, match?.elapsed, match?.time?.elapsed, match?.fixture?.status?.elapsed, match?.clock);
-  const homeScore = svFifaNumber(svFifaFirst(match?.homeScore, match?.score?.home, match?.scores?.home, match?.goals?.home, match?.home?.score, match?.teams?.home?.score));
-  const awayScore = svFifaNumber(svFifaFirst(match?.awayScore, match?.score?.away, match?.scores?.away, match?.goals?.away, match?.away?.score, match?.teams?.away?.score));
-  const live = fallbackLive || svFifaIsLive(match, statusText, minute);
+function svFifaEspnDate(date = new Date()) {
+  return date.toISOString().slice(0, 10).replace(/-/g, '');
+}
 
+function svFifaTitleCase(value) {
+  return String(value || '').replace(/[-_]+/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase()).trim();
+}
+
+function svFifaWarn(message, err) {
+  const now = Date.now();
+  if (now - fifaLiveLastWarnAt < 60000) return;
+  fifaLiveLastWarnAt = now;
+  console.warn(`[FIFA Live] ${message}${err?.message ? `: ${err.message}` : ''}`);
+}
+
+function svFifaEmptyPayload(message = FIFA_LIVE_REAL_UNAVAILABLE, stale = false, source = 'none') {
   return {
-    id: String(svFifaFirst(match?.id, match?.matchId, match?.fixture?.id, `match-${index}`)),
-    stage: svFifaFirst(match?.stage, match?.round, match?.fixture?.round, match?.phase, 'Group Stage'),
-    group: svFifaFirst(match?.group, match?.pool, match?.tableGroup, ''),
-    status: String(statusText || (live ? 'Live' : 'Scheduled')),
-    minute: minute === undefined || minute === null ? null : String(minute),
-    kickoff: svFifaFirst(match?.kickoff, match?.startTime, match?.date, match?.utcDate, match?.fixture?.date, ''),
-    venue: svFifaFirst(match?.venue, match?.stadium, match?.fixture?.venue?.name, ''),
-    homeTeam: String(svFifaTeamName(home, match?.homeName || 'Home')),
-    awayTeam: String(svFifaTeamName(away, match?.awayName || 'Away')),
-    homeScore,
-    awayScore,
-    live,
-    note: svFifaFirst(match?.note, match?.description, '')
-  };
-}
-
-function svFifaNormalizeStandings(raw) {
-  const rows = [];
-  const pushRows = (items, groupName = '') => {
-    (Array.isArray(items) ? items : []).forEach((row, index) => {
-      const team = svFifaFirst(row?.team, row?.teamName, row?.name, row?.club);
-      rows.push({
-        group: String(svFifaFirst(row?.group, row?.table, groupName, 'Group')),
-        rank: svFifaNumber(svFifaFirst(row?.rank, row?.position, row?.pos), index + 1),
-        team: String(svFifaTeamName(team, `Team ${index + 1}`)),
-        played: svFifaNumber(svFifaFirst(row?.played, row?.matchesPlayed, row?.mp, row?.all?.played), 0),
-        wins: svFifaNumber(svFifaFirst(row?.wins, row?.won, row?.w, row?.all?.win), 0),
-        draws: svFifaNumber(svFifaFirst(row?.draws, row?.d, row?.all?.draw), 0),
-        losses: svFifaNumber(svFifaFirst(row?.losses, row?.lost, row?.l, row?.all?.lose), 0),
-        goalDifference: svFifaNumber(svFifaFirst(row?.goalDifference, row?.gd, row?.goalsDiff), 0),
-        points: svFifaNumber(svFifaFirst(row?.points, row?.pts), 0)
-      });
-    });
-  };
-
-  if (Array.isArray(raw)) {
-    raw.forEach(group => {
-      if (Array.isArray(group)) pushRows(group);
-      else if (Array.isArray(group?.rows)) pushRows(group.rows, group.group || group.name);
-      else if (Array.isArray(group?.table)) pushRows(group.table, group.group || group.name);
-      else pushRows([group], group.group || group.name);
-    });
-  } else if (raw && typeof raw === 'object') {
-    Object.entries(raw).forEach(([groupName, items]) => pushRows(Array.isArray(items) ? items : items?.rows || items?.table || [], groupName));
-  }
-
-  return rows.slice(0, 24);
-}
-
-function svFifaNormalizeHeadlines(raw) {
-  return (Array.isArray(raw) ? raw : []).map((item, index) => {
-    if (typeof item === 'string') return { id: `headline-${index}`, title: item, time: '' };
-    return {
-      id: String(svFifaFirst(item?.id, item?.url, `headline-${index}`)),
-      title: String(svFifaFirst(item?.title, item?.headline, item?.text, item?.summary, 'Tournament update')),
-      time: String(svFifaFirst(item?.time, item?.publishedAt, item?.date, ''))
-    };
-  }).filter(item => item.title).slice(0, 8);
-}
-
-function svFifaNormalizePayload(raw, source, stale = false) {
-  const root = raw?.data || raw?.response || raw?.payload || raw || {};
-  const liveInput = svFifaArray(root.liveMatches, root.live, root.inPlay, root.live_matches);
-  const upcomingInput = svFifaArray(root.upcomingMatches, root.upcoming, root.fixtures, root.matches, root.events);
-  const normalizedLive = liveInput.map((match, index) => svFifaNormalizeMatch(match, index, true));
-  const normalizedUpcoming = upcomingInput
-    .map((match, index) => svFifaNormalizeMatch(match, index, false))
-    .filter(match => !match.live || !normalizedLive.some(live => live.id === match.id));
-
-  return {
-    ok: true,
+    ok: false,
     generatedAt: new Date().toISOString(),
     source,
     stale: !!stale,
     competition: FIFA_LIVE_COMPETITION,
-    liveMatches: normalizedLive,
-    upcomingMatches: normalizedUpcoming.slice(0, 12),
-    standings: svFifaNormalizeStandings(svFifaFirst(root.standings, root.tables, root.groups, root.table, [])),
-    headlines: svFifaNormalizeHeadlines(svFifaFirst(root.headlines, root.news, root.updates, []))
+    message,
+    liveMatches: [],
+    upcomingMatches: [],
+    recentResults: [],
+    standings: [],
+    headlines: []
   };
 }
 
-function svFifaDemoPayload(stale = false) {
-  const now = Date.now();
-  const inHours = hours => new Date(now + hours * 60 * 60 * 1000).toISOString();
-  return {
-    ok: true,
-    generatedAt: new Date(now).toISOString(),
-    source: 'demo',
-    stale: !!stale,
+function svFifaHasRealData(payload) {
+  return !!payload && [
+    payload.liveMatches,
+    payload.upcomingMatches,
+    payload.recentResults,
+    payload.standings,
+    payload.headlines
+  ].some(items => Array.isArray(items) && items.length);
+}
+
+function svFifaFinalizePayload(payload, source, message = '') {
+  const next = {
+    ok: svFifaHasRealData(payload),
+    generatedAt: new Date().toISOString(),
+    source,
+    stale: false,
     competition: FIFA_LIVE_COMPETITION,
-    liveMatches: [
-      { id: 'demo-live-1', stage: 'Group Stage', group: 'Group A', status: 'Live', minute: '63', kickoff: '', venue: 'MetLife Stadium', homeTeam: 'Mexico', awayTeam: 'Germany', homeScore: 1, awayScore: 1, live: true, note: 'Demo feed' },
-      { id: 'demo-live-2', stage: 'Group Stage', group: 'Group B', status: 'Live', minute: '41', kickoff: '', venue: 'SoFi Stadium', homeTeam: 'Brazil', awayTeam: 'Japan', homeScore: 2, awayScore: 0, live: true, note: 'Demo feed' }
-    ],
-    upcomingMatches: [
-      { id: 'demo-up-1', stage: 'Group Stage', group: 'Group C', status: 'Scheduled', minute: null, kickoff: inHours(3), venue: 'AT&T Stadium', homeTeam: 'USA', awayTeam: 'Portugal', homeScore: null, awayScore: null, live: false, note: '' },
-      { id: 'demo-up-2', stage: 'Group Stage', group: 'Group D', status: 'Scheduled', minute: null, kickoff: inHours(6), venue: 'BC Place', homeTeam: 'Argentina', awayTeam: 'Morocco', homeScore: null, awayScore: null, live: false, note: '' },
-      { id: 'demo-up-3', stage: 'Group Stage', group: 'Group E', status: 'Scheduled', minute: null, kickoff: inHours(22), venue: 'Lumen Field', homeTeam: 'England', awayTeam: 'Korea Republic', homeScore: null, awayScore: null, live: false, note: '' }
-    ],
-    standings: [
-      { group: 'Group A', rank: 1, team: 'Mexico', played: 2, wins: 1, draws: 1, losses: 0, goalDifference: 2, points: 4 },
-      { group: 'Group A', rank: 2, team: 'Germany', played: 2, wins: 1, draws: 1, losses: 0, goalDifference: 1, points: 4 },
-      { group: 'Group A', rank: 3, team: 'Canada', played: 2, wins: 1, draws: 0, losses: 1, goalDifference: 0, points: 3 },
-      { group: 'Group A', rank: 4, team: 'New Zealand', played: 2, wins: 0, draws: 0, losses: 2, goalDifference: -3, points: 0 }
-    ],
-    headlines: [
-      { id: 'demo-h-1', title: 'Group stage scoreboard is ready in demo mode', time: new Date(now - 8 * 60 * 1000).toISOString() },
-      { id: 'demo-h-2', title: 'Set FIFA_LIVE_URL to connect a real match provider', time: new Date(now - 18 * 60 * 1000).toISOString() },
-      { id: 'demo-h-3', title: 'Live cards refresh automatically while Discover is visible', time: new Date(now - 25 * 60 * 1000).toISOString() }
-    ]
+    message,
+    liveMatches: svFifaArray(payload?.liveMatches).slice(0, 12),
+    upcomingMatches: svFifaArray(payload?.upcomingMatches).slice(0, 14),
+    recentResults: svFifaArray(payload?.recentResults).slice(0, 10),
+    standings: svFifaArray(payload?.standings).slice(0, 32),
+    headlines: svFifaArray(payload?.headlines).slice(0, 8)
   };
-}
-
-function svFifaFetchJson(rawUrl, apiKey, redirects = 0) {
-  return new Promise((resolve, reject) => {
-    let parsed;
-    try { parsed = new URL(rawUrl); } catch (e) { return reject(e); }
-    if (!['http:', 'https:'].includes(parsed.protocol)) return reject(new Error('Unsupported FIFA provider URL'));
-
-    const mod = parsed.protocol === 'https:' ? https : http;
-    const headers = {
-      Accept: 'application/json',
-      'User-Agent': 'StreamVault-FIFA-Live/1.0'
-    };
-    if (apiKey) {
-      headers.Authorization = `Bearer ${apiKey}`;
-      headers['x-api-key'] = apiKey;
-    }
-
-    const req = mod.request(parsed, { method: 'GET', timeout: 10000, headers }, res => {
-      if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location && redirects < 3) {
-        res.resume();
-        resolve(svFifaFetchJson(new URL(res.headers.location, parsed).href, apiKey, redirects + 1));
-        return;
-      }
-      const chunks = [];
-      let total = 0;
-      res.on('data', chunk => {
-        total += chunk.length;
-        if (total > 2 * 1024 * 1024) {
-          req.destroy(new Error('FIFA provider response too large'));
-          return;
-        }
-        chunks.push(chunk);
-      });
-      res.on('end', () => {
-        const body = Buffer.concat(chunks).toString('utf8');
-        if (res.statusCode < 200 || res.statusCode >= 300) {
-          reject(new Error(`FIFA provider returned ${res.statusCode}`));
-          return;
-        }
-        try { resolve(JSON.parse(body)); }
-        catch (e) { reject(e); }
-      });
-    });
-    req.on('error', reject);
-    req.on('timeout', () => req.destroy(new Error('FIFA provider timeout')));
-    req.end();
-  });
-}
-
-function svFifaCachePayload(payload) {
-  fifaLiveCache = { expiresAt: Date.now() + FIFA_LIVE_CACHE_MS, payload };
-  if (payload && payload.ok && !payload.stale && payload.source !== 'demo') fifaLiveLastGood = payload;
-  return payload;
+  if (!next.ok && !next.message) next.message = FIFA_LIVE_REAL_UNAVAILABLE;
+  return next;
 }
 
 function svFifaMarkStale(payload, source) {
@@ -1993,33 +1885,857 @@ function svFifaMarkStale(payload, source) {
     ...payload,
     ok: true,
     generatedAt: new Date().toISOString(),
-    source: source || payload.source || 'provider',
-    stale: true
+    source: source || 'cache',
+    stale: true,
+    message: 'Showing last real football update while the live provider reconnects'
   };
+}
+
+function svFifaCachePayload(payload) {
+  if (!payload || (!payload.ok && payload.source === 'none')) {
+    fifaLiveCache = null;
+    return payload;
+  }
+  const ttl = payload?.liveMatches?.length ? FIFA_LIVE_FAST_CACHE_MS : FIFA_LIVE_SLOW_CACHE_MS;
+  fifaLiveCache = { expiresAt: Date.now() + ttl, payload };
+  if (payload && payload.ok && !payload.stale && payload.source !== 'none') fifaLiveLastGood = payload;
+  return payload;
+}
+
+function svFifaFetchJson(rawUrl, options = {}, redirects = 0) {
+  return new Promise((resolve, reject) => {
+    let parsed;
+    try { parsed = new URL(rawUrl); } catch (e) { return reject(e); }
+    if (!['http:', 'https:'].includes(parsed.protocol)) return reject(new Error('Unsupported football provider URL'));
+
+    const mod = parsed.protocol === 'https:' ? https : http;
+    const headers = {
+      Accept: 'application/json',
+      'User-Agent': 'StreamVault-Football-Live/2.0',
+      ...(options.headers || {})
+    };
+    const timeout = options.timeout || FIFA_LIVE_UPSTREAM_TIMEOUT_MS;
+    const maxBytes = options.maxBytes || 3 * 1024 * 1024;
+
+    const req = mod.request(parsed, { method: 'GET', timeout, headers }, res => {
+      if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location && redirects < 3) {
+        res.resume();
+        resolve(svFifaFetchJson(new URL(res.headers.location, parsed).href, options, redirects + 1));
+        return;
+      }
+      const chunks = [];
+      let total = 0;
+      res.on('data', chunk => {
+        total += chunk.length;
+        if (total > maxBytes) {
+          req.destroy(new Error('Football provider response too large'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      res.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          reject(new Error(`Football provider returned ${res.statusCode}`));
+          return;
+        }
+        try { resolve(JSON.parse(body)); }
+        catch (e) { reject(e); }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => req.destroy(new Error('Football provider timeout')));
+    req.end();
+  });
+}
+
+function svFifaDedupeMatches(items) {
+  const seen = new Set();
+  return svFifaArray(items).filter(match => {
+    const key = String(match?.id || `${match?.homeTeam || ''}|${match?.awayTeam || ''}|${match?.startTime || ''}|${match?.status || ''}`);
+    if (!key.trim() || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function svFifaApiFootballKey() {
+  return String(process.env.API_FOOTBALL_KEY || process.env.FOOTBALL_API_KEY || process.env.RAPIDAPI_KEY || '').trim();
+}
+
+function svFifaApiFootballHeaders(apiKey) {
+  return {
+    'x-apisports-key': apiKey,
+    'x-rapidapi-key': apiKey,
+    'x-rapidapi-host': 'v3.football.api-sports.io'
+  };
+}
+
+function svFifaNormalizeApiFootballFixture(item) {
+  const fixture = item?.fixture || {};
+  const league = item?.league || {};
+  const teams = item?.teams || {};
+  const goals = item?.goals || {};
+  const statusInfo = fixture.status || {};
+  const short = String(statusInfo.short || '').toUpperCase();
+  const statusMap = {
+    NS: 'UPCOMING',
+    TBD: 'UPCOMING',
+    '1H': 'LIVE',
+    '2H': 'LIVE',
+    ET: 'LIVE',
+    BT: 'LIVE',
+    P: 'LIVE',
+    SUSP: 'POSTPONED',
+    INT: 'LIVE',
+    HT: 'HT',
+    FT: 'FT',
+    AET: 'FT',
+    PEN: 'FT',
+    PST: 'POSTPONED',
+    CANC: 'POSTPONED',
+    ABD: 'POSTPONED'
+  };
+  const status = statusMap[short] || (statusInfo.elapsed ? 'LIVE' : 'UPCOMING');
+  const isUpcoming = status === 'UPCOMING';
+  const isLive = status === 'LIVE' || status === 'HT';
+  const startTime = svFifaIsoDate(new Date(fixture.date || Date.now()));
+  return {
+    id: String(svFifaFirst(fixture.id, `${teams.home?.name || 'home'}-${teams.away?.name || 'away'}-${startTime}`)),
+    status,
+    minute: isLive && statusInfo.elapsed ? `${statusInfo.elapsed}'` : (status === 'HT' ? 'HT' : null),
+    homeTeam: String(teams.home?.name || ''),
+    awayTeam: String(teams.away?.name || ''),
+    homeScore: isUpcoming ? null : svFifaNumber(goals.home),
+    awayScore: isUpcoming ? null : svFifaNumber(goals.away),
+    competition: String(league.name || ''),
+    stage: String(item?.league?.round || ''),
+    group: '',
+    venue: String(fixture.venue?.name || ''),
+    startTime,
+    kickoff: startTime,
+    provider: 'api-football',
+    leagueId: svFifaNumber(league.id),
+    season: svFifaNumber(league.season),
+    providerUrl: ''
+  };
+}
+
+function svFifaNormalizeApiFootballStandings(raw) {
+  const response = svFifaArray(raw?.response);
+  const groups = response.flatMap(entry => svFifaArray(entry?.league?.standings));
+  const rows = [];
+  groups.forEach(groupRows => {
+    svFifaArray(groupRows).forEach(row => {
+      rows.push({
+        group: String(row?.group || ''),
+        rank: svFifaNumber(row?.rank),
+        team: String(row?.team?.name || ''),
+        played: svFifaNumber(row?.all?.played, 0),
+        wins: svFifaNumber(row?.all?.win, 0),
+        draws: svFifaNumber(row?.all?.draw, 0),
+        losses: svFifaNumber(row?.all?.lose, 0),
+        goalDifference: svFifaNumber(row?.goalsDiff, 0),
+        points: svFifaNumber(row?.points, 0)
+      });
+    });
+  });
+  return rows.filter(row => row.team);
+}
+
+async function svFifaFetchApiFootball() {
+  const apiKey = svFifaApiFootballKey();
+  if (!apiKey) return null;
+  const season = String(process.env.FIFA_LIVE_SEASON || new Date().getUTCFullYear());
+  const headers = svFifaApiFootballHeaders(apiKey);
+  const urls = {
+    live: `${FIFA_LIVE_API_FOOTBALL_BASE}/fixtures?live=all`,
+    upcoming: `${FIFA_LIVE_API_FOOTBALL_BASE}/fixtures?next=12`,
+    recent: `${FIFA_LIVE_API_FOOTBALL_BASE}/fixtures?last=8`,
+    standings: `${FIFA_LIVE_API_FOOTBALL_BASE}/standings?league=1&season=${encodeURIComponent(season)}`
+  };
+  const [liveRes, upcomingRes, recentRes, standingsRes] = await Promise.allSettled([
+    svFifaFetchJson(urls.live, { headers }),
+    svFifaFetchJson(urls.upcoming, { headers }),
+    svFifaFetchJson(urls.recent, { headers }),
+    svFifaFetchJson(urls.standings, { headers })
+  ]);
+  const rejected = [liveRes, upcomingRes, recentRes].find(result => result.status === 'rejected');
+  if (rejected) throw rejected.reason;
+  const liveMatches = svFifaArray(liveRes.value?.response).map(svFifaNormalizeApiFootballFixture).filter(match => match.homeTeam && match.awayTeam);
+  const upcomingMatches = svFifaArray(upcomingRes.value?.response)
+    .map(svFifaNormalizeApiFootballFixture)
+    .filter(match => match.homeTeam && match.awayTeam && match.status === 'UPCOMING');
+  const recentResults = svFifaArray(recentRes.value?.response)
+    .map(svFifaNormalizeApiFootballFixture)
+    .filter(match => match.homeTeam && match.awayTeam && match.status === 'FT');
+  const standings = standingsRes.status === 'fulfilled' ? svFifaNormalizeApiFootballStandings(standingsRes.value) : [];
+  return svFifaFinalizePayload({
+    liveMatches: svFifaDedupeMatches(liveMatches),
+    upcomingMatches: svFifaDedupeMatches(upcomingMatches),
+    recentResults: svFifaDedupeMatches(recentResults),
+    standings,
+    headlines: []
+  }, 'api-football');
+}
+
+function svFifaEspnEventStatus(event, competition) {
+  const type = competition?.status?.type || event?.status?.type || {};
+  const state = String(type.state || '').toLowerCase();
+  const detail = String(type.shortDetail || type.detail || type.description || '').toUpperCase();
+  if (state === 'in') return detail.includes('HT') ? 'HT' : 'LIVE';
+  if (type.completed || state === 'post') return 'FT';
+  if (detail.includes('POSTPONED') || detail.includes('PPD')) return 'POSTPONED';
+  return 'UPCOMING';
+}
+
+function svFifaNormalizeEspnEvent(event, leagueSlug = 'fifa.world') {
+  const competition = event?.competitions?.[0] || {};
+  const competitors = svFifaArray(competition.competitors);
+  const home = competitors.find(c => c.homeAway === 'home') || competitors[0] || {};
+  const away = competitors.find(c => c.homeAway === 'away') || competitors[1] || {};
+  const status = svFifaEspnEventStatus(event, competition);
+  const isUpcoming = status === 'UPCOMING';
+  const statusType = competition?.status?.type || event?.status?.type || {};
+  const displayClock = String(competition?.status?.displayClock || event?.status?.displayClock || '');
+  const startTime = svFifaIsoDate(new Date(competition.startDate || competition.date || event.date || Date.now()));
+  const league = event?.league || {};
+  const leagueName = String(svFifaFirst(league.name, event?.season?.displayName, ''));
+  const note = String(competition.altGameNote || '');
+  const group = (note.match(/\bGroup\s+[A-Z0-9]+/i) || [''])[0];
+  const link = svFifaArray(event?.links).find(item => svFifaArray(item?.rel).includes('summary'))?.href || '';
+  return {
+    id: String(event?.id || competition?.id || `${home.team?.displayName || 'home'}-${away.team?.displayName || 'away'}-${startTime}`),
+    status,
+    minute: status === 'LIVE' && displayClock ? displayClock : (status === 'HT' ? 'HT' : null),
+    homeTeam: String(home.team?.displayName || home.team?.shortDisplayName || ''),
+    awayTeam: String(away.team?.displayName || away.team?.shortDisplayName || ''),
+    homeScore: isUpcoming ? null : svFifaNumber(home.score),
+    awayScore: isUpcoming ? null : svFifaNumber(away.score),
+    competition: leagueName || note.split(',')[0] || 'Football',
+    stage: svFifaTitleCase(event?.season?.slug || statusType.description || ''),
+    group,
+    venue: String(competition?.venue?.fullName || event?.venue?.displayName || ''),
+    startTime,
+    kickoff: startTime,
+    provider: 'espn',
+    leagueSlug: String(svFifaFirst(event?.league?.slug, leagueSlug, 'fifa.world')),
+    providerUrl: link
+  };
+}
+
+function svFifaNormalizeEspnHeadlines(...sources) {
+  const items = [];
+  sources.flatMap(src => svFifaArray(src)).forEach((item, index) => {
+    const title = svFifaFirst(item?.headline, item?.shortLinkText, item?.title);
+    if (!title) return;
+    items.push({
+      id: String(svFifaFirst(item?.id, item?.nowId, item?.links?.web?.href, `headline-${index}`)),
+      title: String(title),
+      time: String(svFifaFirst(item?.published, item?.lastModified, item?.time, '')),
+      url: String(svFifaFirst(item?.links?.web?.href, item?.link, ''))
+    });
+  });
+  const seen = new Set();
+  return items.filter(item => {
+    const key = item.title.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 8);
+}
+
+async function svFifaFetchEspnScoreboards(league = 'fifa.world') {
+  const offsets = [-1, 0, 1, 2];
+  const urls = offsets.map(offset => {
+    const date = new Date(Date.now() + offset * 24 * 60 * 60 * 1000);
+    return `${FIFA_LIVE_ESPN_BASE}/${league}/scoreboard?limit=40&dates=${svFifaEspnDate(date)}`;
+  });
+  const results = await Promise.allSettled(urls.map(url => svFifaFetchJson(url, { timeout: FIFA_LIVE_UPSTREAM_TIMEOUT_MS })));
+  const fulfilled = results.filter(result => result.status === 'fulfilled').map(result => result.value);
+  if (!fulfilled.length) throw results.find(result => result.status === 'rejected')?.reason || new Error('ESPN scoreboard unavailable');
+  return fulfilled;
+}
+
+async function svFifaFetchEspn() {
+  let scoreboards = await svFifaFetchEspnScoreboards('fifa.world');
+  let sourceLeague = 'espn';
+  let detailLeague = 'fifa.world';
+  if (!scoreboards.some(board => svFifaArray(board?.events).length)) {
+    scoreboards = await svFifaFetchEspnScoreboards('all');
+    sourceLeague = 'espn';
+    detailLeague = 'all';
+  }
+  const events = svFifaDedupeMatches(scoreboards.flatMap(board => svFifaArray(board?.events).map(event => svFifaNormalizeEspnEvent(event, detailLeague))))
+    .filter(match => match.homeTeam && match.awayTeam);
+  const liveMatches = events.filter(match => match.status === 'LIVE' || match.status === 'HT');
+  const upcomingMatches = events
+    .filter(match => match.status === 'UPCOMING')
+    .sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+  const recentResults = events
+    .filter(match => match.status === 'FT')
+    .sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+  let news = null;
+  try {
+    news = await svFifaFetchJson(`${FIFA_LIVE_ESPN_BASE}/fifa.world/news?limit=8`, { timeout: FIFA_LIVE_UPSTREAM_TIMEOUT_MS, maxBytes: 1024 * 1024 });
+  } catch (e) {
+    svFifaWarn('ESPN news unavailable', e);
+  }
+  const headlines = svFifaNormalizeEspnHeadlines(
+    scoreboards.flatMap(board => svFifaArray(board?.events).flatMap(event => svFifaArray(event?.competitions?.[0]?.headlines))),
+    news?.articles
+  );
+  return svFifaFinalizePayload({
+    liveMatches,
+    upcomingMatches,
+    recentResults,
+    standings: [],
+    headlines
+  }, sourceLeague);
+}
+
+async function svFifaFetchRealPayload() {
+  const providers = [];
+  if (svFifaApiFootballKey()) providers.push(['api-football', svFifaFetchApiFootball]);
+  providers.push(['espn', svFifaFetchEspn]);
+
+  const errors = [];
+  for (const [name, fetcher] of providers) {
+    try {
+      const payload = await fetcher();
+      if (payload && payload.ok) return payload;
+      if (payload && svFifaHasRealData(payload)) return { ...payload, ok: true };
+      errors.push(new Error(`${name} returned no live football data`));
+    } catch (e) {
+      errors.push(e);
+      svFifaWarn(`${name} provider failed`, e);
+    }
+  }
+  if (fifaLiveLastGood) return svFifaMarkStale(fifaLiveLastGood, 'cache');
+  return svFifaEmptyPayload(FIFA_LIVE_REAL_UNAVAILABLE, false, 'none');
 }
 
 async function svGetFifaLivePayload() {
   const now = Date.now();
   if (fifaLiveCache && fifaLiveCache.expiresAt > now) return fifaLiveCache.payload;
-
-  const providerUrl = String(process.env.FIFA_LIVE_URL || '').trim();
-  const providerName = String(process.env.FIFA_LIVE_PROVIDER || '').trim();
-  const apiKey = String(process.env.FIFA_LIVE_API_KEY || '').trim();
-
-  if (!providerUrl) return svFifaCachePayload(svFifaDemoPayload(false));
   if (fifaLiveInFlight) return fifaLiveInFlight;
 
-  fifaLiveInFlight = svFifaFetchJson(providerUrl, apiKey)
-    .then(raw => svFifaCachePayload(svFifaNormalizePayload(raw, providerName || new URL(providerUrl).hostname, false)))
+  fifaLiveInFlight = svFifaFetchRealPayload()
+    .then(payload => svFifaCachePayload(payload))
     .catch(err => {
-      console.warn('[FIFA Live] provider failed:', err.message);
-      if (fifaLiveLastGood) return svFifaCachePayload(svFifaMarkStale(fifaLiveLastGood, providerName || 'provider'));
-      return svFifaCachePayload(svFifaDemoPayload(true));
+      svFifaWarn('endpoint fallback', err);
+      if (fifaLiveLastGood) return svFifaCachePayload(svFifaMarkStale(fifaLiveLastGood, 'cache'));
+      return svFifaCachePayload(svFifaEmptyPayload(FIFA_LIVE_REAL_UNAVAILABLE, false, 'none'));
     })
     .finally(() => { fifaLiveInFlight = null; });
 
   return fifaLiveInFlight;
 }
+
+function svFifaCleanProvider(value) {
+  const provider = String(value || '').trim().toLowerCase();
+  if (provider === 'api-football' || provider === 'apifootball' || provider === 'api_sports') return 'api-football';
+  if (provider === 'espn') return 'espn';
+  if (provider === 'cache') return 'cache';
+  return '';
+}
+
+function svFifaCleanDetailValue(value) {
+  if (value === undefined || value === null) return '';
+  const text = String(value).trim();
+  if (!text || text.toLowerCase() === 'null' || text.toLowerCase() === 'undefined') return '';
+  return text;
+}
+
+function svFifaEmptyLineup(team = '') {
+  return {
+    team: String(team || ''),
+    formation: '',
+    coach: '',
+    players: [],
+    substitutes: []
+  };
+}
+
+function svFifaEmptyMatchDetail(matchId = '', message = FIFA_LIVE_DETAIL_UNAVAILABLE, source = 'none', stale = false) {
+  return {
+    ok: false,
+    generatedAt: new Date().toISOString(),
+    source,
+    stale: !!stale,
+    match: {
+      id: String(matchId || ''),
+      status: '',
+      minute: '',
+      homeTeam: '',
+      awayTeam: '',
+      homeScore: null,
+      awayScore: null,
+      competition: '',
+      stage: '',
+      venue: '',
+      startTime: ''
+    },
+    overview: {
+      referee: '',
+      weather: '',
+      attendance: '',
+      round: '',
+      leg: ''
+    },
+    statistics: [],
+    lineups: {
+      home: svFifaEmptyLineup(),
+      away: svFifaEmptyLineup()
+    },
+    events: [],
+    standings: [],
+    message
+  };
+}
+
+function svFifaMatchDetailHasData(detail) {
+  const lineups = detail?.lineups || {};
+  return !!(
+    svFifaArray(detail?.statistics).length ||
+    svFifaArray(detail?.events).length ||
+    svFifaArray(detail?.standings).length ||
+    svFifaArray(lineups.home?.players).length ||
+    svFifaArray(lineups.home?.substitutes).length ||
+    svFifaArray(lineups.away?.players).length ||
+    svFifaArray(lineups.away?.substitutes).length ||
+    lineups.home?.formation ||
+    lineups.away?.formation ||
+    lineups.home?.coach ||
+    lineups.away?.coach
+  );
+}
+
+function svFifaFinalizeMatchDetail(payload, source, stale = false) {
+  const match = payload?.match || {};
+  const overview = payload?.overview || {};
+  const lineups = payload?.lineups || {};
+  const detail = {
+    ok: !!payload?.ok,
+    generatedAt: new Date().toISOString(),
+    source,
+    stale: !!stale,
+    match: {
+      id: String(match.id || payload?.matchId || ''),
+      status: String(match.status || ''),
+      minute: svFifaCleanDetailValue(match.minute),
+      homeTeam: String(match.homeTeam || ''),
+      awayTeam: String(match.awayTeam || ''),
+      homeScore: match.homeScore === 0 || match.homeScore ? match.homeScore : null,
+      awayScore: match.awayScore === 0 || match.awayScore ? match.awayScore : null,
+      competition: String(match.competition || ''),
+      stage: String(match.stage || match.group || ''),
+      venue: String(match.venue || ''),
+      startTime: String(match.startTime || match.kickoff || '')
+    },
+    overview: {
+      referee: svFifaCleanDetailValue(overview.referee),
+      weather: svFifaCleanDetailValue(overview.weather),
+      attendance: svFifaCleanDetailValue(overview.attendance),
+      round: svFifaCleanDetailValue(overview.round),
+      leg: svFifaCleanDetailValue(overview.leg)
+    },
+    statistics: svFifaArray(payload?.statistics).slice(0, 32),
+    lineups: {
+      home: {
+        ...svFifaEmptyLineup(match.homeTeam),
+        ...(lineups.home || {}),
+        players: svFifaArray(lineups.home?.players).slice(0, 40),
+        substitutes: svFifaArray(lineups.home?.substitutes).slice(0, 40)
+      },
+      away: {
+        ...svFifaEmptyLineup(match.awayTeam),
+        ...(lineups.away || {}),
+        players: svFifaArray(lineups.away?.players).slice(0, 40),
+        substitutes: svFifaArray(lineups.away?.substitutes).slice(0, 40)
+      }
+    },
+    events: svFifaArray(payload?.events).slice(0, 80),
+    standings: svFifaArray(payload?.standings).slice(0, 48),
+    message: String(payload?.message || '')
+  };
+  if (detail.ok && !svFifaMatchDetailHasData(detail) && !detail.message) detail.message = FIFA_LIVE_DETAIL_UNAVAILABLE;
+  if (!detail.ok && !detail.message) detail.message = FIFA_LIVE_DETAIL_UNAVAILABLE;
+  return detail;
+}
+
+function svFifaDetailCacheKey(provider, matchId, league = '') {
+  return `${provider || 'auto'}:${String(matchId || '').trim()}:${String(league || '').trim().toLowerCase()}`;
+}
+
+function svFifaDetailCacheTtl(payload) {
+  const status = String(payload?.match?.status || '').toUpperCase();
+  return (status === 'LIVE' || status === 'HT') ? FIFA_LIVE_DETAIL_FAST_CACHE_MS : FIFA_LIVE_DETAIL_SLOW_CACHE_MS;
+}
+
+function svFifaCacheMatchDetail(key, payload) {
+  if (!payload || !payload.ok || payload.source === 'none') return payload;
+  fifaMatchDetailCache.set(key, {
+    expiresAt: Date.now() + svFifaDetailCacheTtl(payload),
+    payload
+  });
+  return payload;
+}
+
+function svFifaMarkDetailStale(payload) {
+  return {
+    ...payload,
+    generatedAt: new Date().toISOString(),
+    source: 'cache',
+    stale: true,
+    message: payload?.message || 'Showing last real match details while the football provider reconnects.'
+  };
+}
+
+function svFifaMatchCollections(payload) {
+  return [
+    ...svFifaArray(payload?.liveMatches),
+    ...svFifaArray(payload?.upcomingMatches),
+    ...svFifaArray(payload?.recentResults)
+  ];
+}
+
+function svFifaFindSummaryMatch(matchId) {
+  const id = String(matchId || '').trim();
+  if (!id) return null;
+  const payloads = [fifaLiveCache?.payload, fifaLiveLastGood].filter(Boolean);
+  for (const payload of payloads) {
+    const found = svFifaMatchCollections(payload).find(match => String(match?.id || '') === id);
+    if (found) return found;
+  }
+  return null;
+}
+
+async function svFifaInferProvider(matchId) {
+  const cached = svFifaFindSummaryMatch(matchId);
+  if (cached?.provider) return cached.provider;
+  try {
+    const payload = await svGetFifaLivePayload();
+    const found = svFifaMatchCollections(payload).find(match => String(match?.id || '') === String(matchId || ''));
+    if (found?.provider) return found.provider;
+  } catch (e) {
+    svFifaWarn('match provider inference failed', e);
+  }
+  return svFifaApiFootballKey() ? 'api-football' : 'espn';
+}
+
+function svFifaStatKey(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function svFifaFriendlyStatLabel(label, name = '') {
+  const key = svFifaStatKey(name || label);
+  const labels = {
+    ballpossession: 'Possession',
+    possessionpct: 'Possession',
+    totalshots: 'Shots',
+    shotsongoal: 'Shots on target',
+    shotsontarget: 'Shots on target',
+    cornerkicks: 'Corners',
+    woncorners: 'Corners',
+    foulscommitted: 'Fouls',
+    fouls: 'Fouls',
+    yellowcards: 'Yellow Cards',
+    redcards: 'Red Cards',
+    offsides: 'Offsides',
+    goalkeepersaves: 'Saves',
+    saves: 'Saves',
+    totalpasses: 'Passes',
+    accuratepasses: 'Accurate Passes'
+  };
+  return labels[key] || svFifaTitleCase(label || name);
+}
+
+function svFifaNormalizeStatPairs(homeStats, awayStats) {
+  const rows = new Map();
+  const add = (side, stats) => {
+    svFifaArray(stats).forEach(stat => {
+      const rawLabel = svFifaFirst(stat?.label, stat?.type, stat?.displayName, stat?.name);
+      const rawName = svFifaFirst(stat?.name, stat?.type, rawLabel);
+      const label = svFifaFriendlyStatLabel(rawLabel, rawName);
+      const key = svFifaStatKey(label);
+      const value = svFifaCleanDetailValue(svFifaFirst(stat?.displayValue, stat?.value));
+      if (!label || !value) return;
+      const row = rows.get(key) || { label, home: '', away: '' };
+      row[side] = value;
+      rows.set(key, row);
+    });
+  };
+  add('home', homeStats);
+  add('away', awayStats);
+  const order = ['possession', 'shots', 'shotsontarget', 'corners', 'fouls', 'yellowcards', 'redcards', 'offsides', 'saves', 'passes', 'accuratepasses'];
+  return [
+    ...order.map(key => rows.get(key)).filter(Boolean),
+    ...Array.from(rows.entries()).filter(([key]) => !order.includes(key)).map(([, row]) => row)
+  ].filter(row => row.home || row.away);
+}
+
+function svFifaMatchMinute(elapsed, extra) {
+  const base = svFifaNumber(elapsed, null);
+  const added = svFifaNumber(extra, null);
+  if (base === null) return '';
+  return `${base}${added ? `+${added}` : ''}'`;
+}
+
+function svFifaNormalizeApiFootballPlayer(entry, starter) {
+  const player = entry?.player || entry || {};
+  const name = svFifaCleanDetailValue(svFifaFirst(player.name, player.displayName, player.fullName));
+  if (!name) return null;
+  return {
+    number: svFifaNumber(svFifaFirst(player.number, player.jersey), ''),
+    name,
+    position: svFifaCleanDetailValue(svFifaFirst(player.pos, player.position, player.grid)),
+    starter: !!starter,
+    captain: !!player.captain
+  };
+}
+
+function svFifaNormalizeApiFootballLineups(raw, match) {
+  const blocks = svFifaArray(raw?.response);
+  const findBlock = (side, teamName) => blocks.find(block => {
+    const name = String(block?.team?.name || '').toLowerCase();
+    return name && name === String(teamName || '').toLowerCase();
+  }) || blocks[side === 'home' ? 0 : 1] || {};
+  const toLineup = (block, fallbackTeam) => ({
+    team: String(block?.team?.name || fallbackTeam || ''),
+    formation: svFifaCleanDetailValue(block?.formation),
+    coach: svFifaCleanDetailValue(block?.coach?.name),
+    players: svFifaArray(block?.startXI).map(item => svFifaNormalizeApiFootballPlayer(item, true)).filter(Boolean),
+    substitutes: svFifaArray(block?.substitutes).map(item => svFifaNormalizeApiFootballPlayer(item, false)).filter(Boolean)
+  });
+  return {
+    home: toLineup(findBlock('home', match.homeTeam), match.homeTeam),
+    away: toLineup(findBlock('away', match.awayTeam), match.awayTeam)
+  };
+}
+
+function svFifaNormalizeApiFootballStatistics(raw, match) {
+  const blocks = svFifaArray(raw?.response);
+  const homeBlock = blocks.find(block => String(block?.team?.name || '').toLowerCase() === String(match.homeTeam || '').toLowerCase()) || blocks[0] || {};
+  const awayBlock = blocks.find(block => String(block?.team?.name || '').toLowerCase() === String(match.awayTeam || '').toLowerCase()) || blocks[1] || {};
+  return svFifaNormalizeStatPairs(homeBlock.statistics, awayBlock.statistics);
+}
+
+function svFifaNormalizeApiFootballEvents(raw) {
+  return svFifaArray(raw?.response).map(event => ({
+    minute: svFifaMatchMinute(event?.time?.elapsed, event?.time?.extra),
+    team: String(event?.team?.name || ''),
+    player: svFifaCleanDetailValue(event?.player?.name),
+    type: svFifaCleanDetailValue(svFifaFirst(event?.type, event?.detail)),
+    detail: svFifaCleanDetailValue(svFifaFirst(event?.detail, event?.comments, event?.assist?.name))
+  })).filter(event => event.type || event.player || event.team);
+}
+
+async function svFifaFetchApiFootballDetail(matchId) {
+  const apiKey = svFifaApiFootballKey();
+  if (!apiKey) return svFifaEmptyMatchDetail(matchId, FIFA_LIVE_DETAIL_UNAVAILABLE, 'none');
+  const headers = svFifaApiFootballHeaders(apiKey);
+  const fixture = await svFifaFetchJson(`${FIFA_LIVE_API_FOOTBALL_BASE}/fixtures?id=${encodeURIComponent(matchId)}`, { headers });
+  const fixtureItem = svFifaArray(fixture?.response)[0];
+  if (!fixtureItem) return svFifaEmptyMatchDetail(matchId, FIFA_LIVE_DETAIL_UNAVAILABLE, 'api-football');
+  const match = svFifaNormalizeApiFootballFixture(fixtureItem);
+  const league = fixtureItem?.league || {};
+  const season = svFifaNumber(league.season, new Date(match.startTime || Date.now()).getUTCFullYear());
+  const urls = [
+    svFifaFetchJson(`${FIFA_LIVE_API_FOOTBALL_BASE}/fixtures/statistics?fixture=${encodeURIComponent(match.id)}`, { headers }),
+    svFifaFetchJson(`${FIFA_LIVE_API_FOOTBALL_BASE}/fixtures/lineups?fixture=${encodeURIComponent(match.id)}`, { headers }),
+    svFifaFetchJson(`${FIFA_LIVE_API_FOOTBALL_BASE}/fixtures/events?fixture=${encodeURIComponent(match.id)}`, { headers })
+  ];
+  if (league.id && season) urls.push(svFifaFetchJson(`${FIFA_LIVE_API_FOOTBALL_BASE}/standings?league=${encodeURIComponent(league.id)}&season=${encodeURIComponent(season)}`, { headers }));
+  const [statsRes, lineupsRes, eventsRes, standingsRes] = await Promise.allSettled(urls);
+  const detail = svFifaFinalizeMatchDetail({
+    ok: true,
+    match,
+    overview: {
+      referee: fixtureItem?.fixture?.referee || '',
+      weather: '',
+      attendance: '',
+      round: league.round || '',
+      leg: ''
+    },
+    statistics: statsRes.status === 'fulfilled' ? svFifaNormalizeApiFootballStatistics(statsRes.value, match) : [],
+    lineups: lineupsRes.status === 'fulfilled' ? svFifaNormalizeApiFootballLineups(lineupsRes.value, match) : {
+      home: svFifaEmptyLineup(match.homeTeam),
+      away: svFifaEmptyLineup(match.awayTeam)
+    },
+    events: eventsRes.status === 'fulfilled' ? svFifaNormalizeApiFootballEvents(eventsRes.value) : [],
+    standings: standingsRes?.status === 'fulfilled' ? svFifaNormalizeApiFootballStandings(standingsRes.value) : []
+  }, 'api-football');
+  return detail;
+}
+
+function svFifaNormalizeEspnPlayer(entry) {
+  const athlete = entry?.athlete || {};
+  const name = svFifaCleanDetailValue(svFifaFirst(athlete.displayName, athlete.fullName, athlete.shortName));
+  if (!name) return null;
+  return {
+    number: svFifaNumber(svFifaFirst(entry?.jersey, athlete.jersey), ''),
+    name,
+    position: svFifaCleanDetailValue(svFifaFirst(entry?.position?.abbreviation, entry?.position?.displayName, entry?.position?.name)),
+    starter: !!entry?.starter,
+    captain: !!entry?.captain
+  };
+}
+
+function svFifaNormalizeEspnLineups(raw, match) {
+  const rosters = svFifaArray(raw?.rosters);
+  const find = side => rosters.find(item => item?.homeAway === side) || rosters[side === 'home' ? 0 : 1] || {};
+  const toLineup = (block, fallbackTeam) => {
+    const roster = svFifaArray(block?.roster).map(svFifaNormalizeEspnPlayer).filter(Boolean);
+    return {
+      team: String(block?.team?.displayName || fallbackTeam || ''),
+      formation: svFifaCleanDetailValue(block?.formation),
+      coach: svFifaCleanDetailValue(svFifaFirst(block?.coach?.displayName, block?.coach?.name)),
+      players: roster.filter(player => player.starter),
+      substitutes: roster.filter(player => !player.starter)
+    };
+  };
+  return {
+    home: toLineup(find('home'), match.homeTeam),
+    away: toLineup(find('away'), match.awayTeam)
+  };
+}
+
+function svFifaNormalizeEspnStatistics(raw) {
+  const teams = svFifaArray(raw?.boxscore?.teams);
+  const home = teams.find(team => team?.homeAway === 'home') || teams[0] || {};
+  const away = teams.find(team => team?.homeAway === 'away') || teams[1] || {};
+  return svFifaNormalizeStatPairs(home.statistics, away.statistics);
+}
+
+function svFifaNormalizeEspnEvents(raw) {
+  const events = svFifaArray(raw?.keyEvents).length
+    ? svFifaArray(raw?.keyEvents)
+    : svFifaArray(raw?.commentary).map(item => item?.play || item);
+  const important = /goal|card|substitution|kickoff|half|regular time|penalty/i;
+  return events.map(event => {
+    const type = svFifaCleanDetailValue(svFifaFirst(event?.type?.text, event?.type?.description, event?.type?.type));
+    if (!type || !important.test(type)) return null;
+    const participants = svFifaArray(event?.participants);
+    return {
+      minute: svFifaCleanDetailValue(svFifaFirst(event?.clock?.displayValue, event?.time?.displayValue)),
+      team: String(event?.team?.displayName || ''),
+      player: svFifaCleanDetailValue(participants[0]?.athlete?.displayName),
+      type,
+      detail: svFifaCleanDetailValue(svFifaFirst(event?.shortText, event?.text))
+    };
+  }).filter(Boolean);
+}
+
+function svFifaNormalizeEspnStandings(raw) {
+  const standings = raw?.standings || {};
+  return svFifaArray(standings.groups).flatMap(group => {
+    const groupName = String(group?.header || standings.header || '');
+    return svFifaArray(group?.standings?.entries).map((entry, index) => ({
+      group: groupName,
+      rank: index + 1,
+      team: String(entry?.team?.displayName || entry?.team || ''),
+      played: '',
+      wins: '',
+      draws: '',
+      losses: '',
+      goalDifference: '',
+      points: ''
+    }));
+  }).filter(row => row.team);
+}
+
+async function svFifaFetchEspnDetail(matchId, league = '') {
+  const leagues = [...new Set([league, 'fifa.world', 'all'].map(item => String(item || '').trim()).filter(Boolean))];
+  let raw = null;
+  let lastErr = null;
+  let usedLeague = leagues[0] || 'fifa.world';
+  for (const slug of leagues) {
+    try {
+      raw = await svFifaFetchJson(`${FIFA_LIVE_ESPN_BASE}/${encodeURIComponent(slug)}/summary?event=${encodeURIComponent(matchId)}`, {
+        timeout: FIFA_LIVE_UPSTREAM_TIMEOUT_MS,
+        maxBytes: 5 * 1024 * 1024
+      });
+      usedLeague = slug;
+      break;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  if (!raw) throw lastErr || new Error('ESPN match detail unavailable');
+  const header = raw?.header || {};
+  if (!header?.id && !svFifaArray(header?.competitions).length) return svFifaEmptyMatchDetail(matchId, FIFA_LIVE_DETAIL_UNAVAILABLE, 'espn');
+  const match = svFifaNormalizeEspnEvent(header, usedLeague);
+  match.id = String(match.id || matchId);
+  const competition = header?.competitions?.[0] || {};
+  const detail = svFifaFinalizeMatchDetail({
+    ok: true,
+    match,
+    overview: {
+      referee: svFifaArray(competition?.officials).find(item => /referee/i.test(item?.position?.name || item?.role || ''))?.displayName || '',
+      weather: svFifaCleanDetailValue(raw?.gameInfo?.weather?.displayValue),
+      attendance: svFifaCleanDetailValue(competition?.attendance),
+      round: svFifaCleanDetailValue(svFifaFirst(competition?.altGameNote, header?.season?.slug)),
+      leg: ''
+    },
+    statistics: svFifaNormalizeEspnStatistics(raw),
+    lineups: svFifaNormalizeEspnLineups(raw, match),
+    events: svFifaNormalizeEspnEvents(raw),
+    standings: svFifaNormalizeEspnStandings(raw)
+  }, 'espn');
+  return detail;
+}
+
+async function svGetFifaMatchDetail(provider, matchId, options = {}) {
+  const id = String(matchId || '').trim();
+  if (!id) return svFifaEmptyMatchDetail('', FIFA_LIVE_DETAIL_UNAVAILABLE, 'none');
+  const cleanProvider = svFifaCleanProvider(provider) || await svFifaInferProvider(id);
+  const summaryMatch = svFifaFindSummaryMatch(id);
+  const league = svFifaCleanDetailValue(options.league || summaryMatch?.leagueSlug);
+  const key = svFifaDetailCacheKey(cleanProvider, id, league);
+  const cached = fifaMatchDetailCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.payload;
+  if (fifaMatchDetailInflight.has(key)) return fifaMatchDetailInflight.get(key);
+
+  const fetcher = cleanProvider === 'api-football'
+    ? () => svFifaFetchApiFootballDetail(id)
+    : () => svFifaFetchEspnDetail(id, league);
+
+  const inFlight = fetcher()
+    .then(payload => {
+      if (payload?.ok) return svFifaCacheMatchDetail(key, payload);
+      if (cached?.payload?.ok) return svFifaMarkDetailStale(cached.payload);
+      return payload || svFifaEmptyMatchDetail(id, FIFA_LIVE_DETAIL_UNAVAILABLE, 'none');
+    })
+    .catch(err => {
+      svFifaWarn(`${cleanProvider || 'football'} match detail failed`, err);
+      if (cached?.payload?.ok) return svFifaMarkDetailStale(cached.payload);
+      return svFifaEmptyMatchDetail(id, FIFA_LIVE_DETAIL_UNAVAILABLE, 'none');
+    })
+    .finally(() => { fifaMatchDetailInflight.delete(key); });
+
+  fifaMatchDetailInflight.set(key, inFlight);
+  return inFlight;
+}
+
+async function svSendFifaMatchDetail(req, res, provider, matchId) {
+  res.setHeader('Cache-Control', 'no-store, max-age=0, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  try {
+    res.json(await svGetFifaMatchDetail(provider, matchId, { league: req.query?.league }));
+  } catch (e) {
+    svFifaWarn('match detail endpoint response failed', e);
+    res.json(svFifaEmptyMatchDetail(matchId, FIFA_LIVE_DETAIL_UNAVAILABLE, 'none'));
+  }
+}
+
+app.get('/api/fifa-live/match/:provider/:matchId', async (req, res) => {
+  await svSendFifaMatchDetail(req, res, req.params.provider, req.params.matchId);
+});
+
+app.get('/api/fifa-live/match/:matchId', async (req, res) => {
+  await svSendFifaMatchDetail(req, res, '', req.params.matchId);
+});
 
 app.get('/api/fifa-live', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store, max-age=0, must-revalidate');
@@ -2027,8 +2743,8 @@ app.get('/api/fifa-live', async (req, res) => {
   try {
     res.json(await svGetFifaLivePayload());
   } catch (e) {
-    console.warn('[FIFA Live] endpoint fallback:', e.message);
-    res.json(svFifaDemoPayload(true));
+    svFifaWarn('endpoint response failed', e);
+    res.json(svFifaEmptyPayload(FIFA_LIVE_REAL_UNAVAILABLE, false, 'none'));
   }
 });
 

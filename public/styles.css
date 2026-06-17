@@ -3466,41 +3466,38 @@ nav.solid,
 
 /* FIFA live Discover surface */
 .featured-showcase.sv-fifa-hero{
-  margin:0 5% 22px!important;
+  margin:0 5% 18px!important;
   padding:0!important;
-  overflow:visible!important;
+  overflow:hidden!important;
+  contain:layout paint style;
 }
 .fifa-live-section{
   position:relative;
-  isolation:isolate;
   overflow:hidden;
   max-width:100%;
   border-radius:8px;
-  border:1px solid rgba(255,255,255,.16);
+  border:1px solid rgba(255,255,255,.12);
   background:
-    linear-gradient(135deg,rgba(255,255,255,.12),rgba(255,255,255,.03) 36%,rgba(18,22,34,.42)),
-    linear-gradient(180deg,rgba(8,10,14,.96),rgba(9,13,19,.88));
-  box-shadow:0 24px 70px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,255,255,.12);
-  padding:clamp(18px,3vw,30px);
-  backdrop-filter:blur(22px) saturate(145%);
-  -webkit-backdrop-filter:blur(22px) saturate(145%);
+    linear-gradient(135deg,rgba(34,42,52,.96),rgba(10,13,18,.96) 58%),
+    linear-gradient(180deg,#12161d,#090b10);
+  box-shadow:0 6px 18px rgba(0,0,0,.22);
+  padding:clamp(14px,1.8vw,20px);
+  contain:layout paint style;
 }
 .fifa-live-section::before{
   content:'';
   position:absolute;
-  inset:0;
-  z-index:-1;
-  background:
-    linear-gradient(90deg,rgba(29,185,84,.13),transparent 34%,rgba(255,214,102,.09) 70%,rgba(229,9,20,.12)),
-    repeating-linear-gradient(90deg,rgba(255,255,255,.035) 0 1px,transparent 1px 88px);
-  opacity:.72;
+  inset:0 0 auto;
+  height:3px;
+  background:linear-gradient(90deg,#2fd576,#f4d35e 55%,#ff4d4d);
+  opacity:.78;
 }
 .fifa-live-top{
   display:flex;
   align-items:flex-start;
   justify-content:space-between;
-  gap:18px;
-  margin-bottom:18px;
+  gap:12px;
+  margin-bottom:12px;
 }
 .fifa-live-heading{
   min-width:0;
@@ -3509,18 +3506,18 @@ nav.solid,
   display:inline-flex;
   align-items:center;
   gap:8px;
-  margin-bottom:8px;
-  color:rgba(255,255,255,.7);
-  font-size:.72rem;
+  margin-bottom:7px;
+  color:rgba(255,255,255,.68);
+  font-size:.68rem;
   font-weight:900;
-  letter-spacing:.12em;
+  letter-spacing:.1em;
   text-transform:uppercase;
 }
 .fifa-live-heading h2{
   margin:0;
   color:#fff;
-  font-size:clamp(2rem,4.3vw,4.9rem);
-  line-height:.92;
+  font-size:clamp(1.6rem,2.55vw,2.9rem);
+  line-height:1.02;
   font-weight:950;
   letter-spacing:0;
 }
@@ -3528,29 +3525,29 @@ nav.solid,
   display:flex;
   flex-direction:column;
   align-items:flex-end;
-  gap:7px;
+  gap:6px;
   flex:0 0 auto;
-  min-width:140px;
+  min-width:130px;
 }
 .fifa-feed-state,
 .fifa-feed-updated{
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  gap:7px;
-  max-width:220px;
-  border:1px solid rgba(255,255,255,.14);
+  gap:6px;
+  max-width:190px;
+  border:1px solid rgba(255,255,255,.12);
   border-radius:999px;
-  background:rgba(255,255,255,.07);
+  background:rgba(255,255,255,.065);
   color:rgba(255,255,255,.86);
-  padding:8px 12px;
-  font-size:.72rem;
+  padding:7px 10px;
+  font-size:.7rem;
   font-weight:850;
   white-space:nowrap;
 }
 .fifa-feed-updated{
   color:rgba(255,255,255,.55);
-  background:rgba(0,0,0,.18);
+  background:rgba(0,0,0,.14);
 }
 .fifa-live-dot,
 .fifa-status-dot{
@@ -3558,31 +3555,26 @@ nav.solid,
   height:8px;
   border-radius:50%;
   background:#ff2d2d;
-  box-shadow:0 0 0 0 rgba(255,45,45,.58);
-  animation:fifaPulse 1.35s ease-in-out infinite;
   flex:0 0 auto;
-}
-@keyframes fifaPulse{
-  0%,100%{transform:scale(1);opacity:1;box-shadow:0 0 0 0 rgba(255,45,45,.58)}
-  50%{transform:scale(.82);opacity:.72;box-shadow:0 0 0 8px rgba(255,45,45,0)}
 }
 .fifa-live-layout{
   display:grid;
-  grid-template-columns:minmax(0,1.55fr) minmax(260px,.85fr);
-  gap:16px;
+  grid-template-columns:minmax(0,1.45fr) minmax(240px,.85fr);
+  gap:10px;
   max-width:100%;
+  contain:layout paint style;
 }
 .fifa-featured-card,
 .fifa-table-card{
   min-width:0;
   border-radius:8px;
-  border:1px solid rgba(255,255,255,.13);
-  background:rgba(255,255,255,.075);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.1);
+  background:rgba(255,255,255,.055);
+  contain:layout paint style;
 }
 .fifa-featured-card{
-  min-height:260px;
-  padding:18px;
+  min-height:190px;
+  padding:14px;
   display:flex;
 }
 .fifa-featured-card-inner{
@@ -3591,10 +3583,10 @@ nav.solid,
   display:flex;
   flex-direction:column;
   justify-content:space-between;
-  gap:18px;
+  gap:12px;
 }
 .fifa-featured-card-inner.is-live{
-  background:linear-gradient(135deg,rgba(229,9,20,.12),transparent 42%,rgba(29,185,84,.11));
+  background:linear-gradient(135deg,rgba(229,9,20,.09),rgba(29,185,84,.06));
 }
 .fifa-card-label{
   display:flex;
@@ -3613,7 +3605,7 @@ nav.solid,
 }
 .fifa-scoreboard{
   display:grid;
-  gap:10px;
+  gap:8px;
 }
 .fifa-team-line{
   display:grid;
@@ -3627,7 +3619,7 @@ nav.solid,
   text-overflow:ellipsis;
   white-space:nowrap;
   color:#fff;
-  font-size:clamp(1.4rem,3.6vw,3rem);
+  font-size:clamp(1.25rem,2.6vw,2.2rem);
   line-height:1;
   font-weight:950;
 }
@@ -3635,15 +3627,14 @@ nav.solid,
   display:flex;
   align-items:center;
   justify-content:center;
-  width:clamp(48px,7vw,78px);
-  height:clamp(44px,6.4vw,70px);
+  width:clamp(42px,5vw,56px);
+  height:clamp(38px,4.6vw,52px);
   border-radius:8px;
   background:rgba(255,255,255,.94);
   color:#050507;
-  font-size:clamp(1.35rem,3.2vw,2.5rem);
+  font-size:clamp(1.2rem,2.4vw,2rem);
   line-height:1;
   font-weight:950;
-  box-shadow:0 14px 34px rgba(0,0,0,.28);
 }
 .fifa-match-meta{
   min-width:0;
@@ -3655,13 +3646,13 @@ nav.solid,
   font-weight:700;
 }
 .fifa-table-card{
-  padding:16px;
+  padding:12px;
   align-self:stretch;
 }
 .fifa-table-title{
-  margin-bottom:14px;
+  margin-bottom:12px;
   color:#fff;
-  font-size:1.02rem;
+  font-size:.98rem;
   font-weight:950;
 }
 .fifa-table-head,
@@ -3679,7 +3670,7 @@ nav.solid,
   letter-spacing:.08em;
 }
 .fifa-table-row{
-  min-height:34px;
+  min-height:28px;
   border-top:1px solid rgba(255,255,255,.08);
   color:rgba(255,255,255,.78);
   font-size:.78rem;
@@ -3708,32 +3699,37 @@ nav.solid,
 }
 .fifa-match-strip{
   display:flex;
-  gap:12px;
+  gap:10px;
   max-width:100%;
   overflow-x:auto;
   overflow-y:hidden;
-  padding:14px 0 4px;
+  padding:10px 0 2px;
   scroll-snap-type:x proximity;
   scrollbar-width:none;
   -webkit-overflow-scrolling:touch;
+  contain:layout paint style;
 }
 .fifa-match-strip::-webkit-scrollbar,
 .fifa-headline-strip::-webkit-scrollbar{
   display:none;
 }
 .fifa-match-card{
-  flex:0 0 clamp(220px,27vw,320px);
+  flex:0 0 clamp(196px,20vw,258px);
   min-width:0;
-  min-height:154px;
+  min-height:112px;
   scroll-snap-align:start;
   border-radius:8px;
-  border:1px solid rgba(255,255,255,.12);
-  background:rgba(255,255,255,.07);
-  padding:14px;
+  border:1px solid rgba(255,255,255,.1);
+  background:rgba(255,255,255,.055);
+  padding:12px;
   display:flex;
   flex-direction:column;
   justify-content:space-between;
-  gap:12px;
+  gap:10px;
+  contain:layout paint style;
+}
+.fifa-match-card:nth-child(n+7){
+  display:none;
 }
 .fifa-match-card .fifa-team-line span{
   font-size:1rem;
@@ -3751,27 +3747,33 @@ nav.solid,
 }
 .fifa-headline-strip{
   display:flex;
-  gap:10px;
+  gap:8px;
   max-width:100%;
   overflow-x:auto;
   overflow-y:hidden;
-  padding-top:12px;
+  padding-top:10px;
   scrollbar-width:none;
+  contain:layout paint style;
 }
 .fifa-headline-item{
   flex:0 0 auto;
-  max-width:min(520px,86vw);
+  max-width:min(460px,82vw);
   display:inline-flex;
   align-items:center;
-  gap:10px;
+  gap:8px;
   border:1px solid rgba(255,255,255,.1);
   border-radius:999px;
-  background:rgba(0,0,0,.24);
+  background:rgba(0,0,0,.18);
   color:rgba(255,255,255,.78);
-  padding:9px 13px;
-  font-size:.78rem;
+  padding:8px 11px;
+  font-size:.76rem;
   font-weight:750;
   white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.fifa-headline-item:nth-child(n+5){
+  display:none;
 }
 .fifa-headline-item b{
   color:#7ee787;
@@ -3792,9 +3794,7 @@ nav.solid,
 .fifa-match-skeleton div,
 .fifa-headline-skeleton{
   border-radius:8px;
-  background:linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.16),rgba(255,255,255,.06));
-  background-size:220% 100%;
-  animation:fifaShimmer 1.15s linear infinite;
+  background:rgba(255,255,255,.1);
 }
 .fifa-skeleton-line{height:18px;width:62%;margin-bottom:16px}
 .fifa-skeleton-line.w40{width:40%}
@@ -3810,29 +3810,26 @@ nav.solid,
   border-radius:999px;
 }
 .fifa-headline-skeleton.short{width:190px}
-@keyframes fifaShimmer{
-  to{background-position:-220% 0}
-}
 @media(max-width:900px){
   .fifa-live-layout{
     grid-template-columns:1fr;
   }
   .fifa-featured-card{
-    min-height:230px;
+    min-height:196px;
   }
 }
 @media(max-width:759px){
   .featured-showcase.sv-fifa-hero{
-    margin:0 0 14px!important;
+    margin:0 0 12px!important;
     padding:0 calc(var(--sv-mobile-pad) + var(--sl))!important;
   }
   .fifa-live-section{
-    padding:16px;
+    padding:10px;
   }
   .fifa-live-top{
     flex-direction:column;
-    gap:12px;
-    margin-bottom:14px;
+    gap:8px;
+    margin-bottom:10px;
   }
   .fifa-feed-meta{
     width:100%;
@@ -3847,29 +3844,60 @@ nav.solid,
     min-width:0;
     overflow:hidden;
     text-overflow:ellipsis;
+    padding:6px 9px;
+    font-size:.66rem;
+  }
+  .fifa-kicker{
+    font-size:.64rem;
+    margin-bottom:5px;
   }
   .fifa-live-heading h2{
-    font-size:2.15rem;
-  }
-  .fifa-featured-card{
-    min-height:214px;
-    padding:14px;
-  }
-  .fifa-team-line span{
     font-size:1.55rem;
   }
+  .fifa-featured-card{
+    min-height:138px;
+    padding:10px;
+  }
+  .fifa-team-line span{
+    font-size:1.08rem;
+  }
   .fifa-team-line strong{
-    width:48px;
-    height:42px;
-    font-size:1.25rem;
+    width:36px;
+    height:30px;
+    font-size:.98rem;
+  }
+  .fifa-table-card{
+    padding:10px;
+  }
+  .fifa-table-title{
+    margin-bottom:8px;
+    font-size:.88rem;
+  }
+  .fifa-table-head,
+  .fifa-table-row{
+    grid-template-columns:minmax(0,1fr) 30px 30px 38px;
+    gap:6px;
+  }
+  .fifa-table-row{
+    min-height:25px;
+    font-size:.7rem;
   }
   .fifa-match-card{
-    flex-basis:min(84vw,300px);
-    min-height:148px;
+    flex-basis:min(68vw,226px);
+    min-height:96px;
+    padding:10px;
+  }
+  .fifa-match-card:nth-child(n+5){
+    display:none;
   }
   .fifa-headline-item{
     max-width:78vw;
+    padding:6px 9px;
+    font-size:.7rem;
     overflow:hidden;
     text-overflow:ellipsis;
+  }
+  .fifa-headline-item:nth-child(n+3){
+    display:none;
   }
 }

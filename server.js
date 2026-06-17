@@ -1775,6 +1775,263 @@ app.post('/api/channels/reload', (req, res) => {
 // LIVE TV PROXY
 // Robust HLS proxy: rewrites segments, nested playlists, keys, and maps.
 
+const FIFA_LIVE_COMPETITION = 'FIFA World Cup 2026';
+const FIFA_LIVE_CACHE_MS = Math.min(60000, Math.max(30000, Number(process.env.FIFA_LIVE_CACHE_MS || 45000)));
+let fifaLiveCache = null;
+let fifaLiveLastGood = null;
+let fifaLiveInFlight = null;
+
+function svFifaFirst(...values) {
+  return values.find(value => value !== undefined && value !== null && value !== '');
+}
+
+function svFifaArray(...values) {
+  for (const value of values) {
+    if (Array.isArray(value)) return value;
+  }
+  return [];
+}
+
+function svFifaNumber(value, fallback = null) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function svFifaTeamName(value, fallback) {
+  if (typeof value === 'string') return value || fallback;
+  return svFifaFirst(value?.name, value?.shortName, value?.displayName, value?.teamName, fallback);
+}
+
+function svFifaIsLive(match, statusText, minute) {
+  if (match?.live === true || match?.isLive === true) return true;
+  const status = String(statusText || '').toLowerCase();
+  return /\b(live|in.?play|1h|2h|first half|second half|halftime|half time|ht)\b/.test(status) ||
+    (minute !== null && minute !== undefined && !/\b(ft|full.?time|ended|finished|postponed)\b/.test(status));
+}
+
+function svFifaNormalizeMatch(match, index, fallbackLive = false) {
+  const home = svFifaFirst(match?.homeTeam, match?.home, match?.home_team, match?.teams?.home, match?.competitors?.[0]);
+  const away = svFifaFirst(match?.awayTeam, match?.away, match?.away_team, match?.teams?.away, match?.competitors?.[1]);
+  const statusText = svFifaFirst(match?.status, match?.state, match?.statusText, match?.fixture?.status?.long, match?.fixture?.status?.short, fallbackLive ? 'Live' : 'Scheduled');
+  const minute = svFifaFirst(match?.minute, match?.elapsed, match?.time?.elapsed, match?.fixture?.status?.elapsed, match?.clock);
+  const homeScore = svFifaNumber(svFifaFirst(match?.homeScore, match?.score?.home, match?.scores?.home, match?.goals?.home, match?.home?.score, match?.teams?.home?.score));
+  const awayScore = svFifaNumber(svFifaFirst(match?.awayScore, match?.score?.away, match?.scores?.away, match?.goals?.away, match?.away?.score, match?.teams?.away?.score));
+  const live = fallbackLive || svFifaIsLive(match, statusText, minute);
+
+  return {
+    id: String(svFifaFirst(match?.id, match?.matchId, match?.fixture?.id, `match-${index}`)),
+    stage: svFifaFirst(match?.stage, match?.round, match?.fixture?.round, match?.phase, 'Group Stage'),
+    group: svFifaFirst(match?.group, match?.pool, match?.tableGroup, ''),
+    status: String(statusText || (live ? 'Live' : 'Scheduled')),
+    minute: minute === undefined || minute === null ? null : String(minute),
+    kickoff: svFifaFirst(match?.kickoff, match?.startTime, match?.date, match?.utcDate, match?.fixture?.date, ''),
+    venue: svFifaFirst(match?.venue, match?.stadium, match?.fixture?.venue?.name, ''),
+    homeTeam: String(svFifaTeamName(home, match?.homeName || 'Home')),
+    awayTeam: String(svFifaTeamName(away, match?.awayName || 'Away')),
+    homeScore,
+    awayScore,
+    live,
+    note: svFifaFirst(match?.note, match?.description, '')
+  };
+}
+
+function svFifaNormalizeStandings(raw) {
+  const rows = [];
+  const pushRows = (items, groupName = '') => {
+    (Array.isArray(items) ? items : []).forEach((row, index) => {
+      const team = svFifaFirst(row?.team, row?.teamName, row?.name, row?.club);
+      rows.push({
+        group: String(svFifaFirst(row?.group, row?.table, groupName, 'Group')),
+        rank: svFifaNumber(svFifaFirst(row?.rank, row?.position, row?.pos), index + 1),
+        team: String(svFifaTeamName(team, `Team ${index + 1}`)),
+        played: svFifaNumber(svFifaFirst(row?.played, row?.matchesPlayed, row?.mp, row?.all?.played), 0),
+        wins: svFifaNumber(svFifaFirst(row?.wins, row?.won, row?.w, row?.all?.win), 0),
+        draws: svFifaNumber(svFifaFirst(row?.draws, row?.d, row?.all?.draw), 0),
+        losses: svFifaNumber(svFifaFirst(row?.losses, row?.lost, row?.l, row?.all?.lose), 0),
+        goalDifference: svFifaNumber(svFifaFirst(row?.goalDifference, row?.gd, row?.goalsDiff), 0),
+        points: svFifaNumber(svFifaFirst(row?.points, row?.pts), 0)
+      });
+    });
+  };
+
+  if (Array.isArray(raw)) {
+    raw.forEach(group => {
+      if (Array.isArray(group)) pushRows(group);
+      else if (Array.isArray(group?.rows)) pushRows(group.rows, group.group || group.name);
+      else if (Array.isArray(group?.table)) pushRows(group.table, group.group || group.name);
+      else pushRows([group], group.group || group.name);
+    });
+  } else if (raw && typeof raw === 'object') {
+    Object.entries(raw).forEach(([groupName, items]) => pushRows(Array.isArray(items) ? items : items?.rows || items?.table || [], groupName));
+  }
+
+  return rows.slice(0, 24);
+}
+
+function svFifaNormalizeHeadlines(raw) {
+  return (Array.isArray(raw) ? raw : []).map((item, index) => {
+    if (typeof item === 'string') return { id: `headline-${index}`, title: item, time: '' };
+    return {
+      id: String(svFifaFirst(item?.id, item?.url, `headline-${index}`)),
+      title: String(svFifaFirst(item?.title, item?.headline, item?.text, item?.summary, 'Tournament update')),
+      time: String(svFifaFirst(item?.time, item?.publishedAt, item?.date, ''))
+    };
+  }).filter(item => item.title).slice(0, 8);
+}
+
+function svFifaNormalizePayload(raw, source, stale = false) {
+  const root = raw?.data || raw?.response || raw?.payload || raw || {};
+  const liveInput = svFifaArray(root.liveMatches, root.live, root.inPlay, root.live_matches);
+  const upcomingInput = svFifaArray(root.upcomingMatches, root.upcoming, root.fixtures, root.matches, root.events);
+  const normalizedLive = liveInput.map((match, index) => svFifaNormalizeMatch(match, index, true));
+  const normalizedUpcoming = upcomingInput
+    .map((match, index) => svFifaNormalizeMatch(match, index, false))
+    .filter(match => !match.live || !normalizedLive.some(live => live.id === match.id));
+
+  return {
+    ok: true,
+    generatedAt: new Date().toISOString(),
+    source,
+    stale: !!stale,
+    competition: FIFA_LIVE_COMPETITION,
+    liveMatches: normalizedLive,
+    upcomingMatches: normalizedUpcoming.slice(0, 12),
+    standings: svFifaNormalizeStandings(svFifaFirst(root.standings, root.tables, root.groups, root.table, [])),
+    headlines: svFifaNormalizeHeadlines(svFifaFirst(root.headlines, root.news, root.updates, []))
+  };
+}
+
+function svFifaDemoPayload(stale = false) {
+  const now = Date.now();
+  const inHours = hours => new Date(now + hours * 60 * 60 * 1000).toISOString();
+  return {
+    ok: true,
+    generatedAt: new Date(now).toISOString(),
+    source: 'demo',
+    stale: !!stale,
+    competition: FIFA_LIVE_COMPETITION,
+    liveMatches: [
+      { id: 'demo-live-1', stage: 'Group Stage', group: 'Group A', status: 'Live', minute: '63', kickoff: '', venue: 'MetLife Stadium', homeTeam: 'Mexico', awayTeam: 'Germany', homeScore: 1, awayScore: 1, live: true, note: 'Demo feed' },
+      { id: 'demo-live-2', stage: 'Group Stage', group: 'Group B', status: 'Live', minute: '41', kickoff: '', venue: 'SoFi Stadium', homeTeam: 'Brazil', awayTeam: 'Japan', homeScore: 2, awayScore: 0, live: true, note: 'Demo feed' }
+    ],
+    upcomingMatches: [
+      { id: 'demo-up-1', stage: 'Group Stage', group: 'Group C', status: 'Scheduled', minute: null, kickoff: inHours(3), venue: 'AT&T Stadium', homeTeam: 'USA', awayTeam: 'Portugal', homeScore: null, awayScore: null, live: false, note: '' },
+      { id: 'demo-up-2', stage: 'Group Stage', group: 'Group D', status: 'Scheduled', minute: null, kickoff: inHours(6), venue: 'BC Place', homeTeam: 'Argentina', awayTeam: 'Morocco', homeScore: null, awayScore: null, live: false, note: '' },
+      { id: 'demo-up-3', stage: 'Group Stage', group: 'Group E', status: 'Scheduled', minute: null, kickoff: inHours(22), venue: 'Lumen Field', homeTeam: 'England', awayTeam: 'Korea Republic', homeScore: null, awayScore: null, live: false, note: '' }
+    ],
+    standings: [
+      { group: 'Group A', rank: 1, team: 'Mexico', played: 2, wins: 1, draws: 1, losses: 0, goalDifference: 2, points: 4 },
+      { group: 'Group A', rank: 2, team: 'Germany', played: 2, wins: 1, draws: 1, losses: 0, goalDifference: 1, points: 4 },
+      { group: 'Group A', rank: 3, team: 'Canada', played: 2, wins: 1, draws: 0, losses: 1, goalDifference: 0, points: 3 },
+      { group: 'Group A', rank: 4, team: 'New Zealand', played: 2, wins: 0, draws: 0, losses: 2, goalDifference: -3, points: 0 }
+    ],
+    headlines: [
+      { id: 'demo-h-1', title: 'Group stage scoreboard is ready in demo mode', time: new Date(now - 8 * 60 * 1000).toISOString() },
+      { id: 'demo-h-2', title: 'Set FIFA_LIVE_URL to connect a real match provider', time: new Date(now - 18 * 60 * 1000).toISOString() },
+      { id: 'demo-h-3', title: 'Live cards refresh automatically while Discover is visible', time: new Date(now - 25 * 60 * 1000).toISOString() }
+    ]
+  };
+}
+
+function svFifaFetchJson(rawUrl, apiKey, redirects = 0) {
+  return new Promise((resolve, reject) => {
+    let parsed;
+    try { parsed = new URL(rawUrl); } catch (e) { return reject(e); }
+    if (!['http:', 'https:'].includes(parsed.protocol)) return reject(new Error('Unsupported FIFA provider URL'));
+
+    const mod = parsed.protocol === 'https:' ? https : http;
+    const headers = {
+      Accept: 'application/json',
+      'User-Agent': 'StreamVault-FIFA-Live/1.0'
+    };
+    if (apiKey) {
+      headers.Authorization = `Bearer ${apiKey}`;
+      headers['x-api-key'] = apiKey;
+    }
+
+    const req = mod.request(parsed, { method: 'GET', timeout: 10000, headers }, res => {
+      if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location && redirects < 3) {
+        res.resume();
+        resolve(svFifaFetchJson(new URL(res.headers.location, parsed).href, apiKey, redirects + 1));
+        return;
+      }
+      const chunks = [];
+      let total = 0;
+      res.on('data', chunk => {
+        total += chunk.length;
+        if (total > 2 * 1024 * 1024) {
+          req.destroy(new Error('FIFA provider response too large'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      res.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          reject(new Error(`FIFA provider returned ${res.statusCode}`));
+          return;
+        }
+        try { resolve(JSON.parse(body)); }
+        catch (e) { reject(e); }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => req.destroy(new Error('FIFA provider timeout')));
+    req.end();
+  });
+}
+
+function svFifaCachePayload(payload) {
+  fifaLiveCache = { expiresAt: Date.now() + FIFA_LIVE_CACHE_MS, payload };
+  if (payload && payload.ok && !payload.stale && payload.source !== 'demo') fifaLiveLastGood = payload;
+  return payload;
+}
+
+function svFifaMarkStale(payload, source) {
+  return {
+    ...payload,
+    ok: true,
+    generatedAt: new Date().toISOString(),
+    source: source || payload.source || 'provider',
+    stale: true
+  };
+}
+
+async function svGetFifaLivePayload() {
+  const now = Date.now();
+  if (fifaLiveCache && fifaLiveCache.expiresAt > now) return fifaLiveCache.payload;
+
+  const providerUrl = String(process.env.FIFA_LIVE_URL || '').trim();
+  const providerName = String(process.env.FIFA_LIVE_PROVIDER || '').trim();
+  const apiKey = String(process.env.FIFA_LIVE_API_KEY || '').trim();
+
+  if (!providerUrl) return svFifaCachePayload(svFifaDemoPayload(false));
+  if (fifaLiveInFlight) return fifaLiveInFlight;
+
+  fifaLiveInFlight = svFifaFetchJson(providerUrl, apiKey)
+    .then(raw => svFifaCachePayload(svFifaNormalizePayload(raw, providerName || new URL(providerUrl).hostname, false)))
+    .catch(err => {
+      console.warn('[FIFA Live] provider failed:', err.message);
+      if (fifaLiveLastGood) return svFifaCachePayload(svFifaMarkStale(fifaLiveLastGood, providerName || 'provider'));
+      return svFifaCachePayload(svFifaDemoPayload(true));
+    })
+    .finally(() => { fifaLiveInFlight = null; });
+
+  return fifaLiveInFlight;
+}
+
+app.get('/api/fifa-live', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, max-age=0, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  try {
+    res.json(await svGetFifaLivePayload());
+  } catch (e) {
+    console.warn('[FIFA Live] endpoint fallback:', e.message);
+    res.json(svFifaDemoPayload(true));
+  }
+});
+
 const SV_LIVE_DEBUG = process.env.SV_LIVE_DEBUG === '1';
 const SV_LIVE_PLAYLIST_MAX_BYTES = 1024 * 1024;
 const SV_LIVE_MEDIA_SEGMENT_WINDOW = Math.max(5, Number(process.env.SV_LIVE_MEDIA_SEGMENT_WINDOW || 6));

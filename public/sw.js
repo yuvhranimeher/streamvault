@@ -1,4 +1,4 @@
-const SV_CACHE_VERSION = '20260521-desktop-noffmpeg2';
+const SV_CACHE_VERSION = '20260617-fifa-live1';
 const SV_POSTER_CACHE = `streamvault-posters-${SV_CACHE_VERSION}`;
 const SV_ASSET_CACHE = `streamvault-assets-${SV_CACHE_VERSION}`;
 const SV_API_CACHE = `streamvault-api-${SV_CACHE_VERSION}`;
@@ -59,6 +59,10 @@ async function brieflyCachedHomeFeed(request) {
   }
 }
 
+async function networkOnly(request) {
+  return fetch(new Request(request, { cache: 'no-store' }));
+}
+
 self.addEventListener('fetch', event => {
   const request = event.request;
   if (request.method !== 'GET') return;
@@ -73,6 +77,11 @@ self.addEventListener('fetch', event => {
 
   if (isStaticAsset(url)) {
     event.respondWith(cacheFirst(request, SV_ASSET_CACHE));
+    return;
+  }
+
+  if (url.pathname === '/api/fifa-live') {
+    event.respondWith(networkOnly(request));
     return;
   }
 

@@ -1,4 +1,4 @@
-const SV_CACHE_VERSION = '20260618-fifa-ui8';
+const SV_CACHE_VERSION = '20260618-fifa-ui9';
 const SV_POSTER_CACHE = `streamvault-posters-${SV_CACHE_VERSION}`;
 const SV_ASSET_CACHE = `streamvault-assets-${SV_CACHE_VERSION}`;
 const SV_API_CACHE = `streamvault-api-${SV_CACHE_VERSION}`;

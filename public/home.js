@@ -790,7 +790,10 @@
     const logo = /^https?:\/\//i.test(info.logo) ? info.logo : '';
     const attrs = eager ? 'loading="eager" fetchpriority="high"' : 'loading="lazy"';
     if(logo){
-      return `<img class="fifa-team-flag" src="${svFifaEsc(logo)}" alt="" width="22" height="22" decoding="async" ${attrs} onerror="this.remove()">`;
+      const fallback = info.flag
+        ? `<span class="fifa-team-flag emoji fifa-team-flag-fallback" aria-hidden="true" hidden>${svFifaEsc(info.flag)}</span>`
+        : '';
+      return `<span class="fifa-team-flag-stack"><img class="fifa-team-flag" src="${svFifaEsc(logo)}" alt="" width="22" height="22" decoding="async" ${attrs} onerror="${fallback ? 'this.hidden=true;this.nextElementSibling.hidden=false' : 'this.remove()'}">${fallback}</span>`;
     }
     if(info.flag){
       return `<span class="fifa-team-flag emoji" aria-hidden="true">${svFifaEsc(info.flag)}</span>`;
@@ -1060,7 +1063,6 @@
     const tabs = svFifaDetailTabList(payload, loading);
     if(!tabs.some(([key])=>key === svFifaLiveState.detailTab))svFifaLiveState.detailTab = tabs[0]?.[0] || 'overview';
     const status = svFifaMatchStatus(match);
-    const title = `${match.homeTeam || 'Home'} vs ${match.awayTeam || 'Away'}`;
     const meta = [match.competition, match.stage || match.group, match.venue].filter(Boolean).join(' / ');
     const sourceName = payload?.provider?.active || payload?.source || '';
     const source = sourceName ? `Source: ${sourceName}${payload?.stale ? ' (stale)' : ''}` : 'Loading real details';
@@ -1073,23 +1075,22 @@
         <div class="fifa-detail-meta-row">
           <div class="fifa-card-label ${status.className}">${status.className === 'is-live' ? '<span class="fifa-live-dot"></span>' : ''}${svFifaEsc(status.label)}<span>${svFifaEsc(svFifaMatchTime(match))}</span></div>
           <div class="fifa-detail-source">${svFifaEsc(source)}</div>
+          <button class="fifa-detail-close" type="button" data-fifa-detail-close aria-label="Close match details"><span aria-hidden="true">&times;</span></button>
         </div>
-        <div class="fifa-detail-title-row">
-          <div class="fifa-detail-title-wrap">
-            <h3 id="fifaDetailTitle">
-              ${svFifaTeamHtml(match, 'home', 'Home', true)}
-              <span class="fifa-versus">vs</span>
-              ${svFifaTeamHtml(match, 'away', 'Away', true)}
-            </h3>
-            <div class="fifa-detail-meta">${svFifaEsc(meta || 'Real match data')}</div>
+        <div class="fifa-detail-scoreboard" id="fifaDetailTitle">
+          <div class="fifa-detail-team fifa-detail-team-home">
+            ${svFifaTeamHtml(match, 'home', 'Home', true)}
           </div>
           <div class="fifa-detail-score" aria-label="Score">
             <span>${svFifaEsc(svFifaScore(match.homeScore))}</span>
             <b>-</b>
             <span>${svFifaEsc(svFifaScore(match.awayScore))}</span>
           </div>
-          <button class="fifa-detail-close" type="button" data-fifa-detail-close aria-label="Close match details"><span aria-hidden="true">&times;</span></button>
+          <div class="fifa-detail-team fifa-detail-team-away">
+            ${svFifaTeamHtml(match, 'away', 'Away', true)}
+          </div>
         </div>
+        <div class="fifa-detail-meta">${svFifaEsc(meta || 'Real match data')}</div>
       </header>
       ${tabsHtml}
       ${message}
@@ -1142,6 +1143,19 @@
     return Number.isFinite(n) ? n : null;
   }
 
+  function svFifaDisplayStatValue(label, value){
+    const text = svFifaCleanText(value);
+    if(!text)return '';
+    const key = svFifaStatKey(label);
+    const percentLike = /possession|percent|percentage|accuracy|completion/.test(key) || text.endsWith('%');
+    const n = Number(text.replace(/,/g,'').replace(/%$/,''));
+    if(percentLike && Number.isFinite(n) && !text.endsWith('%')){
+      const percentValue = n <= 1 ? n * 100 : n;
+      return `${percentValue.toFixed(percentValue % 1 ? 1 : 0)}%`;
+    }
+    return text;
+  }
+
   function svRenderFifaDetailStats(payload){
     const stats = Array.isArray(payload?.statistics)
       ? payload.statistics.filter(row=>svFifaCleanText(row?.label) && (svFifaCleanText(row?.home) || svFifaCleanText(row?.away)))
@@ -1161,8 +1175,8 @@
   }
 
   function svRenderFifaStatRow(row){
-    const homeText = svFifaCleanText(row.home) || '-';
-    const awayText = svFifaCleanText(row.away) || '-';
+    const homeText = svFifaDisplayStatValue(row.label, row.home) || '-';
+    const awayText = svFifaDisplayStatValue(row.label, row.away) || '-';
     const homeNum = svFifaStatNumber(row.home);
     const awayNum = svFifaStatNumber(row.away);
     const total = (homeNum || 0) + (awayNum || 0);
@@ -1227,16 +1241,26 @@
       ? payload.events.filter(event=>svFifaCleanText(event?.type) || svFifaCleanText(event?.player) || svFifaCleanText(event?.team) || svFifaCleanText(event?.detail))
       : [];
     if(!events.length)return svRenderFifaUnavailable('Match events are not available from the current provider for this fixture.');
-    return `<div class="fifa-event-list">${events.map(event=>`
-      <div class="fifa-event-row ${/goal/i.test(`${event.type || ''} ${event.detail || ''}`) ? 'is-goal' : ''}">
-        <time>${svFifaEsc(event.minute || '')}</time>
-        <div>
-          <strong>${svFifaEsc(event.type || 'Event')}</strong>
-          ${[event.team, event.player].filter(Boolean).length ? `<span>${event.team ? svFifaFlagHtml(event, '', false) : ''}${svFifaEsc([event.team, event.player].filter(Boolean).join(' - '))}</span>` : ''}
-          ${event.detail ? `<p>${svFifaEsc(event.detail)}</p>` : ''}
+    return `<div class="fifa-event-list">${events.map(event=>{
+      const text = `${event.type || ''} ${event.detail || ''}`;
+      const isGoal = /goal/i.test(text);
+      const isCard = /card/i.test(text);
+      const icon = isGoal ? 'G' : (isCard ? '!' : '•');
+      return `
+        <div class="fifa-event-row ${isGoal ? 'is-goal' : ''}">
+          <time>${svFifaEsc(event.minute || '')}</time>
+          <div class="fifa-event-main">
+            <div class="fifa-event-title">
+              <i aria-hidden="true">${svFifaEsc(icon)}</i>
+              <strong>${svFifaEsc(event.type || 'Event')}</strong>
+            </div>
+            ${event.team ? `<span class="fifa-event-team">${svFifaFlagHtml(event, '', false)}${svFifaEsc(event.team)}</span>` : ''}
+            ${event.player ? `<span class="fifa-event-player">${svFifaEsc(event.player)}</span>` : ''}
+            ${event.detail ? `<p>${svFifaEsc(event.detail)}</p>` : ''}
+          </div>
         </div>
-      </div>
-    `).join('')}</div>`;
+      `;
+    }).join('')}</div>`;
   }
 
   function svRenderFifaDetailTable(payload){
@@ -1258,6 +1282,11 @@
   }
 
   function svHandleFifaMatchClick(event){
+    const nav = event.target.closest('[data-fifa-strip-nav]');
+    if(nav){
+      svScrollFifaMatchStrip(Number(nav.dataset.fifaStripNav || 0));
+      return;
+    }
     const card = event.target.closest('[data-fifa-match-key]');
     if(!card)return;
     const match = svFifaLiveState.matchesByKey.get(card.dataset.fifaMatchKey);
@@ -1273,11 +1302,19 @@
     if(match)svOpenFifaMatchDetail(match, card);
   }
 
+  function svScrollFifaMatchStrip(direction){
+    const strip = document.getElementById('fifaMatchStrip');
+    if(!strip || !direction)return;
+    const amount = Math.max(260, Math.round(strip.clientWidth * 0.72));
+    strip.scrollBy({ left: amount * direction, behavior:'smooth' });
+  }
+
   function svSetFifaPageTitle(){
-    const title = document.querySelector('#discoverIntro .page-title');
-    const kicker = document.querySelector('#discoverIntro .page-kicker');
-    if(title)title.textContent = 'FIFA LIVE UPDATE';
-    if(kicker)kicker.textContent = 'Real scores, fixtures, stats, lineups, and live football updates';
+    const intro = document.getElementById('discoverIntro');
+    if(intro){
+      intro.classList.add('sv-fifa-intro-hidden');
+      intro.setAttribute('aria-hidden','true');
+    }
   }
 
   function svEnsureFifaLiveSection(){
@@ -1313,7 +1350,11 @@
           <div class="fifa-featured-card" id="fifaFeaturedMatch"></div>
           <aside class="fifa-table-card" id="fifaStandingsCard"></aside>
         </div>
-        <div class="fifa-match-strip" id="fifaMatchStrip"></div>
+        <div class="fifa-match-strip-wrap" id="fifaMatchStripWrap">
+          <button class="fifa-match-nav fifa-match-nav-prev" type="button" data-fifa-strip-nav="-1" aria-label="Previous football matches"><span aria-hidden="true">&lsaquo;</span></button>
+          <div class="fifa-match-strip" id="fifaMatchStrip"></div>
+          <button class="fifa-match-nav fifa-match-nav-next" type="button" data-fifa-strip-nav="1" aria-label="Next football matches"><span aria-hidden="true">&rsaquo;</span></button>
+        </div>
         <div class="fifa-headline-strip" id="fifaHeadlineStrip"></div>
       </section>
     `;
@@ -1334,6 +1375,7 @@
     const featured = document.getElementById('fifaFeaturedMatch');
     const standings = document.getElementById('fifaStandingsCard');
     const strip = document.getElementById('fifaMatchStrip');
+    const stripWrap = document.getElementById('fifaMatchStripWrap');
     const headlines = document.getElementById('fifaHeadlineStrip');
     if(featured)featured.innerHTML = `
       <div class="fifa-skeleton-line w40"></div>
@@ -1348,6 +1390,7 @@
       <div class="fifa-skeleton-row"></div>
     `;
     if(strip)strip.innerHTML = Array.from({length:4},()=>'<div class="fifa-match-card fifa-match-skeleton"><div></div><div></div><div></div></div>').join('');
+    if(stripWrap)stripWrap.hidden = false;
     if(headlines)headlines.innerHTML = '<span class="fifa-headline-skeleton"></span><span class="fifa-headline-skeleton short"></span>';
   }
 
@@ -1407,35 +1450,87 @@
     return events.find(event=>/goal/i.test(`${event.type || ''} ${event.detail || ''}`)) || events[0] || null;
   }
 
-  function svFifaCompactStats(detail){
+  function svFifaStatKey(label){
+    return svFifaCleanText(label).toLowerCase().replace(/[^a-z0-9]+/g,'');
+  }
+
+  function svFifaFeaturedStatValue(row){
+    const home = svFifaDisplayStatValue(row?.label, row?.home);
+    const away = svFifaDisplayStatValue(row?.label, row?.away);
+    return home || away ? `${home || '-'} / ${away || '-'}` : '';
+  }
+
+  function svFifaCompactStats(detail, limit){
     const stats = Array.isArray(detail?.statistics) ? detail.statistics : [];
-    const wanted = [/shots on target/i, /^shots$/i, /possession/i, /fouls/i, /yellow cards/i, /corners/i, /passes/i, /offsides/i];
+    const wanted = [
+      /shots on target/i,
+      /^shots$/i,
+      /possession/i,
+      /fouls/i,
+      /corners/i,
+      /yellow cards/i,
+      /red cards/i,
+      /offsides/i,
+      /^passes$/i,
+      /accurate passes|pass completion|pass accuracy/i
+    ];
     const picked = [];
     wanted.forEach(rx=>{
-      const row = stats.find(item=>rx.test(svFifaCleanText(item?.label)) && !picked.includes(item));
+      const row = stats.find(item=>rx.test(svFifaCleanText(item?.label)) && svFifaFeaturedStatValue(item) && !picked.includes(item));
       if(row)picked.push(row);
     });
-    return picked.slice(0,4);
+    stats.forEach(row=>{
+      if(picked.length >= (limit || 8))return;
+      if(svFifaFeaturedStatValue(row) && !picked.includes(row))picked.push(row);
+    });
+    return picked.slice(0, limit || 8);
+  }
+
+  function svFifaFeaturedInfoItems(match){
+    const detail = svFifaFeaturedDetailFor(match);
+    const items = [];
+    const add = (label, value, className, html)=>{
+      const cleanLabel = svFifaCleanText(label);
+      const cleanValue = html ? '' : svFifaCleanText(value);
+      if(!cleanLabel || (!cleanValue && !html))return;
+      if(items.some(item=>svFifaStatKey(item.label) === svFifaStatKey(cleanLabel)))return;
+      items.push({ label:cleanLabel, value:cleanValue, className:className || '', html:html || '' });
+    };
+    if(detail){
+      const event = svFifaFeaturedEvent(detail);
+      if(event){
+        const eventText = [event.minute, event.player || event.team, event.type || event.detail].filter(Boolean).join(' - ');
+        const eventHtml = `${event.team ? svFifaFlagHtml(event, '', false) : ''}<span>${svFifaEsc(eventText || event.detail || 'Match event')}</span>`;
+        add(/goal/i.test(`${event.type || ''} ${event.detail || ''}`) ? 'Last goal' : 'Key event', '', 'is-event', eventHtml);
+      }
+      svFifaCompactStats(detail, 8).forEach(row=>add(row.label, svFifaFeaturedStatValue(row), 'is-stat'));
+      const overview = detail.overview || {};
+      add('Round', overview.round);
+      add('Referee', overview.referee);
+      add('Attendance', overview.attendance);
+      add('Weather', overview.weather);
+    }
+    add('Stage', match?.stage || match?.group);
+    add('Venue', match?.venue);
+    add('Kickoff', match?.startTime ? svFifaFormatTime(match.startTime) : '');
+    add('Competition', match?.competition);
+    return items.slice(0,8);
   }
 
   function svRenderFifaFeaturedExtras(match){
-    const detail = svFifaFeaturedDetailFor(match);
-    if(!detail)return '';
-    const event = svFifaFeaturedEvent(detail);
-    const stats = svFifaCompactStats(detail);
-    const eventHtml = event ? `<div class="fifa-feature-event">
-      <span>${svFifaEsc(event.minute || svFifaMatchTime(match))}</span>
-      <strong>${event.team ? svFifaFlagHtml(event, '', false) : ''}${svFifaEsc([event.player, event.type].filter(Boolean).join(' - ') || event.detail || 'Match event')}</strong>
-    </div>` : '';
-    const statsHtml = stats.length ? `<div class="fifa-mini-stats">${stats.map(row=>`
-      <span><b>${svFifaEsc(row.label)}</b>${svFifaEsc(`${svFifaCleanText(row.home) || '-'} / ${svFifaCleanText(row.away) || '-'}`)}</span>
-    `).join('')}</div>` : '';
-    return eventHtml || statsHtml ? `<div class="fifa-feature-extras">${eventHtml}${statsHtml}</div>` : '';
+    const items = svFifaFeaturedInfoItems(match);
+    if(!items.length)return '';
+    return `<div class="fifa-feature-grid">${items.map(item=>`
+      <div class="fifa-feature-info ${svFifaEsc(item.className)}">
+        <b>${svFifaEsc(item.label)}</b>
+        ${item.html ? `<strong>${item.html}</strong>` : `<strong>${svFifaEsc(item.value)}</strong>`}
+      </div>
+    `).join('')}</div>`;
   }
 
   function svFetchFifaFeaturedDetail(match){
     const key = svFifaMatchKey(match);
-    if(!match || !key || !svFifaIsLiveMatch(match)){
+    if(!match || !key){
       if(svFifaLiveState.featuredDetailController){
         svFifaLiveState.featuredDetailController.abort();
         svFifaLiveState.featuredDetailController = null;
@@ -1486,6 +1581,30 @@
     const state = svFifaMatchStatus(match);
     const className = featured ? `fifa-featured-card-inner ${state.className}` : `fifa-match-card ${state.className}`;
     const attrs = key ? ` role="button" tabindex="0" data-fifa-match-key="${svFifaEsc(key)}" aria-label="View details for ${svFifaEsc(match.homeTeam || 'home')} versus ${svFifaEsc(match.awayTeam || 'away')}"` : '';
+    if(featured){
+      return `
+        <article class="${className} is-clickable"${attrs}>
+          <div class="fifa-feature-status">
+            <div class="fifa-card-label ${state.className}">
+              ${state.className === 'is-live' ? '<span class="fifa-live-dot"></span>' : ''}${svFifaEsc(state.label)}
+              <span>${svFifaEsc(svFifaMatchTime(match))}</span>
+            </div>
+            <div class="fifa-detail-cta">View details</div>
+          </div>
+          <div class="fifa-feature-scoreboard">
+            <div class="fifa-feature-team fifa-feature-team-home">${svFifaTeamHtml(match, 'home', 'Home', true)}</div>
+            <div class="fifa-feature-score" aria-label="Featured match score">
+              <span>${svFifaEsc(svFifaScore(match.homeScore))}</span>
+              <b>-</b>
+              <span>${svFifaEsc(svFifaScore(match.awayScore))}</span>
+            </div>
+            <div class="fifa-feature-team fifa-feature-team-away">${svFifaTeamHtml(match, 'away', 'Away', true)}</div>
+          </div>
+          <div class="fifa-match-meta fifa-feature-meta">${svFifaEsc(svFifaMatchMeta(match))}</div>
+          ${svRenderFifaFeaturedExtras(match)}
+        </article>
+      `;
+    }
     return `
       <article class="${className} is-clickable"${attrs}>
         <div class="fifa-card-label ${state.className}">
@@ -1568,6 +1687,7 @@
     const featuredEl = document.getElementById('fifaFeaturedMatch');
     const standingsEl = document.getElementById('fifaStandingsCard');
     const stripEl = document.getElementById('fifaMatchStrip');
+    const stripWrapEl = document.getElementById('fifaMatchStripWrap');
     const headlinesEl = document.getElementById('fifaHeadlineStrip');
 
     root.classList.remove('is-loading');
@@ -1605,6 +1725,7 @@
       stripEl.innerHTML = matchList.slice(0, 8).map(match=>svFifaRenderMatch(match, false, svFifaMatchKey(match))).join('');
       stripEl.hidden = !matchList.length;
     }
+    if(stripWrapEl)stripWrapEl.hidden = !matchList.length;
     if(headlinesEl){
       headlinesEl.innerHTML = svFifaRenderHeadlines(headlines);
       headlinesEl.hidden = !headlines.length;

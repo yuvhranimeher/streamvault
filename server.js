@@ -1782,10 +1782,15 @@ const FIFA_LIVE_SLOW_CACHE_MS = Math.min(15 * 60 * 1000, Math.max(5 * 60 * 1000,
 const FIFA_LIVE_UPSTREAM_TIMEOUT_MS = Math.min(12000, Math.max(4000, Number(process.env.FIFA_LIVE_TIMEOUT_MS || 7000)));
 const FIFA_LIVE_API_FOOTBALL_BASE = 'https://v3.football.api-sports.io';
 const FIFA_LIVE_ESPN_BASE = 'https://site.api.espn.com/apis/site/v2/sports/soccer';
+const FIFA_LIVE_NEWS_CACHE_MS = Math.min(15 * 60 * 1000, Math.max(5 * 60 * 1000, Number(process.env.FIFA_LIVE_NEWS_CACHE_MS || 10 * 60 * 1000)));
+const FIFA_LIVE_NEWS_MAX = 8;
 let fifaLiveCache = null;
 let fifaLiveLastGood = null;
 let fifaLiveInFlight = null;
 let fifaLiveLastWarnAt = 0;
+let fifaLiveNewsCache = null;
+let fifaLiveNewsLastGood = null;
+let fifaLiveNewsInFlight = null;
 const fifaMatchDetailCache = new Map();
 const fifaMatchDetailInflight = new Map();
 const FIFA_LIVE_DETAIL_FAST_CACHE_MS = Math.min(30000, Math.max(20000, Number(process.env.FIFA_LIVE_DETAIL_FAST_CACHE_MS || 25000)));
@@ -1858,6 +1863,7 @@ function svFifaEmptyPayload(message = FIFA_LIVE_REAL_UNAVAILABLE, stale = false,
     },
     providerLimitations: []
   };
+  payload.fakeDataUsed = false;
   payload.capabilities = svFifaBuildSummaryCapabilities(payload, source);
   payload.provider = svFifaProviderMeta(source);
   return payload;
@@ -1894,6 +1900,7 @@ function svFifaFinalizePayload(payload, source, message = '') {
     },
     providerLimitations: []
   };
+  next.fakeDataUsed = false;
   if (!next.ok && !next.message) next.message = FIFA_LIVE_REAL_UNAVAILABLE;
   next.capabilities = svFifaBuildSummaryCapabilities(next, source);
   next.provider = svFifaProviderMeta(source);
@@ -1967,6 +1974,85 @@ function svFifaFetchJson(rawUrl, options = {}, redirects = 0) {
     req.on('timeout', () => req.destroy(new Error('Football provider timeout')));
     req.end();
   });
+}
+
+function svFifaHttpUrl(value) {
+  const text = String(value || '').trim();
+  return /^https?:\/\//i.test(text) ? text : '';
+}
+
+function svFifaNewsDate(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? text : date.toISOString();
+}
+
+function svFifaNewsSourceLabel(source) {
+  const clean = String(source || '').trim().toLowerCase();
+  if (clean === 'fifa') return 'FIFA';
+  if (clean === 'fox') return 'FOX Sports';
+  if (clean === 'espn') return 'ESPN';
+  return source ? String(source) : '';
+}
+
+function svFifaNormalizeNewsItems(items, fallbackSource = '') {
+  const seen = new Set();
+  const normalized = [];
+  svFifaArray(items).forEach((item, index) => {
+    const title = String(svFifaFirst(item?.title, item?.headline, item?.shortLinkText, item?.name, '')).trim();
+    if (!title) return;
+    const url = svFifaHttpUrl(svFifaFirst(item?.url, item?.link, item?.links?.web?.href, item?.links?.api?.self?.href, ''));
+    const source = typeof item?.source === 'string' ? item.source : '';
+    const key = `${title.toLowerCase()}|${url}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    normalized.push({
+      title,
+      url,
+      publishedAt: svFifaNewsDate(svFifaFirst(item?.publishedAt, item?.published, item?.lastModified, item?.time, item?.date, '')),
+      source: String(svFifaFirst(item?.source?.name, item?.source?.displayName, item?.sourceName, source, svFifaNewsSourceLabel(fallbackSource), '')),
+      id: String(svFifaFirst(item?.id, item?.nowId, url, `news-${index}`))
+    });
+  });
+  return normalized.slice(0, FIFA_LIVE_NEWS_MAX);
+}
+
+function svFifaNewsPayload(headlines, source = 'none', stale = false, message = '') {
+  const normalized = svFifaNormalizeNewsItems(headlines, source);
+  return {
+    ok: normalized.length > 0,
+    generatedAt: new Date().toISOString(),
+    source: normalized.length ? source : 'none',
+    stale: !!stale,
+    message: message || '',
+    headlines: normalized.map(({ id, ...item }) => item),
+    apiFootballConfigured: !!svFifaApiFootballKey(),
+    fakeDataUsed: false,
+    dataIntegrity: {
+      fakeDataUsed: false,
+      cardsAreProviderOnly: true,
+      statsAreProviderOnly: true
+    }
+  };
+}
+
+function svFifaMarkNewsStale(payload) {
+  return {
+    ...payload,
+    ok: true,
+    generatedAt: new Date().toISOString(),
+    source: 'cache',
+    stale: true,
+    message: 'Showing last real football news while the news source reconnects'
+  };
+}
+
+function svFifaCacheNewsPayload(payload) {
+  if (!payload) return payload;
+  fifaLiveNewsCache = { expiresAt: Date.now() + FIFA_LIVE_NEWS_CACHE_MS, payload };
+  if (payload.ok && !payload.stale && payload.source !== 'none') fifaLiveNewsLastGood = payload;
+  return payload;
 }
 
 function svFifaDedupeMatches(items) {
@@ -2426,6 +2512,50 @@ function svFifaNormalizeEspnHeadlines(...sources) {
   }).slice(0, 8);
 }
 
+async function svFifaFetchEspnNews() {
+  const news = await svFifaFetchJson(`${FIFA_LIVE_ESPN_BASE}/fifa.world/news?limit=12`, {
+    timeout: FIFA_LIVE_UPSTREAM_TIMEOUT_MS,
+    maxBytes: 1024 * 1024
+  });
+  return svFifaNewsPayload(news?.articles, 'espn');
+}
+
+async function svFifaFetchNewsFresh() {
+  const providers = [
+    ['espn', svFifaFetchEspnNews]
+  ];
+  const errors = [];
+  for (const [name, fetcher] of providers) {
+    try {
+      const payload = await fetcher();
+      if (payload?.ok && svFifaArray(payload.headlines).length) return payload;
+      errors.push(new Error(`${name} returned no football headlines`));
+    } catch (e) {
+      errors.push(e);
+      svFifaWarn(`${name} news provider failed`, e);
+    }
+  }
+  if (errors.length) throw errors[0];
+  return svFifaNewsPayload([], 'none');
+}
+
+async function svGetFifaNewsPayload() {
+  const now = Date.now();
+  if (fifaLiveNewsCache && fifaLiveNewsCache.expiresAt > now) return fifaLiveNewsCache.payload;
+  if (fifaLiveNewsInFlight) return fifaLiveNewsInFlight;
+
+  fifaLiveNewsInFlight = svFifaFetchNewsFresh()
+    .then(payload => svFifaCacheNewsPayload(payload))
+    .catch(err => {
+      svFifaWarn('news endpoint fallback', err);
+      if (fifaLiveNewsLastGood) return svFifaCacheNewsPayload(svFifaMarkNewsStale(fifaLiveNewsLastGood));
+      return svFifaCacheNewsPayload(svFifaNewsPayload([], 'none'));
+    })
+    .finally(() => { fifaLiveNewsInFlight = null; });
+
+  return fifaLiveNewsInFlight;
+}
+
 async function svFifaFetchEspnScoreboards(league = 'fifa.world') {
   const offsets = [-1, 0, 1, 2];
   const urls = offsets.map(offset => {
@@ -2580,6 +2710,7 @@ function svFifaEmptyMatchDetail(matchId = '', message = FIFA_LIVE_DETAIL_UNAVAIL
     },
     providerLimitations: []
   };
+  detail.fakeDataUsed = false;
   detail.capabilities = svFifaBuildDetailCapabilities(detail);
   detail.provider = svFifaProviderMeta(source);
   return detail;
@@ -3159,6 +3290,21 @@ app.get('/api/fifa-live/match/:provider/:matchId', async (req, res) => {
 
 app.get('/api/fifa-live/match/:matchId', async (req, res) => {
   await svSendFifaMatchDetail(req, res, '', req.params.matchId);
+});
+
+app.get('/api/fifa-live/news', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, max-age=0, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  try {
+    res.json(await svGetFifaNewsPayload());
+  } catch (e) {
+    svFifaWarn('news endpoint response failed', e);
+    if (fifaLiveNewsLastGood) {
+      res.json(svFifaMarkNewsStale(fifaLiveNewsLastGood));
+      return;
+    }
+    res.json(svFifaNewsPayload([], 'none'));
+  }
 });
 
 app.get('/api/fifa-live', async (req, res) => {

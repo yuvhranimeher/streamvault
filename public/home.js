@@ -724,10 +724,15 @@
     detailBound:false,
     featuredDetailController:null,
     featuredDetailKey:'',
-    featuredDetailPayload:null
+    featuredDetailPayload:null,
+    newsLoading:false,
+    newsController:null,
+    newsPayload:null,
+    newsFetchedAt:0
   };
 
   const SV_FIFA_LOCAL_CACHE_KEY = 'streamvault:fifa-live:last-real:v1';
+  const SV_FIFA_NEWS_CLIENT_TTL = 5 * 60 * 1000;
 
   function svFifaEsc(value){
     if(typeof esc === 'function')return esc(value);
@@ -1671,9 +1676,11 @@
             <div class="fifa-kicker"><span class="fifa-live-dot"></span><span>Live Football</span></div>
             <h2>FIFA LIVE UPDATE</h2>
           </div>
+          <div class="fifa-live-timer-slot" aria-live="polite">
+            <span class="fifa-feature-timer fifa-live-header-timer" data-fifa-feature-timer hidden></span>
+          </div>
           <div class="fifa-feed-meta">
             <span class="fifa-feed-state" id="fifaLiveStatus">Loading</span>
-            <span class="fifa-feature-timer fifa-live-header-timer" data-fifa-feature-timer hidden></span>
           </div>
         </div>
         <div class="fifa-live-layout">
@@ -2043,13 +2050,60 @@
   }
 
   function svFifaRenderHeadlines(headlines){
-    const items = (headlines || []).slice(0, 5);
+    const items = (headlines || []).filter(item=>svFifaCleanText(typeof item === 'string' ? item : item?.title)).slice(0, 8);
     if(!items.length)return '';
     return items.map(item=>{
       const title = typeof item === 'string' ? item : item?.title;
-      const time = typeof item === 'string' ? '' : item?.time;
-      return `<span class="fifa-headline-item"><b>${svFifaEsc(time ? svFifaFormatTime(time) : 'Update')}</b>${svFifaEsc(title || 'Tournament update')}</span>`;
-    }).join('');
+      const url = typeof item === 'string' ? '' : svFifaHttpUrl(item?.url);
+      const source = typeof item === 'string' ? '' : svFifaCleanText(item?.source);
+      const publishedAt = typeof item === 'string' ? '' : svFifaCleanText(item?.publishedAt || item?.time);
+      const meta = [source, publishedAt ? svFifaFormatTime(publishedAt) : ''].filter(Boolean).join(' / ');
+      const body = `<b>UPDATE</b><span>${svFifaEsc(title)}</span>${meta ? `<em>${svFifaEsc(meta)}</em>` : ''}`;
+      return url
+        ? `<a class="fifa-headline-item" href="${svFifaEsc(url)}" target="_blank" rel="noopener noreferrer">${body}</a>`
+        : `<span class="fifa-headline-item">${body}</span>`;
+    }).filter(Boolean).join('');
+  }
+
+  function svRenderFifaNews(payload){
+    const headlinesEl = document.getElementById('fifaHeadlineStrip');
+    if(!headlinesEl)return;
+    const headlines = Array.isArray(payload?.headlines) ? payload.headlines : [];
+    const html = svFifaRenderHeadlines(headlines);
+    headlinesEl.innerHTML = html;
+    headlinesEl.hidden = !html;
+    const root = document.getElementById('fifaLiveRoot');
+    if(root)root.classList.toggle('has-news', !!html);
+  }
+
+  function svFetchFifaNews(background){
+    const now = Date.now();
+    if(svFifaLiveState.newsLoading)return;
+    if(background && svFifaLiveState.newsFetchedAt && now - svFifaLiveState.newsFetchedAt < SV_FIFA_NEWS_CLIENT_TTL)return;
+    if(!svFifaDiscoverVisible())return;
+    svFifaLiveState.newsLoading = true;
+    if(svFifaLiveState.newsController)svFifaLiveState.newsController.abort();
+    svFifaLiveState.newsController = new AbortController();
+    fetch('/api/fifa-live/news', {
+      cache:'no-store',
+      headers:{ Accept:'application/json' },
+      signal:svFifaLiveState.newsController.signal
+    })
+      .then(r=>r.ok ? r.json() : Promise.reject(new Error('FIFA news feed failed')))
+      .then(data=>{
+        svFifaLiveState.newsPayload = data;
+        svFifaLiveState.newsFetchedAt = Date.now();
+        svRenderFifaNews(data);
+      })
+      .catch(err=>{
+        if(err?.name === 'AbortError')return;
+        svFifaLiveState.newsFetchedAt = Date.now();
+        svRenderFifaNews(svFifaLiveState.newsPayload);
+      })
+      .finally(()=>{
+        svFifaLiveState.newsLoading = false;
+        svFifaLiveState.newsController = null;
+      });
   }
 
   function svRenderFifaLive(payload, errorMessage){
@@ -2125,8 +2179,8 @@
     }
     if(stripWrapEl)stripWrapEl.hidden = !matchList.length;
     if(headlinesEl){
-      headlinesEl.innerHTML = '';
-      headlinesEl.hidden = true;
+      svRenderFifaNews(svFifaLiveState.newsPayload || (headlines.length ? { headlines } : null));
+      svFetchFifaNews(true);
     }
   }
 
@@ -2186,6 +2240,7 @@
       clearTimeout(svFifaLiveState.timer);
       svClearFifaCountdown();
       if(svFifaLiveState.controller)svFifaLiveState.controller.abort();
+      if(svFifaLiveState.newsController)svFifaLiveState.newsController.abort();
       return;
     }
     if(svFifaDiscoverVisible()){

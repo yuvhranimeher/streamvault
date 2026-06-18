@@ -1,4 +1,4 @@
-const SV_CACHE_VERSION = '20260618-fifa-ui7';
+const SV_CACHE_VERSION = '20260618-fifa-ui8';
 const SV_POSTER_CACHE = `streamvault-posters-${SV_CACHE_VERSION}`;
 const SV_ASSET_CACHE = `streamvault-assets-${SV_CACHE_VERSION}`;
 const SV_API_CACHE = `streamvault-api-${SV_CACHE_VERSION}`;
@@ -80,7 +80,7 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  if (url.pathname === '/api/fifa-live' || url.pathname.startsWith('/api/fifa-live/match/')) {
+  if (url.pathname === '/api/fifa-live' || url.pathname === '/api/fifa-live/news' || url.pathname.startsWith('/api/fifa-live/match/')) {
     event.respondWith(networkOnly(request));
     return;
   }

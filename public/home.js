@@ -1010,8 +1010,59 @@
     return fallback || 'This detail is unavailable from the current provider for this fixture.';
   }
 
+  function svFifaProviderLimitMessage(payload){
+    const limitations = Array.isArray(payload?.providerLimitations) ? payload.providerLimitations.filter(Boolean) : [];
+    return limitations[0] || svFifaRealDetailMessage(payload, '');
+  }
+
+  function svFifaValueSource(payload, item){
+    const raw = svFifaCleanText(item?.source);
+    if(raw === 'cache' || payload?.stale || payload?.source === 'cache')return 'cache';
+    if(raw === 'missing')return 'missing';
+    return 'provider';
+  }
+
+  function svFifaProviderStatLabel(label){
+    const labels = {
+      shots:'Shots',
+      totalshots:'Shots',
+      shotsongoal:'Shots on target',
+      shotsontarget:'Shots on target',
+      sog:'Shots on target',
+      possession:'Possession',
+      ballpossession:'Possession',
+      possessionpct:'Possession',
+      passes:'Passes',
+      totalpasses:'Passes',
+      passaccuracy:'Pass Accuracy',
+      passcompletion:'Pass Accuracy',
+      accuratepasses:'Pass Accuracy',
+      fouls:'Fouls',
+      foulscommitted:'Fouls',
+      yellowcards:'Yellow Cards',
+      redcards:'Red Cards',
+      offsides:'Offsides',
+      corners:'Corners',
+      cornerkicks:'Corners',
+      woncorners:'Corners',
+      saves:'Saves',
+      goalkeepersaves:'Saves',
+      expectedgoals:'Expected Goals',
+      xg:'Expected Goals'
+    };
+    return labels[svFifaStatKey(label)] || '';
+  }
+
+  function svFifaProviderStatRows(rows, payload){
+    return svFifaOrderedStats(rows).map(row=>{
+      const label = svFifaProviderStatLabel(row?.label);
+      if(!label)return null;
+      return { ...row, label, source:svFifaValueSource(payload, row) };
+    }).filter(row=>row && (svFifaCleanText(row.home) || svFifaCleanText(row.away)));
+  }
+
   function svFifaHasStatRows(payload){
-    return Array.isArray(payload?.statistics) && payload.statistics.some(row=>svFifaCleanText(row?.label) && (svFifaCleanText(row?.home) || svFifaCleanText(row?.away)));
+    return svFifaProviderStatRows(payload?.statistics, payload).length > 0;
   }
 
   function svFifaHasPlayerRows(lineup){
@@ -1339,7 +1390,7 @@
     const sourceName = payload?.provider?.active || payload?.source || '';
     const source = sourceName ? `Source: ${sourceName}${payload?.stale ? ' (stale)' : ''}` : 'Loading real details';
     const providerLimited = !loading && payload?.provider?.limited && (!payload?.capabilities?.lineups || !payload?.capabilities?.formations);
-    const messageText = !loading ? (payload?.message || (providerLimited ? svFifaRealDetailMessage(payload) : '')) : '';
+    const messageText = !loading && !providerLimited ? (payload?.message || '') : '';
     const message = messageText ? `<div class="fifa-detail-notice">${svFifaEsc(messageText)}</div>` : '';
     const tabsHtml = tabs.length > 1
       ? `<nav class="fifa-detail-tabs" aria-label="Match detail sections">${svFifaDetailTabs(payload, loading)}</nav>`
@@ -1392,26 +1443,31 @@
     const match = svFifaDetailMatch();
     const overview = payload?.overview || {};
     const sourceName = payload?.provider?.active || payload?.source || '';
-    const rows = [
+    const providerLimited = payload?.provider?.limited && (!payload?.capabilities?.lineups || !payload?.capabilities?.formations);
+    const providerNote = providerLimited ? svFifaProviderLimitMessage(payload) : '';
+    const coreRows = [
       ['Status', svFifaStatusInfo(match)],
       ['Source', sourceName],
       ['Competition', match.competition],
       ['Stage', match.stage || match.group || overview.round],
       ['Venue', match.venue],
       ['Kickoff', match.startTime ? svFifaFormatTime(match.startTime) : ''],
+      ['Round', overview.round]
+    ].map(([label,value])=>[label, svFifaCleanText(value) || 'N/A']);
+    const optionalRows = [
       ['Referee', overview.referee],
       ['Attendance', overview.attendance],
       ['Weather', overview.weather],
-      ['Round', overview.round],
       ['Leg', overview.leg]
     ].map(([label,value])=>[label, svFifaCleanText(value)]).filter(([,value])=>value);
+    const rows = [...coreRows, ...optionalRows];
     if(!rows.length)return svRenderFifaUnavailable(payload?.message || 'Only the live score is available for this fixture right now.');
     return `<div class="fifa-detail-grid">${rows.map(([label,value])=>`
       <div class="fifa-detail-info">
         <span>${svFifaEsc(label)}</span>
         <strong>${svFifaEsc(value)}</strong>
       </div>
-    `).join('')}</div>`;
+    `).join('')}</div>${providerNote ? `<div class="fifa-provider-note">${svFifaEsc(providerNote)}</div>` : ''}`;
   }
 
   function svFifaStatNumber(value){
@@ -1435,9 +1491,13 @@
   }
 
   function svRenderFifaDetailStats(payload){
-    const stats = svFifaOrderedStats(payload?.statistics);
+    const stats = svFifaProviderStatRows(payload?.statistics, payload);
     if(!stats.length)return svRenderFifaUnavailable('Match stats are not available from the current provider for this fixture.');
     const match = svFifaDetailMatch();
+    const provider = payload?.provider?.active || payload?.source || 'provider';
+    const note = stats.length < 10
+      ? `<div class="fifa-provider-note">Only ${svFifaEsc(stats.length)} real stat ${stats.length === 1 ? 'row is' : 'rows are'} available from ${svFifaEsc(provider)} for this match.</div>`
+      : '';
     return `<div class="fifa-stats-board">
       <div class="fifa-stats-teams">
         ${svFifaTeamHtml(match, 'home', 'Home', true)}
@@ -1447,7 +1507,7 @@
       ${stats.map(row=>`
         ${svRenderFifaStatRow(row)}
       `).join('')}
-    </div>`;
+    </div>${note}`;
   }
 
   function svRenderFifaStatRow(row){
@@ -1459,7 +1519,7 @@
     const canBar = homeNum !== null && awayNum !== null && total > 0;
     const homePct = canBar ? Math.max(0, Math.min(100, (homeNum / total) * 100)) : 50;
     const awayPct = canBar ? Math.max(0, Math.min(100, (awayNum / total) * 100)) : 50;
-    return `<div class="fifa-stat-row">
+    return `<div class="fifa-stat-row" data-fifa-stat-source="${svFifaEsc(row.source || 'provider')}">
       <div class="fifa-stat-values">
         <strong>${svFifaEsc(homeText)}</strong>
         <span>${svFifaEsc(svFifaCleanText(row.label) || 'Stat')}</span>
@@ -1799,7 +1859,7 @@
   }
 
   function svFifaCompactStats(detail, limit){
-    const stats = svFifaOrderedStats(detail?.statistics);
+    const stats = svFifaProviderStatRows(detail?.statistics, detail);
     const wanted = [
       /^(total)?shots$/i,
       /shots on target|shotsongoal/i,
@@ -1827,46 +1887,47 @@
   function svFifaFeaturedInfoItems(match){
     const detail = svFifaFeaturedDetailFor(match);
     const items = [];
-    const add = (label, value, className, html)=>{
+    const add = (label, value, className, html, source)=>{
       const cleanLabel = svFifaCleanText(label);
       const cleanValue = html ? '' : svFifaCleanText(value);
       if(!cleanLabel || (!cleanValue && !html))return;
       if(items.some(item=>svFifaStatKey(item.label) === svFifaStatKey(cleanLabel)))return;
-      items.push({ label:cleanLabel, value:cleanValue, className:className || '', html:html || '' });
+      items.push({ label:cleanLabel, value:cleanValue, className:className || '', html:html || '', source:source || 'provider' });
     };
     if(detail){
+      const detailSource = svFifaValueSource(detail);
       const event = svFifaFeaturedEvent(detail);
       if(event){
         const eventText = [event.minute, event.player || event.team, event.type || event.detail].filter(Boolean).join(' - ');
         const eventHtml = `${event.team ? svFifaFlagHtml(event, '', false) : ''}<span>${svFifaEsc(eventText || event.detail || 'Match event')}</span>`;
-        add(/goal/i.test(`${event.type || ''} ${event.detail || ''}`) ? 'Last goal' : 'Key event', '', 'is-event', eventHtml);
+        add(/goal/i.test(`${event.type || ''} ${event.detail || ''}`) ? 'Last goal' : 'Key event', '', 'is-event', eventHtml, svFifaValueSource(detail, event));
       }
-      svFifaCompactStats(detail, 10).forEach(row=>add(row.label, svFifaFeaturedStatValue(row), 'is-stat'));
+      svFifaCompactStats(detail, 10).forEach(row=>add(row.label, svFifaFeaturedStatValue(row), 'is-stat', '', row.source || detailSource));
       const overview = detail.overview || {};
-      add('Round', overview.round);
-      add('Referee', overview.referee);
-      add('Attendance', overview.attendance);
-      add('Weather', overview.weather);
+      add('Round', overview.round, '', '', detailSource);
+      add('Referee', overview.referee, '', '', detailSource);
+      add('Attendance', overview.attendance, '', '', detailSource);
+      add('Weather', overview.weather, '', '', detailSource);
     }
-    add('Status', svFifaStatusInfo(match));
-    add('Total goals', svFifaScoreTotal(match));
-    add('Goal difference', svFifaGoalDifference(match));
-    add('Stage', match?.stage || match?.group);
-    add('Venue', match?.venue);
-    add('Kickoff', match?.startTime ? svFifaFormatTime(match.startTime) : '');
-    add('Competition', match?.competition);
+    const summarySource = svFifaValueSource(svFifaLiveState.payload);
+    add('Status', svFifaStatusInfo(match), '', '', summarySource);
+    add('Stage', match?.stage || match?.group, '', '', summarySource);
+    add('Venue', match?.venue, '', '', summarySource);
+    add('Kickoff', match?.startTime ? svFifaFormatTime(match.startTime) : '', '', '', summarySource);
+    add('Competition', match?.competition, '', '', '', summarySource);
     return items.slice(0, svFifaInfoItemLimit(items));
   }
 
   function svRenderFifaFeaturedExtras(match){
     const items = svFifaFeaturedInfoItems(match);
     if(!items.length)return '';
+    const note = items.length < 10 ? '<div class="fifa-feature-provider-note">Showing available real provider data only.</div>' : '';
     return `<div class="fifa-feature-grid">${items.map(item=>`
-      <div class="fifa-feature-info ${svFifaEsc(item.className)}">
+      <div class="fifa-feature-info ${svFifaEsc(item.className)}" data-fifa-card-source="${svFifaEsc(item.source || 'provider')}">
         <b>${svFifaEsc(item.label)}</b>
         ${item.html ? `<strong>${item.html}</strong>` : `<strong>${svFifaEsc(item.value)}</strong>`}
       </div>
-    `).join('')}</div>`;
+    `).join('')}</div>${note}`;
   }
 
   function svFetchFifaFeaturedDetail(match){

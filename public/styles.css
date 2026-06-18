@@ -5523,3 +5523,220 @@ img.fifa-team-flag{
     text-align:center;
   }
 }
+
+/* FIFA final layout-fit pass: compact hero, header timer, mobile ratio */
+@keyframes fifaTimerPulse{
+  0%,100%{ transform:scale(1); opacity:1; }
+  50%{ transform:scale(.72); opacity:.58; }
+}
+.featured-showcase.sv-fifa-hero{
+  margin:calc(var(--nav-h) + var(--si) + 22px) 5% 18px!important;
+}
+.fifa-live-section{
+  padding:clamp(12px,1.5vw,18px);
+}
+.fifa-live-top{
+  align-items:center;
+  gap:12px;
+  margin-bottom:10px;
+}
+.fifa-feed-meta{
+  flex-direction:row;
+  align-items:center;
+  justify-content:flex-end;
+  flex-wrap:wrap;
+  gap:8px;
+  min-width:0;
+}
+.fifa-feed-updated{
+  display:none!important;
+}
+.fifa-live-header-timer[hidden]{
+  display:none!important;
+}
+.fifa-live-header-timer{
+  min-height:36px;
+  padding:8px 14px;
+  font-size:1rem;
+  font-weight:950;
+}
+.fifa-feature-timer::before{
+  width:9px;
+  height:9px;
+  flex-basis:9px;
+  animation:fifaTimerPulse 1.8s ease-in-out infinite;
+}
+.fifa-featured-card{
+  min-height:0;
+  padding:12px;
+}
+.fifa-featured-card-inner{
+  gap:8px;
+}
+.fifa-feature-status{
+  display:none;
+}
+.fifa-feature-scoreboard{
+  grid-template-columns:minmax(0,1fr) minmax(96px,auto) minmax(0,1fr);
+  gap:clamp(16px,3vw,34px);
+}
+.fifa-feature-team{
+  font-size:clamp(1.35rem,2.3vw,2.2rem);
+}
+.fifa-feature-team .fifa-team-flag,
+.fifa-feature-team .fifa-team-flag-stack{
+  width:34px;
+  height:34px;
+  flex-basis:34px;
+}
+.fifa-feature-team .fifa-team-flag-stack .fifa-team-flag{
+  flex-basis:34px;
+}
+.fifa-detail-team .fifa-team-flag,
+.fifa-detail-team .fifa-team-flag-stack{
+  width:30px;
+  height:30px;
+  flex-basis:30px;
+}
+.fifa-match-card .fifa-team-flag,
+.fifa-match-card .fifa-team-flag-stack{
+  width:20px;
+  height:20px;
+  flex-basis:20px;
+}
+.fifa-feature-score{
+  min-width:96px;
+  padding:7px 9px;
+  border-radius:16px;
+  font-size:clamp(1.35rem,2.4vw,2.2rem);
+}
+.fifa-feature-meta{
+  font-size:.84rem;
+}
+.fifa-feature-grid{
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:7px;
+}
+.fifa-feature-info{
+  min-height:48px;
+  border-radius:11px;
+  padding:7px 8px;
+}
+.fifa-feature-info b{
+  margin-bottom:3px;
+  font-size:.72rem;
+}
+.fifa-feature-info strong{
+  display:block;
+  font-size:.86rem;
+  line-height:1.15;
+  overflow:visible;
+  text-overflow:clip;
+  white-space:normal;
+}
+.fifa-match-strip-wrap{
+  margin-top:10px;
+}
+.fifa-headline-strip{
+  display:none;
+}
+
+@media(max-width:759px){
+  .featured-showcase.sv-fifa-hero{
+    margin-top:calc(var(--nav-h) + var(--si) + 12px)!important;
+    margin-bottom:10px!important;
+    padding:0 calc(10px + var(--sl))!important;
+  }
+  .fifa-live-section{
+    border-radius:18px;
+    padding:10px;
+  }
+  .fifa-live-top{
+    align-items:flex-start;
+    gap:8px;
+    margin-bottom:8px;
+  }
+  .fifa-live-heading h2{
+    font-size:1.42rem;
+  }
+  .fifa-kicker{
+    margin-bottom:4px;
+    font-size:.62rem;
+  }
+  .fifa-feed-meta{
+    justify-content:flex-start;
+    gap:6px;
+    width:100%;
+  }
+  .fifa-feed-state{
+    padding:6px 9px;
+    font-size:.78rem;
+  }
+  .fifa-live-header-timer{
+    min-height:30px;
+    padding:6px 10px;
+    font-size:.9rem;
+  }
+  .fifa-featured-card{
+    border-radius:18px;
+    padding:10px;
+  }
+  .fifa-featured-card-inner{
+    gap:7px;
+  }
+  .fifa-feature-scoreboard{
+    grid-template-columns:1fr;
+    gap:7px;
+  }
+  .fifa-feature-team{
+    font-size:1.05rem;
+  }
+  .fifa-feature-team .fifa-team-flag,
+  .fifa-feature-team .fifa-team-flag-stack,
+  .fifa-detail-team .fifa-team-flag,
+  .fifa-detail-team .fifa-team-flag-stack{
+    width:22px;
+    height:22px;
+    flex-basis:22px;
+  }
+  .fifa-match-card .fifa-team-flag,
+  .fifa-match-card .fifa-team-flag-stack{
+    width:18px;
+    height:18px;
+    flex-basis:18px;
+  }
+  .fifa-feature-score{
+    min-width:92px;
+    padding:7px 8px;
+    font-size:1.32rem;
+  }
+  .fifa-feature-meta{
+    font-size:.76rem;
+    white-space:normal;
+    overflow:visible;
+    text-overflow:clip;
+    line-height:1.2;
+  }
+  .fifa-feature-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:6px;
+  }
+  .fifa-feature-info{
+    min-height:46px;
+    padding:6px 7px;
+  }
+  .fifa-feature-info b{
+    font-size:.68rem;
+  }
+  .fifa-feature-info strong{
+    font-size:.78rem;
+  }
+  .fifa-match-strip-wrap{
+    grid-template-columns:30px minmax(0,1fr) 30px;
+    margin-top:8px;
+  }
+  .fifa-match-nav{
+    width:30px;
+    height:42px;
+  }
+}

@@ -1791,7 +1791,7 @@ const fifaMatchDetailInflight = new Map();
 const FIFA_LIVE_DETAIL_FAST_CACHE_MS = Math.min(30000, Math.max(20000, Number(process.env.FIFA_LIVE_DETAIL_FAST_CACHE_MS || 25000)));
 const FIFA_LIVE_DETAIL_SLOW_CACHE_MS = Math.min(15 * 60 * 1000, Math.max(5 * 60 * 1000, Number(process.env.FIFA_LIVE_DETAIL_SLOW_CACHE_MS || 10 * 60 * 1000)));
 const FIFA_LIVE_DETAIL_UNAVAILABLE = 'Detailed match data is unavailable for this fixture right now.';
-const FIFA_LIVE_DETAIL_PROVIDER_LIMITED = 'Detailed player and formation data is unavailable from the current provider. Add API_FOOTBALL_KEY for full match details.';
+const FIFA_LIVE_DETAIL_PROVIDER_LIMITED = 'Full player lineups and formations require API_FOOTBALL_KEY. ESPN fallback did not provide them for this match.';
 
 function svFifaFirst(...values) {
   for (const value of values) {

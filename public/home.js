@@ -1695,14 +1695,10 @@
       <section class="fifa-live-section is-loading" id="fifaLiveRoot" aria-live="polite">
         <div class="fifa-live-top">
           <div class="fifa-live-heading">
-            <div class="fifa-kicker"><span class="fifa-live-dot"></span><span>Live Football</span></div>
             <h2>FIFA LIVE UPDATE</h2>
           </div>
           <div class="fifa-live-timer-slot" aria-live="polite">
             <span class="fifa-feature-timer fifa-live-header-timer" data-fifa-feature-timer hidden></span>
-          </div>
-          <div class="fifa-feed-meta">
-            <span class="fifa-feed-state" id="fifaLiveStatus">Loading</span>
           </div>
         </div>
         <div class="fifa-live-layout">
@@ -1806,12 +1802,12 @@
     if(status === 'POSTPONED')return 'POSTPONED';
     const startValue = match?.startTime || match?.kickoff;
     const start = new Date(startValue || '');
-    if(Number.isNaN(start.getTime()))return 'STARTS --.--';
+    if(Number.isNaN(start.getTime()))return '--.--';
     const now = new Date();
     const diff = start.getTime() - now.getTime();
-    if(diff <= 0)return 'STARTS 0.00';
+    if(diff <= 0)return '0.00';
     const minutes = Math.ceil(diff / 60000);
-    return `STARTS ${svFifaTimerValue(minutes)}`;
+    return svFifaTimerValue(minutes);
   }
 
   function svClearFifaCountdown(){
@@ -2485,6 +2481,70 @@
         document.getElementById('sectionLoadWrap').style.display = svSectionState.page + 1 < (data.pages || svSectionState.pages) ? 'flex' : 'none';
       });
   };
+
+  function svFindLiveSportsCategory(){
+    let list = [];
+    try{
+      if(typeof channels !== 'undefined' && Array.isArray(channels))list = channels;
+    }catch(_){}
+    const categories = Array.from(new Set(list.map(ch=>svFifaCleanText(ch?.category)).filter(Boolean)));
+    return categories.find(cat=>/^sports?$/i.test(cat)) || categories.find(cat=>/sports?/i.test(cat)) || '';
+  }
+
+  function svHighlightLiveSportsChannel(){
+    let sportsIndex = -1;
+    try{
+      if(typeof channels !== 'undefined' && Array.isArray(channels)){
+        sportsIndex = channels.findIndex(ch=>/sports?|t\s*sports|star sports|sony sports/i.test(`${ch?.category || ''} ${ch?.name || ''}`));
+      }
+    }catch(_){}
+    const cards = Array.from(document.querySelectorAll('#liveGrid .channel-card'));
+    const target = sportsIndex >= 0 ? cards[sportsIndex] : cards.find(card=>/sports?|t\s*sports|star sports|sony sports/i.test(card.getAttribute('aria-label') || card.textContent || ''));
+    if(!target)return false;
+    target.classList.add('sv-live-match-target');
+    target.scrollIntoView({ behavior:'smooth', block:'center', inline:'nearest' });
+    setTimeout(()=>target.classList.remove('sv-live-match-target'), 1800);
+    return true;
+  }
+
+  function svOpenLiveMatchNav(event){
+    if(event)event.preventDefault();
+    if(typeof switchTab === 'function')switchTab('live');
+    const focusLiveSports = ()=>{
+      const category = svFindLiveSportsCategory();
+      if(category && typeof filterLiveCat === 'function'){
+        filterLiveCat(category);
+        const section = document.getElementById('liveSection') || document.getElementById('liveGrid');
+        if(section)section.scrollIntoView({ behavior:'smooth', block:'start' });
+        return;
+      }
+      if(svHighlightLiveSportsChannel())return;
+      const section = document.getElementById('liveSection') || document.getElementById('liveGrid');
+      if(section)section.scrollIntoView({ behavior:'smooth', block:'start' });
+    };
+    setTimeout(focusLiveSports, 140);
+    setTimeout(focusLiveSports, 560);
+  }
+
+  function svInstallLiveMatchNav(){
+    const nav = document.querySelector('.nav-links');
+    if(!nav)return;
+    const link = Array.from(nav.querySelectorAll('a')).find(el=>/continue watching/i.test(el.textContent || '') || /continueRow/.test(el.getAttribute('onclick') || ''));
+    if(!link || link.dataset.svLiveMatchNav === '1')return;
+    link.dataset.svLiveMatchNav = '1';
+    link.classList.add('live-match-nav-pill');
+    link.textContent = 'LIVE MATCH';
+    link.setAttribute('role','button');
+    link.setAttribute('aria-label','Open live sports channels');
+    link.removeAttribute('onclick');
+    link.addEventListener('click', svOpenLiveMatchNav);
+    const discoverLink = Array.from(nav.querySelectorAll('a')).find(el=>/^discover$/i.test((el.textContent || '').trim()));
+    if(discoverLink && discoverLink.nextElementSibling !== link)nav.insertBefore(link, discoverLink.nextElementSibling);
+  }
+
+  window.svOpenLiveMatchNav = svOpenLiveMatchNav;
+  svInstallLiveMatchNav();
+  document.addEventListener('DOMContentLoaded', svInstallLiveMatchNav, { once:true });
 
   if(!window._svSwitchWrapped){
     window._svSwitchWrapped = true;

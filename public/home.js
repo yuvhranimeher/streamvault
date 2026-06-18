@@ -1136,19 +1136,21 @@
     if(document.body.dataset.svFifaDetailModal === '1')return;
     const y = Math.max(0, window.scrollY || document.documentElement.scrollTop || 0);
     svFifaLiveState.detailScrollY = y;
-    document.documentElement.classList.add('modal-open','fifa-detail-lock');
-    document.body.classList.add('modal-open','fifa-detail-lock');
+    document.documentElement.classList.add('modal-open','fifa-detail-lock','fifa-modal-open');
+    document.body.classList.add('modal-open','fifa-detail-lock','fifa-modal-open');
     document.body.dataset.svFifaDetailModal = '1';
     document.body.style.setProperty('--sv-fifa-scroll-y', `${y}px`);
+    document.body.style.top = `-${y}px`;
   }
 
   function svUnlockFifaPageScroll(){
     if(document.body.dataset.svFifaDetailModal !== '1')return;
     const y = svFifaLiveState.detailScrollY || 0;
     delete document.body.dataset.svFifaDetailModal;
-    document.documentElement.classList.remove('modal-open','fifa-detail-lock');
-    document.body.classList.remove('modal-open','fifa-detail-lock');
+    document.documentElement.classList.remove('modal-open','fifa-detail-lock','fifa-modal-open');
+    document.body.classList.remove('modal-open','fifa-detail-lock','fifa-modal-open');
     document.body.style.removeProperty('--sv-fifa-scroll-y');
+    document.body.style.top = '';
     svFifaLiveState.detailScrollY = 0;
     requestAnimationFrame(()=>window.scrollTo({ top:y, left:0, behavior:'auto' }));
   }
@@ -1799,7 +1801,7 @@
       const minute = svFifaLiveMinuteValue(match);
       return `LIVE ${svFifaTimerValue(minute)}`;
     }
-    if(status === 'HT')return 'HT';
+    if(status === 'HT')return `LIVE ${svFifaTimerValue(svFifaLiveMinuteValue(match) ?? 45)}`;
     if(status === 'FT')return 'FT';
     if(status === 'POSTPONED')return 'POSTPONED';
     const startValue = match?.startTime || match?.kickoff;
@@ -1993,7 +1995,9 @@
         const featuredEl = document.getElementById('fifaFeaturedMatch');
         if(featuredEl && svFifaLiveState.payload){
           const merged = svFifaMergeDetailMatch(match, data?.match || {});
-          featuredEl.classList.toggle('is-live-featured', svFifaIsLiveMatch(merged));
+          const isLiveFeatured = svFifaIsLiveMatch(merged);
+          featuredEl.classList.toggle('is-live-featured', isLiveFeatured);
+          featuredEl.classList.toggle('is-live', isLiveFeatured);
           featuredEl.innerHTML = svFifaRenderMatch(merged, true, key);
           svStartFifaCountdown(merged, key);
         }
@@ -2197,7 +2201,9 @@
     if(featuredEl){
       const emptyTitle = (!payload?.ok && !hasRealData) ? 'Live data unavailable' : 'No live matches right now';
       const emptyDetail = payload?.message || 'Waiting for the next real fixture update';
-      featuredEl.classList.toggle('is-live-featured', !!featuredMatch && svFifaIsLiveMatch(featuredMatch));
+      const isLiveFeatured = !!featuredMatch && svFifaIsLiveMatch(featuredMatch);
+      featuredEl.classList.toggle('is-live-featured', isLiveFeatured);
+      featuredEl.classList.toggle('is-live', isLiveFeatured);
       featuredEl.innerHTML = featuredMatch ? svFifaRenderMatch(featuredMatch, true, svFifaMatchKey(featuredMatch)) : svFifaRenderEmpty(emptyTitle, emptyDetail, true);
     }
     if(featuredMatch)svStartFifaCountdown(featuredMatch, svFifaMatchKey(featuredMatch));

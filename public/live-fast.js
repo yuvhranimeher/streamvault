@@ -47,8 +47,10 @@
     document.body.style.overflow='hidden';
     if(typeof showUI==='function')showUI();
 
-    const src = '/live-relay/' + encodeURIComponent(channelId) + '/index.m3u8';
-    const sourceMode = 'relay';
+    const proxySrc = '/live/' + encodeURIComponent(channelId) + '/playlist.m3u8?fast=1';
+    const relaySrc = '/live-relay/' + encodeURIComponent(channelId) + '/index.m3u8';
+    let src = proxySrc;
+    let sourceMode = 'proxy';
     let restartCount=0;
     let networkRecoveryCount=0;
     let mediaRecoveryCount=0;
@@ -79,6 +81,21 @@
       const delay=Math.min(5000,400*Math.pow(2,Math.min(restartCount-1,3)));
       liveDebug('schedule relay restart',{delay,restartCount});
       restartTimer=setTimeout(()=>{restartTimer=null;start();},delay);
+    }
+
+    function switchToRelay(reason){
+      if(sourceMode === 'relay')return false;
+      liveDebug('proxy failed; switching to relay fallback',{reason});
+      src=relaySrc;
+      sourceMode='relay';
+      restartCount=0;
+      networkRecoveryCount=0;
+      mediaRecoveryCount=0;
+      clearStallTimer();
+      if(sub)sub.textContent='Retrying live stream...';
+      if(restartTimer){clearTimeout(restartTimer);restartTimer=null;}
+      restartTimer=setTimeout(()=>{restartTimer=null;start();},150);
+      return true;
     }
 
     function nudgeLiveEdge(reason){
@@ -123,8 +140,9 @@
       if(watchdog)clearTimeout(watchdog);
       watchdog=setTimeout(()=>{
         liveDebug('first-playback watchdog restart');
+        if(switchToRelay('startup watchdog'))return;
         hardRestart(true);
-      }, 15000);
+      }, sourceMode === 'proxy' ? 9000 : 15000);
       liveDebug('attach source', {src, sourceMode});
 
       if(typeof Hls!=='undefined' && Hls.isSupported()){
@@ -211,6 +229,10 @@
           });
 
           if(!data.fatal){
+            if(sourceMode === 'proxy' && data.details && /manifest|level|frag|load|timeout/i.test(data.details)){
+              switchToRelay(data.details);
+              return;
+            }
             if(data.details && /buffer|stall/i.test(data.details)){
               armStallTimer(data.details);
               try{vid.play().catch(()=>{});}catch{}
@@ -219,6 +241,7 @@
           }
 
           if(data.type===Hls.ErrorTypes.NETWORK_ERROR){
+            if(switchToRelay(data.details || 'fatal network error'))return;
             if(networkRecoveryCount++ < 1){
               try{hlsInstance.startLoad(-1); return;}catch{}
             }
@@ -262,7 +285,11 @@
     const onLoadedData=()=>{ liveDebug('video loadeddata'); hideSpin(); };
     const onWaiting=()=>{ liveDebug('video waiting'); armStallTimer('waiting'); };
     const onStalled=()=>{ liveDebug('video stalled'); armStallTimer('stalled'); };
-    const onError=()=>{ liveDebug('video error',vid.error?.code||0); hardRestart(true); };
+    const onError=()=>{
+      liveDebug('video error',vid.error?.code||0);
+      if(switchToRelay('native video error'))return;
+      hardRestart(true);
+    };
     vid.addEventListener('playing', onPlaying);
     vid.addEventListener('canplay', onCanplay);
     vid.addEventListener('loadeddata', onLoadedData);

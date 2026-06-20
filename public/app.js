@@ -164,13 +164,12 @@ function audioTrackTitle(track, index){
 function renderAudioTracks(){
   const list = document.getElementById('audioList');
   if(!list)return;
-  const desktop = !isMobilePlaybackClient();
   const tool = document.querySelector('.audio-tool');
   const separator = document.querySelector('.tool-sep');
-  if(desktop && availableAudio.length < 2){
+  if(availableAudio.length < 2){
     list.innerHTML = `<div class="pd-item" style="color:#666;pointer-events:none">No switchable audio tracks</div>`;
-    if(tool)tool.style.display='none';
-    if(separator)separator.style.display='none';
+    if(tool)tool.style.display='';
+    if(separator)separator.style.display='';
     const label = document.getElementById('audioLabel');
     if(label)label.textContent='Audio';
     return;
@@ -195,11 +194,13 @@ async function loadAudioTracks(id){
     const data = await r.json();
     const tracks = Array.isArray(data.audioTracks) ? data.audioTracks : [];
     if(tracks.length){
-      availableAudio = tracks.map((track,i)=>({
+      const discovered = tracks.map((track,i)=>({
         ...track,
         index: i,
         title: audioTrackTitle(track,i),
       }));
+      const nativeTracks = !isMobilePlaybackClient() ? desktopNativeAudioTracks() : [];
+      availableAudio = nativeTracks.length ? nativeTracks : discovered;
       renderAudioTracks();
     }
   }catch(e){
@@ -226,7 +227,7 @@ function ensureLocalTrackOptionsLoaded(){
     if(_localTrackLoadPromise)return _localTrackLoadPromise;
     const subList = document.getElementById('subList');
     if(subList)subList.innerHTML = `<div class="pd-item" style="color:#444;pointer-events:none">Loading subtitles...</div>`;
-    _localTrackLoadPromise = loadSubtitleTracks(currentStreamId).catch(()=>{});
+    _localTrackLoadPromise = Promise.all([loadAudioTracks(currentStreamId), loadSubtitleTracks(currentStreamId)]).catch(()=>{});
     return _localTrackLoadPromise;
   }
   if(_localTrackLoadPromise)return _localTrackLoadPromise;
@@ -1803,10 +1804,11 @@ function desktopNativeAudioTracks(){
 
 function refreshDesktopNativeAudioTracks(){
   if(isMobilePlaybackClient())return;
-  availableAudio=desktopNativeAudioTracks();
-  if(hlsInstance && availableAudio.length){
+  const nativeTracks=desktopNativeAudioTracks();
+  if(nativeTracks.length)availableAudio=nativeTracks;
+  if(hlsInstance && nativeTracks.length){
     currentAudioIdx=Math.max(0,Math.min(availableAudio.length-1,Number(hlsInstance.audioTrack)||0));
-  }else{
+  }else if(nativeTracks.length){
     const enabled=availableAudio.findIndex(track=>track.nativeTrack?.enabled);
     currentAudioIdx=enabled>=0?enabled:0;
   }
@@ -3193,7 +3195,7 @@ function setSpeed(s){
 
 function openDropdown(id,btn){
   if((id === 'audioDD' || id === 'subDD') && _ftpStreamUrl)ensureFtpTrackOptionsLoaded();
-  if((id === 'audioDD' || id === 'subDD') && !_ftpStreamUrl && !isMobilePlaybackClient())ensureLocalTrackOptionsLoaded();
+  if((id === 'audioDD' || id === 'subDD') && !_ftpStreamUrl)ensureLocalTrackOptionsLoaded();
   const menu=document.getElementById(id);
   const wasOpen=menu.classList.contains('open');
   closeAllDropdowns();
@@ -4726,7 +4728,7 @@ if(document.readyState === 'loading')document.addEventListener('DOMContentLoaded
 else svStartPosterObserver();
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('/sw.js?v=20260620-remove-legal-nav1').catch(()=>{});
+    navigator.serviceWorker.register('/sw.js?v=20260620-hotfix-restore-live-tracks1').catch(()=>{});
   }, { once:true });
 }
 function svChannelColor(ch={}){

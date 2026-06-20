@@ -2147,22 +2147,6 @@ nav.solid{background:var(--nav-bg) !important;border-color:var(--border)}
   #liveSection{padding-bottom:64px}
 }
 
-.site-footer{
-  margin:48px auto 120px;
-  width:min(1120px,calc(100% - 48px));
-  padding:28px 0;
-  border-top:1px solid rgba(255,255,255,.12);
-  color:rgba(255,255,255,.62);
-  text-align:center;
-}
-.site-footer-brand{color:#fff;font-size:1.1rem;font-weight:800;letter-spacing:.04em}
-.site-footer-links{display:flex;flex-wrap:wrap;justify-content:center;gap:10px 22px;margin:16px 0}
-.site-footer-links a{color:rgba(255,255,255,.82);text-decoration:none}
-.site-footer-links a:hover,.site-footer-links a:focus-visible{color:#fff;text-decoration:underline}
-.site-footer p{margin:0 auto;max-width:760px;font-size:.82rem;line-height:1.6}
-@media(min-width:1000px){.site-footer{margin-bottom:48px}}
-
-
 /* ─────────────────────────────────────────────────────────────────────────────
    StreamVault mobile polish patch
    - fixes left/right spacing

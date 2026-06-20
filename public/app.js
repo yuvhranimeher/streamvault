@@ -4726,7 +4726,7 @@ if(document.readyState === 'loading')document.addEventListener('DOMContentLoaded
 else svStartPosterObserver();
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('/sw.js?v=20260620-subtitles-live-legal1').catch(()=>{});
+    navigator.serviceWorker.register('/sw.js?v=20260620-remove-legal-nav1').catch(()=>{});
   }, { once:true });
 }
 function svChannelColor(ch={}){

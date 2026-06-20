@@ -161,6 +161,24 @@ function audioTrackTitle(track, index){
   return bits || `Audio ${index + 1}`;
 }
 
+function filenameAudioHints(value){
+  const decoded=(()=>{try{return decodeURIComponent(String(value||''));}catch{return String(value||'');}})();
+  const match=decoded.match(/\[(?:Dual|Multi) Audio\]\[([^\]]+)\]/i) || decoded.match(/\[([^\]]*(?:Hindi|English|Bengali|Bangla|Arabic|Japanese|Korean|Tamil|Telugu|Punjabi)[^\]]*)\]/i);
+  if(!match)return [];
+  return match[1].split(/\s*\+\s*|\s*\/\s*/).map(part=>part.replace(/\b\d(?:\.\d)?\b|\b(?:AAC|DDP?|AC3|DTS|Atmos)\b/ig,'').trim()).filter(Boolean);
+}
+
+function audioTrackWithFallback(track,index,hints=[]){
+  const hint=hints[index]||'';
+  const language=String(track?.language||'').toLowerCase();
+  const genericTitle=!track?.title || /^Audio \d+$/i.test(track.title);
+  return {
+    ...track,
+    language:(!language || language==='und') && hint ? hint : track?.language,
+    title:genericTitle && hint ? hint : track?.title,
+  };
+}
+
 function renderAudioTracks(){
   const list = document.getElementById('audioList');
   if(!list)return;
@@ -194,10 +212,12 @@ async function loadAudioTracks(id){
     const data = await r.json();
     const tracks = Array.isArray(data.audioTracks) ? data.audioTracks : [];
     if(tracks.length){
+      const hints=filenameAudioHints(typeof localFileForStreamId==='function'?localFileForStreamId(id):'');
       const discovered = tracks.map((track,i)=>({
-        ...track,
+        ...audioTrackWithFallback(track,i,hints),
         index: i,
-        title: audioTrackTitle(track,i),
+        sourceIndex: track.index,
+        title: audioTrackTitle(audioTrackWithFallback(track,i,hints),i),
       }));
       const nativeTracks = !isMobilePlaybackClient() ? desktopNativeAudioTracks() : [];
       availableAudio = nativeTracks.length ? nativeTracks : discovered;
@@ -2005,6 +2025,8 @@ async function fetchLocalPlaybackPlan(id, start=0, options={}){
   if(isMobilePlaybackClient())params.set('mobile','1');
   if(currentQuality && currentQuality !== 'auto')params.set('quality', currentQuality);
   if(currentAudioIdx > 0)params.set('audio', currentAudioIdx);
+  const audioStreamIndex=availableAudio[currentAudioIdx]?.sourceIndex;
+  if(Number.isFinite(audioStreamIndex))params.set('audioStream',audioStreamIndex);
   if(start > 0)params.set('start', Math.floor(start));
   if(options.forceHls)params.set('forceHls','1');
   if(options.forceRemux)params.set('mode','remux');
@@ -2231,11 +2253,12 @@ async function loadFtpTrackOptions(streamUrl){
     const subtitleTracks = Array.isArray(data.subtitleTracks) ? data.subtitleTracks : [];
 
     if(audioTracks.length){
+      const hints=filenameAudioHints(streamUrl);
       availableAudio = audioTracks.map((track,i)=>({
-        ...track,
+        ...audioTrackWithFallback(track,i,hints),
         index: i,
         sourceIndex: track.index,
-        title: audioTrackTitle(track,i),
+        title: audioTrackTitle(audioTrackWithFallback(track,i,hints),i),
       }));
       renderAudioTracks();
     }
@@ -2243,6 +2266,7 @@ async function loadFtpTrackOptions(streamUrl){
     availableSubs = subtitleTracks.filter(subtitleCanRenderAsVtt).map((track,i)=>({
       ...track,
       index: i,
+      sourceIndex: track.index,
       label: track.title || ((track.language && track.language !== 'und') ? track.language.toUpperCase() : `Subtitle ${i + 1}`),
       embedded: true,
     }));
@@ -2598,56 +2622,106 @@ async function playMedia(id, name, year){
       playbackDebug('local direct play rejected', {id, message:e.message});
       tryLocalAdaptiveFallback(id, playbackTime()).catch(()=>{});
     });
-    if(vid._sourceSeekRequired || plan.mode !== 'direct')ensureLocalTrackOptionsLoaded();
+    setTimeout(()=>{
+      if(String(currentStreamId)===String(id) && !_ftpStreamUrl)ensureLocalTrackOptionsLoaded();
+    },500);
   }catch(e){
     document.getElementById('playerSpinner').classList.remove('on');
     showPlayerNotice(DESKTOP_UNSUPPORTED_MESSAGE);
   }
 }
 
+async function switchAudioWithServer(idx){
+  if(vid._audioSwitchPending)return;
+  const selected=availableAudio[idx];
+  if(!selected)return;
+  const previousIdx=currentAudioIdx;
+  const target=playbackTime();
+  const wasPlaying=!vid.paused;
+  const localId=currentStreamId;
+  const ftpUrl=_ftpStreamUrl;
+  const token=(vid._audioSwitchToken||0)+1;
+  vid._audioSwitchToken=token;
+  vid._audioSwitchPending=true;
+  currentAudioIdx=idx;
+  renderAudioTracks();
+  closeAllDropdowns();
+  document.getElementById('playerSpinner')?.classList.add('on');
+  vid._sourceOffset=target;
+
+  const finish=()=>{
+    if(token!==vid._audioSwitchToken)return;
+    vid._audioSwitchPending=false;
+    document.getElementById('playerSpinner')?.classList.remove('on');
+  };
+  const timeout=setTimeout(finish,12000);
+  vid.addEventListener('canplay',function onAudioCanPlay(){
+    vid.removeEventListener('canplay',onAudioCanPlay);
+    clearTimeout(timeout);
+    finish();
+    if(wasPlaying)vid.play().catch(()=>{});
+  },{once:true});
+
+  try{
+    const plan=ftpUrl
+      ? await fetchFtpPlaybackPlan(ftpUrl,target,{forceAudio:true})
+      : await fetchLocalPlaybackPlan(localId,target,{forceAudio:true});
+    if(token!==vid._audioSwitchToken)return;
+    if(ftpUrl){
+      _currentFtpPlaybackPlan=plan;
+      _ftpNeedsTranscode=true;
+      _ftpCurrentTime=target;
+    }else{
+      _currentPlaybackPlan=plan;
+    }
+    vid._sourceSeekRequired=true;
+    vid._mediaSourceSeekRequired=true;
+    const attached=await attachPlayerSource(plan.src,plan.mode||'audio');
+    if(!attached)throw new Error('Audio stream could not be attached');
+    if(wasPlaying)vid.play().catch(()=>{});
+    showToast(`Audio: ${selected.title||audioTrackTitle(selected,idx)}`);
+    playbackDebug('server audio switch',{idx,target,mode:plan.mode,ftp:!!ftpUrl});
+  }catch(e){
+    clearTimeout(timeout);
+    currentAudioIdx=previousIdx;
+    renderAudioTracks();
+    finish();
+    showToast('Could not switch audio for this file');
+    console.warn('[Audio] Switch failed:',e.message);
+  }
+}
+
 function setAudio(idx){
+  if(idx===currentAudioIdx){closeAllDropdowns();return;}
   if(!isMobilePlaybackClient()){
     const sourceBefore=vid.currentSrc;
     refreshDesktopNativeAudioTracks();
     const selected=availableAudio[idx];
     if(!selected || availableAudio.length<2){
       closeAllDropdowns();
-      showToast('Audio switching is not exposed by this browser for this file.');
+      showToast('No alternate audio track is available for this file.');
       return;
     }
-    if(idx===currentAudioIdx){closeAllDropdowns();return;}
     if(selected.hls && hlsInstance){
       hlsInstance.audioTrack=selected.hlsIndex;
-    }else{
-      availableAudio.forEach((track,index)=>{if(track.nativeTrack)track.nativeTrack.enabled=index===idx;});
+      currentAudioIdx=idx;
+      renderAudioTracks();
+      closeAllDropdowns();
+      showToast(`Audio: ${selected.title||audioTrackTitle(selected,idx)}`);
+      playbackDebug('desktop HLS audio switch',{idx,sourceUnchanged:sourceBefore===vid.currentSrc});
+      return;
     }
-    currentAudioIdx=idx;
-    renderAudioTracks();
-    closeAllDropdowns();
-    showToast(`Audio: ${selected.title||audioTrackTitle(selected,idx)}`);
-    playbackDebug('desktop native audio switch',{idx,sourceUnchanged:sourceBefore===vid.currentSrc});
-    return;
+    if(selected.nativeTrack){
+      availableAudio.forEach((track,index)=>{if(track.nativeTrack)track.nativeTrack.enabled=index===idx;});
+      currentAudioIdx=idx;
+      renderAudioTracks();
+      closeAllDropdowns();
+      showToast(`Audio: ${selected.title||audioTrackTitle(selected,idx)}`);
+      playbackDebug('desktop native audio switch',{idx,sourceUnchanged:sourceBefore===vid.currentSrc});
+      return;
+    }
   }
-  if(idx===currentAudioIdx){closeAllDropdowns();return;}
-  if(_ftpStreamUrl){
-    currentAudioIdx=idx;
-    renderAudioTracks();
-    closeAllDropdowns();
-    showToast(`Audio: ${availableAudio[idx]?.title||'Audio '+(idx+1)}`);
-    ftpSeekTo(playbackTime());
-    return;
-  }
-  currentAudioIdx=idx;
-  const t=playbackTime(),paused=vid.paused;
-  const sourceSeek = !!vid._mediaSourceSeekRequired || idx > 0;
-  vid._sourceSeekRequired = sourceSeek;
-  vid._sourceOffset = sourceSeek ? t : 0;
-  vid.addEventListener('loadedmetadata',()=>{if(!sourceSeek)vid.currentTime=t;if(!paused)vid.play();},{once:true});
-  if(sourceSeek)sourceSeekTo(t);
-  else attachPlayerSource(streamUrlFor(currentStreamId, 0),'direct');
-  document.querySelectorAll('#audioList .pd-item').forEach((el,ei)=>el.classList.toggle('active',ei===idx));
-  document.getElementById('audioLabel').textContent=availableAudio[idx]?.title||'Audio';
-  closeAllDropdowns();showToast(`Audio: ${availableAudio[idx]?.title||'Audio '+idx}`);
+  switchAudioWithServer(idx);
 }
 
 function updateProgress(){
@@ -2792,11 +2866,6 @@ let _ftpTrackLoadPromise=null;
 
 function ensureFtpTrackOptionsLoaded(){
   if(!_ftpStreamUrl)return Promise.resolve();
-  if(!isMobilePlaybackClient()){
-    refreshDesktopNativeAudioTracks();
-    refreshDesktopNativeSubtitleTracks(false);
-    return Promise.resolve();
-  }
   if(_ftpTrackLoadPromise)return _ftpTrackLoadPromise;
   const subList = document.getElementById('subList');
   if(subList)subList.innerHTML = `<div class="pd-item" style="color:#444;pointer-events:none">Loading subtitles...</div>`;
@@ -2930,13 +2999,11 @@ async function playFtpMedia(streamUrl, name, year){
       return;
     }
 
-    if(_ftpNeedsTranscode){
-      setTimeout(()=>{
-        if(_ftpStreamUrl !== resolvedStreamUrl)return;
-        ensureFtpTrackOptionsLoaded();
-        loadFtpDuration(resolvedStreamUrl);
-      }, 1500);
-    }
+    setTimeout(()=>{
+      if(_ftpStreamUrl !== resolvedStreamUrl)return;
+      ensureFtpTrackOptionsLoaded();
+      loadFtpDuration(resolvedStreamUrl);
+    }, 500);
 
     vid.play().catch(e => {
       playbackDebug('ftp initial play rejected', {message:e.message});
@@ -3126,7 +3193,38 @@ async function loadSubtitleTracks(id){
   requestAnimationFrame(()=>{trackListItems(vid.textTracks).forEach(track=>setTrackMode(track,false));updateSubtitleOverlay();});
   renderSubtitleTracks();
 }
+
+function setFtpSubtitle(idx){
+  const sourceBefore=vid.currentSrc;
+  currentSubIdx=Number.isInteger(idx)&&idx>=0&&idx<availableSubs.length?idx:-1;
+  vid.querySelectorAll('track').forEach(track=>track.remove());
+  trackListItems(vid.textTracks).forEach(track=>setTrackMode(track,false));
+  updateSubtitleOverlay();
+  if(currentSubIdx>=0){
+    const sub=availableSubs[currentSubIdx]||{};
+    const track=document.createElement('track');
+    track.kind='subtitles';
+    track.label=subtitleTrackLabel(sub,currentSubIdx);
+    track.srclang=sub.language||sub.lang||'en';
+    track.src=ftpSubtitleSrc(currentSubIdx);
+    track.default=false;
+    track.setAttribute('data-idx',String(currentSubIdx));
+    bindSubtitleTrack(track);
+    vid.appendChild(track);
+    setTrackMode(track,true);
+    setTimeout(()=>{setTrackMode(track,true);updateSubtitleOverlay();},100);
+  }
+  renderSubtitleTracks();
+  closeAllDropdowns();
+  showToast(currentSubIdx===-1?'Subtitles off':availableSubs[currentSubIdx]?.label||'Subtitles on');
+  playbackDebug('FTP subtitle switch',{idx:currentSubIdx,sourceUnchanged:sourceBefore===vid.currentSrc});
+}
+
 function setSub(idx){
+  if(_ftpStreamUrl){
+    setFtpSubtitle(idx);
+    return;
+  }
   if(!isMobilePlaybackClient()){
     const sourceBefore=vid.currentSrc;
     currentSubIdx=Number.isInteger(idx)&&idx>=0&&idx<availableSubs.length?idx:-1;
@@ -3148,28 +3246,6 @@ function setSub(idx){
     closeAllDropdowns();
     showToast(currentSubIdx===-1?'Subtitles off':selected?.label||'Subtitles on');
     playbackDebug('desktop native subtitle switch',{idx:currentSubIdx,sourceUnchanged:sourceBefore===vid.currentSrc});
-    return;
-  }
-  if(_ftpStreamUrl){
-    currentSubIdx=idx;
-    vid.querySelectorAll('track').forEach(t=>t.remove());
-    updateSubtitleOverlay();
-    if(idx >= 0){
-      const sub = availableSubs[idx] || {};
-      const track = document.createElement('track');
-      track.kind = 'subtitles';
-      track.label = sub.label || `Subtitle ${idx + 1}`;
-      track.srclang = sub.language || 'en';
-      track.src = ftpSubtitleSrc(idx);
-      track.default = true;
-      track.setAttribute('data-idx',String(idx));
-      bindSubtitleTrack(track);
-      vid.appendChild(track);
-      setTrackMode(track,true);
-      setTimeout(()=>{setTrackMode(track,true);updateSubtitleOverlay();},100);
-    }
-    document.querySelectorAll('#subList .pd-item').forEach((el,ei)=>el.classList.toggle('active',idx===-1?ei===0:ei===idx+1));
-    updateSubBtn();closeAllDropdowns();showToast(idx===-1?'Subtitles off':availableSubs[idx]?.label||'Subtitles on');
     return;
   }
   currentSubIdx=idx;
@@ -4728,7 +4804,7 @@ if(document.readyState === 'loading')document.addEventListener('DOMContentLoaded
 else svStartPosterObserver();
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('/sw.js?v=20260620-hotfix-restore-live-tracks1').catch(()=>{});
+    navigator.serviceWorker.register('/sw.js?v=20260620-subtitle-audio-working1').catch(()=>{});
   }, { once:true });
 }
 function svChannelColor(ch={}){

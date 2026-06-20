@@ -70,6 +70,9 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url);
   if (!sameOrigin(url)) return;
 
+  // Subtitle files must always bypass service-worker caches.
+  if (url.pathname.startsWith('/subtitles/') || url.pathname.startsWith('/api/ftp/subtitle/')) return;
+
   if (url.pathname === '/poster-cache') {
     event.respondWith(cacheFirst(request, SV_POSTER_CACHE));
     return;

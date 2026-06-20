@@ -3321,10 +3321,19 @@ app.get('/api/fifa-live', async (req, res) => {
 const SV_LIVE_DEBUG = process.env.SV_LIVE_DEBUG === '1';
 const SV_LIVE_PLAYLIST_MAX_BYTES = 1024 * 1024;
 const SV_LIVE_MEDIA_SEGMENT_WINDOW = Math.max(5, Number(process.env.SV_LIVE_MEDIA_SEGMENT_WINDOW || 6));
+const SV_LIVE_FAST_MEDIA_SEGMENT_WINDOW = Math.max(2, Number(process.env.SV_LIVE_FAST_MEDIA_SEGMENT_WINDOW || 3));
+const SV_LIVE_PLAYLIST_TIMEOUT_MS = Math.max(2500, Number(process.env.SV_LIVE_PLAYLIST_TIMEOUT_MS || 7000));
+const SV_LIVE_FAST_PLAYLIST_TIMEOUT_MS = Math.max(2000, Number(process.env.SV_LIVE_FAST_PLAYLIST_TIMEOUT_MS || 4500));
 const SV_LIVE_SEGMENT_CACHE_TTL_MS = Math.max(15000, Number(process.env.SV_LIVE_SEGMENT_CACHE_TTL_MS || 60000));
 const SV_LIVE_SEGMENT_CACHE_MAX_PER_CHANNEL = Math.max(4, Number(process.env.SV_LIVE_SEGMENT_CACHE_MAX_PER_CHANNEL || 10));
 const SV_LIVE_SEGMENT_CACHE_MAX_BYTES = Math.max(32 * 1024 * 1024, Number(process.env.SV_LIVE_SEGMENT_CACHE_MAX_BYTES || 192 * 1024 * 1024));
 const SV_LIVE_SEGMENT_CACHE_MAX_SEGMENT_BYTES = Math.max(1024 * 1024, Number(process.env.SV_LIVE_SEGMENT_CACHE_MAX_SEGMENT_BYTES || 20 * 1024 * 1024));
+const SV_LIVE_SEGMENT_ADVANCE_RETRIES = Math.max(0, Number(process.env.SV_LIVE_SEGMENT_ADVANCE_RETRIES || 5));
+const SV_LIVE_RELAY_DIR = path.join(__dirname, 'cache', 'live-relay');
+const SV_LIVE_RELAY_IDLE_MS = Math.max(5 * 60 * 1000, Number(process.env.SV_LIVE_RELAY_IDLE_MS || 10 * 60 * 1000));
+const SV_LIVE_RELAY_STALE_MS = Math.max(15000, Number(process.env.SV_LIVE_RELAY_STALE_MS || 30000));
+const SV_LIVE_RELAY_STARTUP_MS = Math.max(10000, Number(process.env.SV_LIVE_RELAY_STARTUP_MS || 25000));
+const SV_LIVE_RELAY_SEGMENT_WAIT_MS = Math.max(500, Number(process.env.SV_LIVE_RELAY_SEGMENT_WAIT_MS || 2500));
 const svLiveHttpAgent = new http.Agent({ keepAlive: true, maxSockets: 32, keepAliveMsecs: 10000 });
 const svLiveHttpsAgent = new https.Agent({ keepAlive: true, maxSockets: 32, keepAliveMsecs: 10000 });
 const svLiveSegmentCache = new Map();
@@ -3802,6 +3811,230 @@ app.get('/live/:channelId/segment', (req, res) => {
 });
 
 
+
+const svLiveRelaySessions = new Map();
+const svLiveRelayRetiredDirs = new Map();
+
+function svLiveRelayLog(channelId, message, data = {}) {
+  if (channelId !== 'tsports' && !SV_LIVE_DEBUG) return;
+  console.log(`[Live Relay:${channelId}] ${message}`, data);
+}
+
+function svLiveRelayChannel(channelId) {
+  if (!/^[a-z0-9_-]+$/i.test(String(channelId || ''))) return null;
+  return channels.find(channel => channel.id === channelId) || null;
+}
+
+function svLiveRelayRememberDir(channelId, dir) {
+  if (!dir) return;
+  const retired = svLiveRelayRetiredDirs.get(channelId) || [];
+  retired.push({ dir, expiresAt: Date.now() + 60000 });
+  svLiveRelayRetiredDirs.set(channelId, retired.slice(-3));
+}
+
+function svLiveRelayPlaylistState(session) {
+  try {
+    const stat = fs.statSync(session.playlistPath);
+    const text = fs.readFileSync(session.playlistPath, 'utf8');
+    const lines = text.split(/\r?\n/);
+    const segments = lines.map(line => line.trim()).filter(line => line && !line.startsWith('#'));
+    const readySegments = segments.filter(file => fs.existsSync(path.join(session.dir, path.basename(file))));
+    const normalizedText = lines.map(line => line.trim() && !line.trim().startsWith('#') ? path.basename(line.trim()) : line).join('\n');
+    return { ready: text.includes('#EXTM3U') && readySegments.length >= 2, stat, text: normalizedText, segments: readySegments.length };
+  } catch {
+    return { ready: false, stat: null, text: '', segments: 0 };
+  }
+}
+
+function svStopLiveRelay(session, reason) {
+  if (!session) return;
+  if (session.restartTimer) clearTimeout(session.restartTimer);
+  session.restartTimer = null;
+  try { session.process?.kill('SIGKILL'); } catch {}
+  session.process = null;
+  svLiveRelayLog(session.channelId, 'stopped', { reason });
+}
+
+function svStartLiveRelay(channelId, reason = 'start', candidateIndex = 0) {
+  const channel = svLiveRelayChannel(channelId);
+  if (!channel) return null;
+  const candidates = [channel.url, ...(Array.isArray(channel.fallbackUrls) ? channel.fallbackUrls : [])]
+    .map(value => String(value || '').trim())
+    .filter((value, index, list) => value && list.indexOf(value) === index);
+  if (!candidates.length) return null;
+
+  const previous = svLiveRelaySessions.get(channelId);
+  const lastAccess = previous?.lastAccess || Date.now();
+  if (previous) {
+    svLiveRelayRememberDir(channelId, previous.dir);
+    svStopLiveRelay(previous, reason);
+  }
+
+  fs.mkdirSync(SV_LIVE_RELAY_DIR, { recursive: true });
+  const generation = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  const dir = path.join(SV_LIVE_RELAY_DIR, `${channelId}-${generation}`);
+  fs.mkdirSync(dir, { recursive: true });
+  const playlistPath = path.join(dir, 'index.m3u8');
+  const selectedIndex = ((candidateIndex % candidates.length) + candidates.length) % candidates.length;
+  const source = candidates[selectedIndex];
+  const ffmpegArgs = [
+    '-hide_banner', '-loglevel', 'warning', '-nostdin',
+    '-reconnect', '1', '-reconnect_at_eof', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
+    '-rw_timeout', '15000000', '-fflags', '+genpts+discardcorrupt',
+    '-i', source,
+    '-map', '0:v:0?', '-map', '0:a:0?', '-c', 'copy', '-max_muxing_queue_size', '2048',
+    '-f', 'hls', '-hls_time', '4', '-hls_list_size', '8',
+    '-hls_flags', 'delete_segments+omit_endlist+independent_segments+temp_file',
+    '-hls_segment_filename', path.join(dir, 'segment_%09d.ts'),
+    playlistPath,
+  ];
+  const relayProcess = spawn(FFMPEG_BIN, ffmpegArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
+  const session = {
+    channelId,
+    channelName: channel.name || channelId,
+    process: relayProcess,
+    dir,
+    playlistPath,
+    source,
+    candidateIndex: selectedIndex,
+    startedAt: Date.now(),
+    lastAccess,
+    restartTimer: null,
+    stderrTail: '',
+  };
+  svLiveRelaySessions.set(channelId, session);
+  svLiveRelayLog(channelId, reason === 'start' ? 'start' : 'restart', { reason, source, pid: relayProcess.pid });
+
+  relayProcess.stderr.on('data', chunk => {
+    session.stderrTail = (session.stderrTail + chunk.toString()).slice(-2000);
+  });
+  relayProcess.on('error', error => {
+    svLiveRelayLog(channelId, 'FFmpeg error', { error: error.message });
+  });
+  relayProcess.on('close', code => {
+    if (svLiveRelaySessions.get(channelId) !== session) return;
+    session.process = null;
+    svLiveRelayLog(channelId, 'FFmpeg exited', { code, stderr: session.stderrTail.trim().slice(-500) });
+    if (Date.now() - session.lastAccess < SV_LIVE_RELAY_IDLE_MS) {
+      session.restartTimer = setTimeout(() => {
+        if (svLiveRelaySessions.get(channelId) === session && !session.process) {
+          svStartLiveRelay(channelId, 'dead relay', session.candidateIndex + 1);
+        }
+      }, 1200);
+      session.restartTimer.unref?.();
+    }
+  });
+  return session;
+}
+
+function svEnsureLiveRelay(channelId) {
+  let session = svLiveRelaySessions.get(channelId);
+  if (!session) return svStartLiveRelay(channelId, 'start', 0);
+  session.lastAccess = Date.now();
+  const state = svLiveRelayPlaylistState(session);
+  const processDead = !session.process || session.process.exitCode !== null || session.process.killed;
+  const stale = state.stat && Date.now() - state.stat.mtimeMs > SV_LIVE_RELAY_STALE_MS;
+  const startupStuck = !state.stat && Date.now() - session.startedAt > SV_LIVE_RELAY_STARTUP_MS;
+  if (processDead || stale || startupStuck) {
+    const reason = processDead ? 'dead relay' : (stale ? 'stale playlist' : 'startup stalled');
+    session = svStartLiveRelay(channelId, reason, session.candidateIndex + 1);
+  }
+  return session;
+}
+
+async function svWaitForLiveRelayPlaylist(session, timeoutMs = SV_LIVE_RELAY_STARTUP_MS) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (svLiveRelaySessions.get(session.channelId) !== session) return null;
+    const state = svLiveRelayPlaylistState(session);
+    if (state.ready) return state;
+    if (!session.process || session.process.exitCode !== null) return null;
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  return null;
+}
+
+async function svWaitForLiveRelaySegment(channelId, filename) {
+  const deadline = Date.now() + SV_LIVE_RELAY_SEGMENT_WAIT_MS;
+  while (Date.now() <= deadline) {
+    const current = svLiveRelaySessions.get(channelId);
+    const dirs = [current?.dir, ...(svLiveRelayRetiredDirs.get(channelId) || []).map(entry => entry.dir)].filter(Boolean);
+    for (const dir of dirs) {
+      const filePath = path.join(dir, filename);
+      if (fs.existsSync(filePath)) return filePath;
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return '';
+}
+
+app.get('/live-relay/:channelId/index.m3u8', async (req, res) => {
+  const channelId = req.params.channelId;
+  const channel = svLiveRelayChannel(channelId);
+  if (!channel) return res.status(404).send('Channel not found');
+  const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  tracker.trackStreamStart(ip, channelId, channel.name || channelId, 'live-relay', req.headers['user-agent'] || '');
+
+  let session = svEnsureLiveRelay(channelId);
+  if (!session) return res.status(404).send('Channel URL missing');
+  session.lastAccess = Date.now();
+  let state = await svWaitForLiveRelayPlaylist(session);
+  if (!state) {
+    session = svStartLiveRelay(channelId, 'playlist readiness timeout', session.candidateIndex + 1);
+    state = session ? await svWaitForLiveRelayPlaylist(session) : null;
+  }
+  if (!state) {
+    svLiveRelayLog(channelId, 'playlist unavailable after retry');
+    res.setHeader('Retry-After', '1');
+    return res.status(503).send('Live relay is starting');
+  }
+
+  res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('X-SV-Live-Relay-Segments', String(state.segments));
+  res.send(state.text);
+});
+
+app.get('/live-relay/:channelId/:segment', async (req, res) => {
+  const channelId = req.params.channelId;
+  const filename = path.basename(String(req.params.segment || ''));
+  if (!svLiveRelayChannel(channelId)) return res.status(404).send('Channel not found');
+  if (!/^segment_\d+\.ts$/i.test(filename)) return res.status(400).send('Invalid relay segment');
+  const session = svLiveRelaySessions.get(channelId);
+  if (session) session.lastAccess = Date.now();
+  const filePath = await svWaitForLiveRelaySegment(channelId, filename);
+  if (!filePath) {
+    svLiveRelayLog(channelId, 'segment missing after wait', { filename });
+    return res.status(404).send('Segment not ready');
+  }
+  res.setHeader('Content-Type', 'video/MP2T');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.sendFile(filePath);
+});
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [channelId, session] of svLiveRelaySessions) {
+    if (now - session.lastAccess > SV_LIVE_RELAY_IDLE_MS) {
+      svStopLiveRelay(session, 'idle timeout');
+      svLiveRelaySessions.delete(channelId);
+      svLiveRelayRememberDir(channelId, session.dir);
+      continue;
+    }
+    svEnsureLiveRelay(channelId);
+  }
+  for (const [channelId, entries] of svLiveRelayRetiredDirs) {
+    const keep = [];
+    for (const entry of entries) {
+      if (entry.expiresAt > now) keep.push(entry);
+      else fs.rm(entry.dir, { recursive: true, force: true }, () => {});
+    }
+    if (keep.length) svLiveRelayRetiredDirs.set(channelId, keep);
+    else svLiveRelayRetiredDirs.delete(channelId);
+  }
+}, 30000).unref?.();
 
 app.get('/api/live-test/:channelId', async (req, res) => {
   const ch = channels.find(c => c.id === req.params.channelId);

@@ -3,8 +3,8 @@
     const t0 = performance.now();
     const liveDebug = (...args) => {
       try {
-        if (typeof SV_DEBUG_LOGS !== 'undefined' && SV_DEBUG_LOGS) {
-          console.log('[Live TV]', Math.round(performance.now() - t0) + 'ms', ...args);
+        if (channelId === 'tsports' || (typeof SV_DEBUG_LOGS !== 'undefined' && SV_DEBUG_LOGS)) {
+          console.log('[Live TV:' + channelId + ']', Math.round(performance.now() - t0) + 'ms', ...args);
         }
       } catch {}
     };
@@ -47,13 +47,15 @@
     document.body.style.overflow='hidden';
     if(typeof showUI==='function')showUI();
 
-    const src='/live/' + encodeURIComponent(channelId) + '/playlist.m3u8';
+    const src = '/live-relay/' + encodeURIComponent(channelId) + '/index.m3u8';
+    const sourceMode = 'relay';
     let restartCount=0;
     let networkRecoveryCount=0;
     let mediaRecoveryCount=0;
     let started=false;
     let watchdog=null;
     let stallTimer=null;
+    let restartTimer=null;
 
     function clearStallTimer(){
       if(stallTimer){clearTimeout(stallTimer); stallTimer=null;}
@@ -61,6 +63,7 @@
 
     function hideSpin(){
       started=true;
+      restartCount=0;
       spinner?.classList.remove('on');
       if(sub)sub.textContent='';
       if(watchdog)clearTimeout(watchdog);
@@ -68,11 +71,14 @@
     }
 
     function hardRestart(force=false){
-      if((started && !force) || restartCount>=2)return;
+      if(started && !force)return;
       restartCount++;
       clearStallTimer();
+      if(restartTimer)return;
       if(sub)sub.textContent='Retrying live stream...';
-      setTimeout(()=>start(), 400);
+      const delay=Math.min(5000,400*Math.pow(2,Math.min(restartCount-1,3)));
+      liveDebug('schedule relay restart',{delay,restartCount});
+      restartTimer=setTimeout(()=>{restartTimer=null;start();},delay);
     }
 
     function nudgeLiveEdge(reason){
@@ -90,7 +96,19 @@
 
     function armStallTimer(reason){
       if(stallTimer)return;
-      stallTimer=setTimeout(()=>nudgeLiveEdge(reason), 8000);
+      stallTimer=setTimeout(()=>{
+        stallTimer=null;
+        const before=Number(vid.currentTime)||0;
+        nudgeLiveEdge(reason);
+        stallTimer=setTimeout(()=>{
+          stallTimer=null;
+          const advanced=Math.abs((Number(vid.currentTime)||0)-before)>0.25;
+          if(!advanced){
+            liveDebug('stall recovery restart',{reason});
+            hardRestart(true);
+          }
+        },6000);
+      },5000);
     }
 
     function start(){
@@ -103,40 +121,44 @@
       spinner?.classList.add('on');
 
       if(watchdog)clearTimeout(watchdog);
-      watchdog=setTimeout(hardRestart, 22000);
-      liveDebug('attach source', src);
+      watchdog=setTimeout(()=>{
+        liveDebug('first-playback watchdog restart');
+        hardRestart(true);
+      }, 15000);
+      liveDebug('attach source', {src, sourceMode});
 
       if(typeof Hls!=='undefined' && Hls.isSupported()){
         hlsInstance=new Hls({
           enableWorker:true,
           startPosition:-1,
 
-          // Stability mode: stay behind live edge instead of chasing the newest segment.
-          lowLatencyMode:false,
-          liveSyncDurationCount:3,
-          liveMaxLatencyDurationCount:9,
-          maxLiveSyncPlaybackRate:1.15,
+          // Sports streams keep a tiny live window; start close to the edge.
+          lowLatencyMode:true,
+          liveSyncDurationCount:1,
+          liveMaxLatencyDurationCount:3,
+          maxLiveSyncPlaybackRate:1.25,
 
-          // Enough buffer to stop random freezes.
-          maxBufferLength:24,
-          maxMaxBufferLength:45,
-          backBufferLength:6,
-          maxBufferHole:0.8,
+          maxBufferLength:12,
+          maxMaxBufferLength:24,
+          backBufferLength:0,
+          maxBufferHole:0.45,
+          maxFragLookUpTolerance:0.2,
+          liveDurationInfinity:true,
 
           // Let hls.js choose safely after the server rewrites upstream playlist URLs.
           testBandwidth:true,
           startFragPrefetch:true,
           capLevelToPlayerSize:true,
 
-          manifestLoadingTimeOut:20000,
-          levelLoadingTimeOut:20000,
-          fragLoadingTimeOut:30000,
-          manifestLoadingMaxRetry:6,
-          levelLoadingMaxRetry:6,
-          fragLoadingMaxRetry:10,
-          manifestLoadingRetryDelay:700,
-          levelLoadingRetryDelay:700,
-          fragLoadingRetryDelay:700
+          manifestLoadingTimeOut:8000,
+          levelLoadingTimeOut:8000,
+          fragLoadingTimeOut:12000,
+          manifestLoadingMaxRetry:2,
+          levelLoadingMaxRetry:2,
+          fragLoadingMaxRetry:4,
+          manifestLoadingRetryDelay:300,
+          levelLoadingRetryDelay:300,
+          fragLoadingRetryDelay:300
         });
 
         hlsInstance.on(Hls.Events.MEDIA_ATTACHED,()=>hlsInstance.loadSource(src));
@@ -240,18 +262,23 @@
     const onLoadedData=()=>{ liveDebug('video loadeddata'); hideSpin(); };
     const onWaiting=()=>{ liveDebug('video waiting'); armStallTimer('waiting'); };
     const onStalled=()=>{ liveDebug('video stalled'); armStallTimer('stalled'); };
+    const onError=()=>{ liveDebug('video error',vid.error?.code||0); hardRestart(true); };
     vid.addEventListener('playing', onPlaying);
     vid.addEventListener('canplay', onCanplay);
     vid.addEventListener('loadeddata', onLoadedData);
     vid.addEventListener('waiting', onWaiting);
     vid.addEventListener('stalled', onStalled);
+    vid.addEventListener('error', onError);
     vid._svLiveCleanup=()=>{
+      if(watchdog){clearTimeout(watchdog); watchdog=null;}
+      if(restartTimer){clearTimeout(restartTimer); restartTimer=null;}
       clearStallTimer();
       vid.removeEventListener('playing', onPlaying);
       vid.removeEventListener('canplay', onCanplay);
       vid.removeEventListener('loadeddata', onLoadedData);
       vid.removeEventListener('waiting', onWaiting);
       vid.removeEventListener('stalled', onStalled);
+      vid.removeEventListener('error', onError);
     };
 
     start();

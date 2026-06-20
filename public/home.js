@@ -3,9 +3,6 @@
     { rowId:'netflixRow', trackId:'netflixTrack', sectionKey:'netflix', title:'Netflix Originals' },
     { rowId:'marvelRow', trackId:'marvelTrack', sectionKey:'marvel', title:'Marvel Studios' },
     { rowId:'dcRow', trackId:'dcTrack', sectionKey:'dc', title:'DC' },
-    { rowId:'trendingRow', trackId:'trendingTrack', sectionKey:'trending', title:'🔥 Trending Now' },
-    { rowId:'seriesRow', trackId:'seriesTrack', sectionKey:'series', title:'Series' },
-    { rowId:'newRow', trackId:'newTrack', sectionKey:'new', title:'New to StreamVault' },
     { rowId:'universalRow', trackId:'universalTrack', sectionKey:'universal', title:'Universal Pictures' },
     { rowId:'disneyRow', trackId:'disneyTrack', sectionKey:'disney', title:'Disney' },
     { rowId:'warnerRow', trackId:'warnerTrack', sectionKey:'warner', title:'Warner Bros' },
@@ -15,15 +12,15 @@
     { rowId:'dramaRow', trackId:'dramaTrack', sectionKey:'drama', title:'Drama & Emotion' },
     { rowId:'spanishRow', trackId:'spanishTrack', sectionKey:'spanish', title:'Spanish & Latino' },
     { rowId:'highRatedRow', trackId:'highRatedTrack', sectionKey:'topRated', title:'⭐ Top Rated (8+)' },
-    { rowId:'allRow', trackId:'allTrack', sectionKey:'allMovies', title:'All Movies' }
+    { rowId:'allRow', trackId:'allTrack', sectionKey:'allMovies', title:'All Movies' },
+    { rowId:'trendingRow', trackId:'trendingTrack', sectionKey:'trending', title:'🔥 Trending Now' },
+    { rowId:'seriesRow', trackId:'seriesTrack', sectionKey:'series', title:'Series' },
+    { rowId:'newRow', trackId:'newTrack', sectionKey:'new', title:'New to StreamVault' }
   ];
   var SV_PERF_HOME_MAIN = [
     { rowId:'netflixRow', trackId:'netflixTrack', sectionKey:'netflix', title:'Netflix Originals' },
     { rowId:'marvelRow', trackId:'marvelTrack', sectionKey:'marvel', title:'Marvel Studios' },
     { rowId:'dcRow', trackId:'dcTrack', sectionKey:'dc', title:'DC' },
-    { rowId:'trendingRow', trackId:'trendingTrack', sectionKey:'trending', title:'🔥 Trending Now' },
-    { rowId:'seriesRow', trackId:'seriesTrack', sectionKey:'series', title:'Series' },
-    { rowId:'newRow', trackId:'newTrack', sectionKey:'new', title:'New to StreamVault' },
     { rowId:'universalRow', trackId:'universalTrack', sectionKey:'universal', title:'Universal Pictures' },
     { rowId:'disneyRow', trackId:'disneyTrack', sectionKey:'disney', title:'Disney' },
     { rowId:'warnerRow', trackId:'warnerTrack', sectionKey:'warner', title:'Warner Bros' },
@@ -61,7 +58,10 @@
     { rowId:'highRatedRow', trackId:'highRatedTrack', sectionKey:'topRated', title:'⭐ Top Rated (8+)' },
     { rowId:'allRow', trackId:'allTrack', sectionKey:'allMovies', title:'All Movies' },
     { rowId:'recentlyAddedRow', trackId:'recentlyAddedTrack', sectionKey:'recentlyAdded', title:'Recently Added' },
-    { rowId:'mostWatchedTodayRow', trackId:'mostWatchedTodayTrack', sectionKey:'mostWatchedToday', title:'Most Watched Today' }
+    { rowId:'mostWatchedTodayRow', trackId:'mostWatchedTodayTrack', sectionKey:'mostWatchedToday', title:'Most Watched Today' },
+    { rowId:'trendingRow', trackId:'trendingTrack', sectionKey:'trending', title:'🔥 Trending Now' },
+    { rowId:'seriesRow', trackId:'seriesTrack', sectionKey:'series', title:'Series' },
+    { rowId:'newRow', trackId:'newTrack', sectionKey:'new', title:'New to StreamVault' }
   ];
   var SV_PERF_HOME_BY_ID = Object.fromEntries(SV_PERF_HOME_MAIN.map(row=>[row.rowId,row]));
   var svHomePayload = null;
@@ -72,6 +72,22 @@
   var svHomeHeroClaims = new Set();
   var svHomeRowClaims = new Map();
   var svWeakDevice = ((navigator.deviceMemory || 4) <= 2) || ((navigator.hardwareConcurrency || 4) <= 2) || (innerWidth < 760 && ((navigator.deviceMemory || 4) <= 3));
+  var SV_HOME_MIN_ROW_ITEMS = svWeakDevice ? 6 : 8;
+  var SV_DYNAMIC_BRAND_ROWS = new Set(['warnerRow','hboRow']);
+
+  function svInstallNormalStudioPosterSizing(){
+    if(document.getElementById('svNormalStudioPosterSizing'))return;
+    const style = document.createElement('style');
+    style.id = 'svNormalStudioPosterSizing';
+    style.textContent = `
+      #marvelTrack,#dcTrack{height:calc(var(--card-h) + 24px)!important;gap:16px!important}
+      #marvelTrack .card,#dcTrack .card{flex:0 0 var(--card-w)!important;width:var(--card-w)!important;min-width:var(--card-w)!important;max-width:var(--card-w)!important;height:var(--card-h)!important;min-height:var(--card-h)!important;max-height:var(--card-h)!important;border-radius:var(--card-radius)!important}
+      #marvelTrack .card img,#dcTrack .card img,#marvelTrack .card-placeholder,#dcTrack .card-placeholder{width:100%!important;height:100%!important;object-fit:cover!important;border-radius:var(--card-radius)!important}
+      #marvelTrack .card-overlay,#dcTrack .card-overlay{padding:12px 10px 10px!important;border-radius:var(--card-radius)!important}
+    `;
+    document.head.appendChild(style);
+  }
+  svInstallNormalStudioPosterSizing();
 
   function svHomeRenderer(item, index){
     const isSeries = item?.type === 'tv' || item?.type === 'series' || item?.isSummary || item?.seasons;
@@ -214,9 +230,14 @@
   svApplyHomeOrder = function(){
     const main = document.getElementById('mainSection');
     if(!main)return;
+    const bottomIds = new Set(['trendingRow','seriesRow','newRow']);
     const liveRow = document.getElementById('liveHomeRow');
     if(liveRow)main.appendChild(liveRow);
-    SV_PERF_HOME_MAIN.forEach(meta=>{
+    SV_PERF_HOME_MAIN.slice(0,3).forEach(meta=>{
+      const row = svEnsureHomeRow(meta.rowId);
+      if(row)main.appendChild(row);
+    });
+    SV_PERF_HOME_MAIN.slice(3).filter(meta=>!bottomIds.has(meta.rowId)).forEach(meta=>{
       const row = svEnsureHomeRow(meta.rowId);
       if(row)main.appendChild(row);
     });
@@ -224,6 +245,10 @@
     if(continueRow)main.appendChild(continueRow);
     ['becauseRow'].forEach(id=>{
       const row = document.getElementById(id);
+      if(row)main.appendChild(row);
+    });
+    SV_PERF_HOME_MAIN.filter(meta=>bottomIds.has(meta.rowId)).forEach(meta=>{
+      const row = svEnsureHomeRow(meta.rowId);
       if(row)main.appendChild(row);
     });
     Array.from(main.children).forEach(el=>{
@@ -239,8 +264,10 @@
     const requestedLimit = limit || (svWeakDevice ? 12 : 24);
     if(svHomePayload && (svHomePayload._limit || 0) >= requestedLimit)return Promise.resolve(svHomePayload);
     if(svHomePayloadPromise)return svHomePayloadPromise;
-    svHomePayloadPromise = fetch(`/api/home-feed?limit=${requestedLimit}`)
-      .then(r=>r.ok ? r.json() : Promise.reject(new Error('home feed failed')))
+    const readJson = r=>r.ok ? r.json() : Promise.reject(new Error('home feed failed'));
+    svHomePayloadPromise = fetch('/home-feed.json?v=20260620-player-tracks-sections-final1', { cache:'force-cache' })
+      .then(readJson)
+      .catch(()=>fetch(`/api/home-feed?limit=${requestedLimit}`).then(readJson))
       .then(data=>{
         data._limit = requestedLimit;
         svHomePayload = data;
@@ -251,49 +278,59 @@
   }
   const svHomeFeedPrime = svFetchHomeFeed(svWeakDevice ? 12 : 24).catch(()=>null);
 
-  function svFetchHomeSection(meta){
-    return fetch(`/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=${svWeakDevice ? 12 : 24}&summary=1`)
+  function svFetchHomeSection(meta, options={}){
+    const limit = options.limit || (svWeakDevice ? 12 : 24);
+    const summary = options.summary === false ? '0' : '1';
+    return fetch(`/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=${limit}&summary=${summary}&v=20260620-player-tracks-sections-final1`)
       .then(r=>r.ok ? r.json() : Promise.reject(new Error(`section ${meta.sectionKey} failed`)))
-      .then(data=>({ rowId:meta.rowId, items:Array.isArray(data?.items) ? data.items : [] }))
+      .then(data=>({ rowId:meta.rowId, items:Array.isArray(data?.items) ? data.items : [], _svFresh:options.summary === false }))
       .catch(err=>{
         console.warn('[Homepage] section unavailable:', meta.sectionKey, err.message);
         return { rowId:meta.rowId, items:[] };
       });
   }
 
+  function svShouldRefillHomeRow(rowId, items, rowData){
+    if(rowData?._svFresh)return false;
+    if(!SV_PERF_HOME_BY_ID[rowId])return false;
+    if(['trendingRow','seriesRow','newRow'].includes(rowId))return false;
+    const count = Array.isArray(items) ? items.length : 0;
+    return count > 0 && (count < SV_HOME_MIN_ROW_ITEMS || SV_DYNAMIC_BRAND_ROWS.has(rowId));
+  }
+
   function svLoadHomeSections(){
-    const immediateCount = svWeakDevice ? 2 : 4;
+    const immediateCount = 3;
     const immediate = SV_PERF_HOME_MAIN.slice(0, immediateCount);
     const delayed = SV_PERF_HOME_MAIN.slice(immediateCount);
+    const prepareDelayedRows = rowMap=>{
+      let index = 0;
+      const prepareBatch = ()=>{
+        const end = Math.min(delayed.length, index + (svWeakDevice ? 3 : 5));
+        for(; index < end; index++){
+          const meta = delayed[index];
+          svPrepareHomeRow(meta.rowId, rowMap[meta.rowId] || null, false);
+        }
+        if(index < delayed.length)requestAnimationFrame(prepareBatch);
+      };
+      requestAnimationFrame(prepareBatch);
+    };
     const renderRows = data=>{
       const feedRows = Array.isArray(data?.rows) ? data.rows : [];
       const rowMap = Object.fromEntries(feedRows.map(row=>[row.rowId,row]));
       svRenderHeroFromFeed(data);
-      immediate.forEach((meta, idx)=>svPrepareHomeRow(meta.rowId, rowMap[meta.rowId], idx < (svWeakDevice ? 2 : 3)));
-      svRenderPersonalRows();
       svApplyHomeOrder();
+      immediate.forEach(meta=>svPrepareHomeRow(meta.rowId, rowMap[meta.rowId] || null, true));
+      svRenderPersonalRows();
       if(typeof svPrefetchHomeFeedPosters === 'function')svPrefetchHomeFeedPosters(data);
-      const idle = window.requestIdleCallback || (fn=>setTimeout(fn,120));
-      delayed.forEach((meta, i)=>{
-        idle(()=>Promise.resolve(rowMap[meta.rowId] || svFetchHomeSection(meta)).then(row=>{
-          svPrepareHomeRow(row.rowId, row, false);
-          svApplyHomeOrder();
-        }), { timeout: (svWeakDevice ? 1800 : 1200) + i * (svWeakDevice ? 180 : 120) });
-      });
+      prepareDelayedRows(rowMap);
     };
     const renderSectionFallback = ()=>{
-      immediate.forEach((meta, idx)=>{
-        svFetchHomeSection(meta).then(row=>svPrepareHomeRow(meta.rowId, row, idx < (svWeakDevice ? 2 : 3)));
+      svApplyHomeOrder();
+      immediate.forEach(meta=>{
+        svFetchHomeSection(meta).then(row=>svPrepareHomeRow(meta.rowId, row, true));
       });
       svRenderPersonalRows();
-      svApplyHomeOrder();
-      const idle = window.requestIdleCallback || (fn=>setTimeout(fn,120));
-      delayed.forEach((meta, i)=>{
-        idle(()=>svFetchHomeSection(meta).then(row=>{
-          svPrepareHomeRow(row.rowId, row, false);
-          svApplyHomeOrder();
-        }), { timeout:(svWeakDevice ? 1800 : 1200) + i * (svWeakDevice ? 180 : 120) });
-      });
+      prepareDelayedRows({});
     };
     return svFetchHomeFeed(svWeakDevice ? 8 : 12)
       .then(renderRows)
@@ -310,7 +347,14 @@
         entries.forEach(entry=>{
           if(entry.isIntersecting || entry.intersectionRatio > 0){
             svHomeObserver.unobserve(entry.target);
-            svMountHomeRow(entry.target.id);
+            entry.target._svObserved = false;
+            const meta = SV_PERF_HOME_BY_ID[entry.target.id];
+            if(entry.target._svNeedsFetch && meta){
+              entry.target._svNeedsFetch = false;
+              svFetchHomeSection(meta).then(row=>svPrepareHomeRow(row.rowId, row, true));
+            }else{
+              svMountHomeRow(entry.target.id);
+            }
           }
         });
       }, { root:null, rootMargin:svWeakDevice ? '420px 0px 560px 0px' : '850px 0px 850px 0px', threshold:.01 });
@@ -325,6 +369,27 @@
     if(!row || !meta)return;
     const items = Array.isArray(rowData?.items) ? rowData.items : [];
     const track = document.getElementById(meta.trackId);
+    if(rowData && svShouldRefillHomeRow(rowId, items, rowData) && !row._svRefillStarted){
+      row._svRefillStarted = true;
+      svFetchHomeSection(meta, { summary:false, limit:svWeakDevice ? 24 : 50 }).then(fresh=>{
+        if(!fresh?.items?.length || fresh.items.length <= items.length)return;
+        row._svLoaded = false;
+        track && (track.innerHTML = '');
+        svPrepareHomeRow(rowId, fresh, true);
+      }).catch(()=>{});
+    }
+    if(!rowData){
+      row._svItems = [];
+      row._svLoaded = false;
+      row._svNeedsFetch = true;
+      row.classList.add('sv-row-pending');
+      row.classList.remove('sv-row-loaded');
+      svSkeletonTrack(track);
+      show(rowId);
+      svObserveRow(row);
+      return;
+    }
+    row._svNeedsFetch = false;
     if(!items.length){
       if(track?.querySelector('.card,.live-ch-card')){
         show(rowId);
@@ -392,7 +457,6 @@
     let width = first ? first.getBoundingClientRect().width : 0;
     if(!width){
       if(track.classList.contains('live-home-track')) width = window.innerWidth < 760 ? 72 : 92;
-      else if(rowId === 'marvelRow' || rowId === 'dcRow') width = Math.min(Math.max(window.innerWidth * .76, 260), 430);
       else width = Math.min(Math.max(window.innerWidth * .30, 118), 162);
     }
     return Math.max(64, width + gap);
@@ -447,7 +511,8 @@
     const target = Math.min(total, rendered + (force ? (track._svInitial || batch) : batch));
     if(target <= rendered)return;
     const rowId = track._svRowId || track.closest('.row')?.id || '';
-    const priorityCount = window.innerWidth < 760 || svWeakDevice ? 5 : 8;
+    const priorityRow = ['netflixRow','marvelRow','dcRow'].includes(rowId);
+    const priorityCount = priorityRow ? (window.innerWidth < 760 || svWeakDevice ? 5 : 8) : 0;
     const html = track._svItems.slice(rendered, target).map((item,i)=>{
       const index = rendered + i;
       const immediateImage = index < priorityCount;
@@ -730,11 +795,18 @@
     newsPayload:null,
     newsFetchedAt:0,
     newsTimer:null,
-    detailScrollY:0
+    detailScrollY:0,
+    renderSignature:'',
+    postRenderTimer:null,
+    earlyPromiseUsed:false
   };
 
   const SV_FIFA_LOCAL_CACHE_KEY = 'streamvault:fifa-live:last-real:v1';
   const SV_FIFA_NEWS_CLIENT_TTL = 5 * 60 * 1000;
+  const SV_FIFA_PAST_MATCH_LIMIT = 6;
+  const SV_FIFA_FORWARD_MATCH_LIMIT = 12;
+  const SV_LIVE_MATCH_CHANNEL_ID = 'tsports';
+  let svLiveMatchChannelsPromise = null;
 
   function svFifaEsc(value){
     if(typeof esc === 'function')return esc(value);
@@ -784,6 +856,92 @@
     ].some(items=>Array.isArray(items) && items.length);
   }
 
+  function svSetMobileLiveMatchState(live){
+    const isLive = !!live;
+    document.documentElement.classList.toggle('sv-fifa-match-live', isLive);
+    const btn = document.getElementById('bnLiveMatch');
+    if(btn){
+      btn.classList.toggle('is-live', isLive);
+      btn.dataset.fifaLive = isLive ? '1' : '0';
+    }
+  }
+
+  function svFifaUniqueMatches(list, limit, seen){
+    const out = [];
+    const used = seen || new Set();
+    (Array.isArray(list) ? list : []).some(match=>{
+      const key = svFifaMatchKey(match) || [
+        match?.homeTeam || match?.home?.name || '',
+        match?.awayTeam || match?.away?.name || '',
+        match?.startTime || match?.kickoff || ''
+      ].join(':');
+      if(!key || used.has(key))return false;
+      used.add(key);
+      out.push(match);
+      return limit && out.length >= limit;
+    });
+    return out;
+  }
+
+  function svFifaCarouselMatches(payload){
+    const seen = new Set();
+    const liveMatches = Array.isArray(payload?.liveMatches) ? payload.liveMatches : [];
+    const upcomingMatches = Array.isArray(payload?.upcomingMatches) ? payload.upcomingMatches : [];
+    const recentResults = Array.isArray(payload?.recentResults) ? payload.recentResults : [];
+    const forward = svFifaUniqueMatches([...liveMatches, ...upcomingMatches], SV_FIFA_FORWARD_MATCH_LIMIT, seen);
+    const past = svFifaUniqueMatches(recentResults, SV_FIFA_PAST_MATCH_LIMIT, seen).reverse();
+    if(forward.length){
+      return { matches:[...past, ...forward], startIndex:past.length, pastCount:past.length, forwardCount:forward.length };
+    }
+    const fallback = svFifaUniqueMatches(recentResults, SV_FIFA_PAST_MATCH_LIMIT, new Set());
+    return { matches:fallback, startIndex:0, pastCount:fallback.length, forwardCount:0 };
+  }
+
+  function svFifaPayloadSignature(payload){
+    if(!payload)return '';
+    const carousel = svFifaCarouselMatches(payload);
+    const matches = carousel.matches.map(match=>[
+      match?.id || '',
+      match?.homeScore ?? '',
+      match?.awayScore ?? '',
+      match?.status || '',
+      match?.startTime || match?.kickoff || ''
+    ].join(':'));
+    return [
+      payload.generatedAt || '',
+      payload.source || '',
+      !!payload.stale,
+      matches.join('|')
+    ].join('::');
+  }
+
+  function svFifaReadEarlyPayload(){
+    try{
+      const payload = window.__svFifaEarlyPayload || window.__svFifaFastPayload || window.__svFifaCachedPayload || null;
+      if(!svFifaPayloadHasRealData(payload))return null;
+      if(payload === window.__svFifaCachedPayload && !payload.stale){
+        return {
+          ...payload,
+          stale:true,
+          message:payload.message || 'Showing cached real football data while the live feed refreshes'
+        };
+      }
+      return payload;
+    }catch(_err){
+      return null;
+    }
+  }
+
+  function svFifaTakeEarlyPromise(){
+    const early = window.__svFifaLiveEarlyPromise;
+    if(!early || svFifaLiveState.earlyPromiseUsed)return null;
+    svFifaLiveState.earlyPromiseUsed = true;
+    return Promise.resolve(early).then(payload=>{
+      if(!svFifaPayloadHasRealData(payload))throw new Error('Early FIFA payload was empty');
+      return payload;
+    });
+  }
+
   function svFifaReadCachedPayload(){
     try{
       const raw = localStorage.getItem(SV_FIFA_LOCAL_CACHE_KEY);
@@ -802,7 +960,7 @@
 
   function svFifaWriteCachedPayload(payload){
     try{
-      if(!payload || payload.stale || !svFifaPayloadHasRealData(payload))return;
+      if(!payload || !svFifaPayloadHasRealData(payload))return;
       localStorage.setItem(SV_FIFA_LOCAL_CACHE_KEY, JSON.stringify(payload));
     }catch(_err){}
   }
@@ -823,6 +981,8 @@
     australia:'AU',
     austria:'AT',
     belgium:'BE',
+    'bosnia herzegovina':'BA',
+    bosnia:'BA',
     brazil:'BR',
     canada:'CA',
     colombia:'CO',
@@ -833,24 +993,29 @@
     'czech republic':'CZ',
     denmark:'DK',
     ecuador:'EC',
+    egypt:'EG',
     england:'GB-ENG',
     france:'FR',
     germany:'DE',
     ghana:'GH',
     haiti:'HT',
     iraq:'IQ',
+    iran:'IR',
     italy:'IT',
     'ivory coast':'CI',
+    'cote d ivoire':'CI',
     japan:'JP',
     jordan:'JO',
     mexico:'MX',
     morocco:'MA',
     netherlands:'NL',
+    'new zealand':'NZ',
     norway:'NO',
     panama:'PA',
     paraguay:'PY',
     portugal:'PT',
     qatar:'QA',
+    'saudi arabia':'SA',
     scotland:'GB-SCT',
     senegal:'SN',
     'south africa':'ZA',
@@ -858,10 +1023,13 @@
     spain:'ES',
     sweden:'SE',
     switzerland:'CH',
+    tunisia:'TN',
     turkiye:'TR',
     turkey:'TR',
     'united states':'US',
     usa:'US',
+    uruguay:'UY',
+    'cape verde':'CV',
     wales:'GB-WLS',
     uzbekistan:'UZ'
   };
@@ -971,9 +1139,9 @@
     const countryCode = rawCode || mappedCode;
     const rawLogo = svFifaCleanText((side ? source?.[`${prefix}Logo`] : '') || source?.logo || source?.teamLogo);
     const rawFlag = svFifaCleanText(source?.flag || source?.teamFlag || (side ? source?.[`${prefix}Flag`] : ''));
-    const logo = svFifaHttpUrl(rawLogo);
-    const flagUrl = logo ? '' : svFifaHttpUrl(rawFlag);
-    const flag = logo || flagUrl ? '' : svFifaFlagEmojiFromText(rawFlag, countryCode, mappedCode);
+    const flagUrl = svFifaHttpUrl(rawFlag);
+    const flag = flagUrl ? '' : svFifaFlagEmojiFromText(rawFlag, countryCode, mappedCode);
+    const logo = flagUrl || flag ? '' : svFifaHttpUrl(rawLogo);
     return {
       name,
       logo,
@@ -1662,8 +1830,35 @@
   function svScrollFifaMatchStrip(direction){
     const strip = document.getElementById('fifaMatchStrip');
     if(!strip || !direction)return;
+    strip.dataset.svFifaUserMoved = '1';
+    if(window.matchMedia && window.matchMedia('(max-width: 759px)').matches){
+      const cards = Array.from(strip.querySelectorAll('.fifa-match-card[data-fifa-match-key]'));
+      if(cards.length){
+        const current = cards.reduce((best, card, index)=>{
+          const left = Math.max(0, card.offsetLeft - strip.offsetLeft);
+          const delta = Math.abs(left - strip.scrollLeft);
+          return delta < best.delta ? { index, delta } : best;
+        }, { index:0, delta:Infinity }).index;
+        const next = Math.max(0, Math.min(cards.length - 1, current + (direction > 0 ? 1 : -1)));
+        const target = Math.max(0, cards[next].offsetLeft - strip.offsetLeft);
+        strip.scrollTo({ left:target, behavior:'smooth' });
+        return;
+      }
+    }
     const amount = Math.max(260, Math.round(strip.clientWidth * 0.72));
     strip.scrollBy({ left: amount * direction, behavior:'smooth' });
+  }
+
+  function svFifaPositionMatchStrip(strip, startIndex){
+    if(!strip)return;
+    strip.dataset.svFifaCarouselStartIndex = String(startIndex || 0);
+    if(!startIndex || strip.dataset.svFifaUserMoved === '1')return;
+    requestAnimationFrame(()=>{
+      if(strip.dataset.svFifaUserMoved === '1')return;
+      const target = strip.querySelector('[data-fifa-carousel-start="1"]');
+      if(!target)return;
+      strip.scrollLeft = Math.max(0, target.offsetLeft - strip.offsetLeft - 8);
+    });
   }
 
   function svSetFifaPageTitle(){
@@ -1773,11 +1968,8 @@
     return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
   }
 
-  function svFifaTimerValue(totalMinutes){
-    const minutes = Math.max(0, Math.round(Number(totalMinutes) || 0));
-    const hours = Math.floor(minutes / 60);
-    const mins = String(minutes % 60).padStart(2,'0');
-    return `${hours}.${mins}`;
+  function svFifaDecimalHours(ms){
+    return (Math.max(0, Number(ms) || 0) / 3600000).toFixed(2);
   }
 
   function svFifaLiveMinuteValue(match){
@@ -1793,21 +1985,20 @@
 
   function svFifaFeaturedTimerText(match){
     const status = String(match?.status || '').toUpperCase();
-    if(status === 'LIVE'){
-      const minute = svFifaLiveMinuteValue(match);
-      return `LIVE ${svFifaTimerValue(minute)}`;
+    if(status === 'LIVE' || status === 'HT' || status === 'IN' || status === 'IN_PROGRESS'){
+      const startValue = match?.startTime || match?.kickoff;
+      const start = new Date(startValue || '');
+      if(!Number.isNaN(start.getTime()))return `${svFifaDecimalHours(Date.now() - start.getTime())} Live`;
+      const minutes = svFifaLiveMinuteValue(match);
+      if(Number.isFinite(minutes))return `${Math.max(0, minutes / 60).toFixed(2)} Live`;
+      return '--.-- Live';
     }
-    if(status === 'HT')return `LIVE ${svFifaTimerValue(svFifaLiveMinuteValue(match) ?? 45)}`;
-    if(status === 'FT')return 'FT';
-    if(status === 'POSTPONED')return 'POSTPONED';
+    if(status === 'FT' || status === 'FINAL' || status === 'STATUS_FINAL')return 'Final';
+    if(status === 'POSTPONED')return 'Postponed';
     const startValue = match?.startTime || match?.kickoff;
     const start = new Date(startValue || '');
-    if(Number.isNaN(start.getTime()))return '--.--';
-    const now = new Date();
-    const diff = start.getTime() - now.getTime();
-    if(diff <= 0)return '0.00';
-    const minutes = Math.ceil(diff / 60000);
-    return svFifaTimerValue(minutes);
+    if(Number.isNaN(start.getTime()))return '--.-- hours left';
+    return `${svFifaDecimalHours(start.getTime() - Date.now())} hours left`;
   }
 
   function svClearFifaCountdown(){
@@ -1836,8 +2027,8 @@
     svFifaLiveState.countdownMatchKey = key;
     svUpdateFifaCountdown();
     const status = String(match?.status || '').toUpperCase();
-    if(status === 'FT' || status === 'POSTPONED')return;
-    svFifaLiveState.countdownTimer = setInterval(svUpdateFifaCountdown, 60000);
+    if(status === 'FT' || status === 'FINAL' || status === 'STATUS_FINAL' || status === 'POSTPONED')return;
+    svFifaLiveState.countdownTimer = setInterval(svUpdateFifaCountdown, 30000);
   }
 
   function svFifaRelativeTime(value){
@@ -1851,9 +2042,9 @@
 
   function svFifaMatchTime(match){
     const status = String(match?.status || '').toUpperCase();
-    if(status === 'LIVE')return match?.minute || 'Live';
+    if(status === 'LIVE' || status === 'IN' || status === 'IN_PROGRESS')return match?.minute || match?.clock || match?.displayClock || 'Live';
     if(status === 'HT')return 'HT';
-    if(status === 'FT')return 'Final';
+    if(status === 'FT' || status === 'FINAL' || status === 'STATUS_FINAL')return svFifaFormatTime(match?.startTime || match?.kickoff) || 'FT';
     if(status === 'POSTPONED')return 'Postponed';
     return svFifaFormatTime(match?.startTime || match?.kickoff);
   }
@@ -1864,15 +2055,15 @@
 
   function svFifaMatchStatus(match){
     const status = String(match?.status || (match?.live ? 'LIVE' : 'UPCOMING')).toUpperCase();
-    if(status === 'LIVE' || status === 'HT')return { label:status === 'HT' ? 'HT' : 'LIVE', className:'is-live' };
-    if(status === 'FT')return { label:'Result', className:'is-result' };
-    if(status === 'POSTPONED')return { label:'Postponed', className:'is-upcoming' };
-    return { label:'Upcoming', className:'is-upcoming' };
+    if(status === 'LIVE' || status === 'HT' || status === 'IN' || status === 'IN_PROGRESS')return { label:'LIVE', className:'is-live' };
+    if(status === 'FT' || status === 'FINAL' || status === 'STATUS_FINAL')return { label:'FINAL', className:'is-result', extraClass:'is-final' };
+    if(status === 'POSTPONED')return { label:'POSTPONED', className:'is-upcoming' };
+    return { label:'UPCOMING', className:'is-upcoming' };
   }
 
   function svFifaIsLiveMatch(match){
     const status = String(match?.status || '').toUpperCase();
-    return status === 'LIVE' || status === 'HT';
+    return status === 'LIVE' || status === 'HT' || status === 'IN' || status === 'IN_PROGRESS';
   }
 
   function svFifaFeaturedDetailFor(match){
@@ -2014,13 +2205,17 @@
     </div>`;
   }
 
-  function svFifaRenderMatch(match, featured, key){
+  function svFifaRenderMatch(match, featured, key, options){
     if(!match){
       return svFifaRenderEmpty('No live matches right now', 'Waiting for the next real fixture update', featured);
     }
     const state = svFifaMatchStatus(match);
-    const className = featured ? `fifa-featured-card-inner ${state.className}` : `fifa-match-card ${state.className}`;
-    const attrs = key ? ` role="button" tabindex="0" data-fifa-match-key="${svFifaEsc(key)}" aria-label="View details for ${svFifaEsc(match.homeTeam || 'home')} versus ${svFifaEsc(match.awayTeam || 'away')}"` : '';
+    const stateClasses = `${state.className} ${state.extraClass || ''}`.trim();
+    const className = featured ? `fifa-featured-card-inner ${stateClasses}` : `fifa-match-card ${stateClasses}`;
+    const kind = options?.kind || (state.className === 'is-result' ? 'past' : 'forward');
+    const startAttr = options?.start ? ' data-fifa-carousel-start="1"' : '';
+    const cardAttrs = featured ? '' : ` data-fifa-card-kind="${svFifaEsc(kind)}"${startAttr}`;
+    const attrs = key ? ` role="button" tabindex="0" data-fifa-match-key="${svFifaEsc(key)}"${cardAttrs} aria-label="View details for ${svFifaEsc(match.homeTeam || 'home')} versus ${svFifaEsc(match.awayTeam || 'away')}"` : cardAttrs;
     if(featured){
       return `
         <article class="${className} is-clickable"${attrs}>
@@ -2149,6 +2344,22 @@
     svFifaLiveState.newsTimer = setTimeout(()=>svFetchFifaNews(true), Math.max(30000, delay || SV_FIFA_NEWS_CLIENT_TTL));
   }
 
+  function svScheduleFifaPostRenderWork(featuredMatch, headlines){
+    clearTimeout(svFifaLiveState.postRenderTimer);
+    svFifaLiveState.postRenderTimer = null;
+    if(!svFifaDiscoverVisible())return;
+    svFifaLiveState.postRenderTimer = setTimeout(()=>{
+      svFifaLiveState.postRenderTimer = null;
+      if(!svFifaDiscoverVisible())return;
+      svFetchFifaFeaturedDetail(featuredMatch);
+      const headlinesEl = document.getElementById('fifaHeadlineStrip');
+      if(headlinesEl){
+        if(Array.isArray(headlines) && headlines.length)svRenderFifaNews(svFifaLiveState.newsPayload || { headlines });
+        svFetchFifaNews(true);
+      }
+    }, 900);
+  }
+
   function svRenderFifaLive(payload, errorMessage){
     const root = svEnsureFifaLiveSection();
     if(!root)return;
@@ -2157,14 +2368,10 @@
     const recentResults = Array.isArray(payload?.recentResults) ? payload.recentResults : [];
     const standings = Array.isArray(payload?.standings) ? payload.standings : [];
     const headlines = Array.isArray(payload?.headlines) ? payload.headlines : [];
-    const seen = new Set();
-    const matchList = [...liveMatches, ...upcomingMatches, ...recentResults].filter(match=>{
-      const key = match?.id || `${match?.homeTeam}-${match?.awayTeam}-${match?.startTime || match?.kickoff}`;
-      if(seen.has(key))return false;
-      seen.add(key);
-      return true;
-    });
+    const carousel = svFifaCarouselMatches(payload);
+    const matchList = carousel.matches;
     const featuredMatch = liveMatches[0] || upcomingMatches[0] || recentResults[0] || null;
+    svSetMobileLiveMatchState(liveMatches.some(match=>svFifaIsLiveMatch(match)));
     svFifaLiveState.matchesByKey.clear();
     matchList.forEach(match=>{
       const key = svFifaMatchKey(match);
@@ -2182,18 +2389,30 @@
     const stripEl = document.getElementById('fifaMatchStrip');
     const stripWrapEl = document.getElementById('fifaMatchStripWrap');
     const headlinesEl = document.getElementById('fifaHeadlineStrip');
+    const signature = svFifaPayloadSignature(payload);
 
     root.classList.remove('is-loading');
     root.classList.toggle('is-stale', !!payload?.stale || !!errorMessage);
     root.classList.toggle('is-error', (!payload?.ok && !hasRealData) || (!!errorMessage && !hasRealData));
     root.classList.toggle('is-empty', !hasRealData);
     root.classList.toggle('has-standings', standings.length > 0);
+    root.dataset.svFifaPastCount = String(carousel.pastCount || 0);
+    root.dataset.svFifaForwardCount = String(carousel.forwardCount || 0);
     if(statusEl){
       statusEl.textContent = '';
       statusEl.hidden = true;
       statusEl.setAttribute('aria-hidden','true');
     }
     if(updatedEl)updatedEl.textContent = payload?.generatedAt ? svFifaRelativeTime(payload.generatedAt) : 'Waiting for real data';
+    if(!errorMessage && (root.dataset.svFifaFastSignature === signature || svFifaLiveState.renderSignature === signature)){
+      svFifaLiveState.renderSignature = signature;
+      root.dataset.svFifaRenderedSignature = signature;
+      if(featuredMatch)svStartFifaCountdown(featuredMatch, svFifaMatchKey(featuredMatch));
+      else svClearFifaCountdown();
+      if(stripEl)svFifaPositionMatchStrip(stripEl, carousel.startIndex);
+      svScheduleFifaPostRenderWork(featuredMatch, headlines);
+      return;
+    }
     if(featuredEl){
       const emptyTitle = (!payload?.ok && !hasRealData) ? 'Live data unavailable' : 'No live matches right now';
       const emptyDetail = payload?.message || 'Waiting for the next real fixture update';
@@ -2204,20 +2423,25 @@
     }
     if(featuredMatch)svStartFifaCountdown(featuredMatch, svFifaMatchKey(featuredMatch));
     else svClearFifaCountdown();
-    svFetchFifaFeaturedDetail(featuredMatch);
     if(standingsEl){
       standingsEl.innerHTML = svFifaRenderStandings(standings);
       standingsEl.hidden = !standings.length;
     }
     if(stripEl){
-      stripEl.innerHTML = matchList.slice(0, 16).map(match=>svFifaRenderMatch(match, false, svFifaMatchKey(match))).join('');
+      stripEl.innerHTML = matchList.map((match, index)=>svFifaRenderMatch(match, false, svFifaMatchKey(match), {
+        kind:index < carousel.startIndex ? 'past' : 'forward',
+        start:index === carousel.startIndex
+      })).join('');
       stripEl.hidden = !matchList.length;
+      svFifaPositionMatchStrip(stripEl, carousel.startIndex);
     }
     if(stripWrapEl)stripWrapEl.hidden = !matchList.length;
     if(headlinesEl){
-      svRenderFifaNews(svFifaLiveState.newsPayload || (headlines.length ? { headlines } : null));
-      svFetchFifaNews(true);
+      if(!headlinesEl.innerHTML)headlinesEl.hidden = true;
     }
+    svFifaLiveState.renderSignature = signature;
+    root.dataset.svFifaRenderedSignature = signature;
+    svScheduleFifaPostRenderWork(featuredMatch, headlines);
   }
 
   function svFifaDiscoverVisible(){
@@ -2244,14 +2468,20 @@
     if(svFifaLiveState.loading)return;
     if(!background && !svFifaLiveState.payload)svRenderFifaLoading();
     svFifaLiveState.loading = true;
-    if(svFifaLiveState.controller)svFifaLiveState.controller.abort();
-    svFifaLiveState.controller = new AbortController();
-    fetch('/api/fifa-live', {
-      cache:'no-store',
-      headers:{ Accept:'application/json' },
-      signal:svFifaLiveState.controller.signal
-    })
-      .then(r=>r.ok ? r.json() : Promise.reject(new Error('FIFA live feed failed')))
+    const earlyRequest = svFifaTakeEarlyPromise();
+    let request;
+    if(earlyRequest){
+      request = earlyRequest;
+    }else{
+      if(svFifaLiveState.controller)svFifaLiveState.controller.abort();
+      svFifaLiveState.controller = new AbortController();
+      request = fetch('/api/fifa-live', {
+        cache:'no-store',
+        headers:{ Accept:'application/json' },
+        signal:svFifaLiveState.controller.signal
+      }).then(r=>r.ok ? r.json() : Promise.reject(new Error('FIFA live feed failed')));
+    }
+    request
       .then(data=>{
         svFifaLiveState.payload = data;
         svFifaWriteCachedPayload(data);
@@ -2267,6 +2497,7 @@
       })
       .finally(()=>{
         svFifaLiveState.loading = false;
+        svFifaLiveState.controller = null;
         svScheduleFifaLiveRefresh();
       });
   }
@@ -2296,7 +2527,7 @@
       document.addEventListener('visibilitychange', svHandleFifaVisibility);
     }
     if(!svFifaLiveState.payload){
-      const cached = svFifaReadCachedPayload();
+      const cached = svFifaReadEarlyPayload() || svFifaReadCachedPayload();
       if(cached)svFifaLiveState.payload = cached;
     }
     if(svFifaLiveState.payload){
@@ -2307,6 +2538,8 @@
     }
     return true;
   }
+
+  window.svStartFifaLiveSection = svStartFifaLiveSection;
 
   function svRenderHeroCards(items){
     const cardsEl = document.getElementById('heroCards');
@@ -2507,42 +2740,69 @@
     return true;
   }
 
-  function svOpenLiveMatchNav(event){
+  function svEnsureLiveMatchChannels(){
+    try{
+      if(Array.isArray(channels) && channels.length)return Promise.resolve(channels);
+    }catch(_){}
+    if(svLiveMatchChannelsPromise)return svLiveMatchChannelsPromise;
+    svLiveMatchChannelsPromise = fetch('/api/channels', { cache:'no-store' })
+      .then(response=>response.ok ? response.json() : Promise.reject(new Error('channels unavailable')))
+      .then(list=>{
+        try{ channels = Array.isArray(list) ? list : []; }catch(_){}
+        if(typeof buildLiveTV === 'function')buildLiveTV();
+        if(typeof buildLiveHomeRow === 'function')buildLiveHomeRow();
+        return Array.isArray(list) ? list : [];
+      })
+      .finally(()=>{ svLiveMatchChannelsPromise = null; });
+    return svLiveMatchChannelsPromise;
+  }
+
+  function svFindLiveMatchChannel(list){
+    const items = Array.isArray(list) ? list : [];
+    return items.find(ch=>String(ch?.id || '').toLowerCase() === SV_LIVE_MATCH_CHANNEL_ID)
+      || items.find(ch=>/t\s*sports/i.test(String(ch?.name || '')));
+  }
+
+  function openLiveMatchChannel(event){
     if(event)event.preventDefault();
-    if(typeof switchTab === 'function')switchTab('live');
-    const focusLiveSports = ()=>{
-      const category = svFindLiveSportsCategory();
-      if(category && typeof filterLiveCat === 'function'){
-        filterLiveCat(category);
-        const section = document.getElementById('liveSection') || document.getElementById('liveGrid');
-        if(section)section.scrollIntoView({ behavior:'smooth', block:'start' });
-        return;
-      }
-      if(svHighlightLiveSportsChannel())return;
-      const section = document.getElementById('liveSection') || document.getElementById('liveGrid');
-      if(section)section.scrollIntoView({ behavior:'smooth', block:'start' });
-    };
-    setTimeout(focusLiveSports, 140);
-    setTimeout(focusLiveSports, 560);
+    svEnsureLiveMatchChannels()
+      .then(list=>{
+        const channel = svFindLiveMatchChannel(list);
+        if(!channel)throw new Error('T Sports channel unavailable');
+        if(typeof openLiveChannel !== 'function')throw new Error('Live player is still loading');
+        openLiveChannel(channel.id || SV_LIVE_MATCH_CHANNEL_ID, channel.name || 'T Sports');
+      })
+      .catch(err=>{
+        if(typeof showToast === 'function')showToast(err?.message || 'Could not start live match');
+      });
   }
 
   function svInstallLiveMatchNav(){
     const nav = document.querySelector('.nav-links');
-    if(!nav)return;
-    const link = Array.from(nav.querySelectorAll('a')).find(el=>/continue watching/i.test(el.textContent || '') || /continueRow/.test(el.getAttribute('onclick') || ''));
-    if(!link || link.dataset.svLiveMatchNav === '1')return;
-    link.dataset.svLiveMatchNav = '1';
+    const navRight = document.querySelector('.nav-right');
+    const liveTvBtn = document.getElementById('livetvNavBtn');
+    if(!nav || !navRight || !liveTvBtn)return;
+    const link = document.getElementById('liveMatchNavBtn') || Array.from(nav.querySelectorAll('a')).find(el=>/continue watching/i.test(el.textContent || '') || /continueRow/.test(el.getAttribute('onclick') || ''));
+    if(!link)return;
+    link.id = 'liveMatchNavBtn';
     link.classList.add('live-match-nav-pill');
     link.textContent = 'LIVE MATCH';
-    link.setAttribute('role','button');
-    link.setAttribute('aria-label','Open live sports channels');
+    link.setAttribute('href', '#');
+    link.setAttribute('role', 'button');
+    link.setAttribute('aria-label','Play T Sports live match in StreamVault');
+    link.removeAttribute('target');
+    link.removeAttribute('rel');
     link.removeAttribute('onclick');
-    link.addEventListener('click', svOpenLiveMatchNav);
-    const discoverLink = Array.from(nav.querySelectorAll('a')).find(el=>/^discover$/i.test((el.textContent || '').trim()));
-    if(discoverLink && discoverLink.nextElementSibling !== link)nav.insertBefore(link, discoverLink.nextElementSibling);
+    link.removeEventListener('click', openLiveMatchChannel);
+    link.dataset.svLiveMatchNav = 'internal';
+    link.addEventListener('click', openLiveMatchChannel);
+    if(link.parentElement !== navRight || liveTvBtn.nextElementSibling !== link){
+      navRight.insertBefore(link, liveTvBtn.nextElementSibling);
+    }
   }
 
-  window.svOpenLiveMatchNav = svOpenLiveMatchNav;
+  window.openLiveMatchChannel = openLiveMatchChannel;
+  window.svOpenLiveMatchNav = openLiveMatchChannel;
   svInstallLiveMatchNav();
   document.addEventListener('DOMContentLoaded', svInstallLiveMatchNav, { once:true });
 

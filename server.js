@@ -199,10 +199,18 @@ const VIDEO_EXTS = ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.wmv', '.m
 const SUB_EXTS   = ['.srt', '.vtt', '.ass', '.ssa'];
 const MIME = {
   '.mp4':  'video/mp4',
+  '.m4v':  'video/mp4',
   '.mkv':  'video/x-matroska',
   '.avi':  'video/x-msvideo',
   '.mov':  'video/quicktime',
   '.webm': 'video/webm',
+  '.ogv':  'video/ogg',
+  '.ogg':  'video/ogg',
+  '.flv':  'video/x-flv',
+  '.wmv':  'video/x-ms-wmv',
+  '.mpg':  'video/mpeg',
+  '.mpeg': 'video/mpeg',
+  '.3gp':  'video/3gpp',
 };
 
 // ── Quality tiers ─────────────────────────────────────────────────────────────
@@ -1293,12 +1301,12 @@ function ffmpegFilterEscape(value) {
     .replace(/\]/g, '\\]');
 }
 
-function remoteProbe(srcUrl, method, headers) {
+function remoteProbe(srcUrl, method, headers, timeoutMs = 8000) {
   return new Promise((resolve, reject) => {
     let settled = false;
     const parsed = new URL(srcUrl);
     const mod = parsed.protocol === 'https:' ? https : http;
-    const req = mod.request(parsed, { method, headers, timeout: 8000 }, probeRes => {
+    const req = mod.request(parsed, { method, headers, timeout: timeoutMs }, probeRes => {
       const result = {
         status: probeRes.statusCode || 0,
         headers: probeRes.headers || {},
@@ -1350,6 +1358,145 @@ async function checkRemoteAvailability(srcUrl, req) {
       head: headResult,
       error: e.message,
     };
+  }
+}
+
+function remoteSubtitleCandidateUrls(srcUrl) {
+  let parsed;
+  try { parsed = new URL(srcUrl); } catch { return []; }
+  if (!/^https?:$/i.test(parsed.protocol)) return [];
+  const ext = path.posix.extname(parsed.pathname);
+  if (!ext) return [];
+  const basePath = parsed.pathname.slice(0, -ext.length);
+  const suffixes = [
+    '.en.vtt', '.eng.vtt', '.english.vtt', '.vtt',
+    '.en.srt', '.eng.srt', '.english.srt', '.srt',
+    '.en.ass', '.eng.ass', '.english.ass', '.ass',
+    '.en.ssa', '.eng.ssa', '.english.ssa', '.ssa'
+  ];
+  const out = [];
+  const seen = new Set();
+  for (const suffix of suffixes) {
+    const next = new URL(parsed.href);
+    next.pathname = `${basePath}${suffix}`;
+    const href = next.href;
+    if (!seen.has(href)) {
+      seen.add(href);
+      out.push(href);
+    }
+  }
+  return out;
+}
+
+function remoteSubtitleLabel(sidecarUrl, index) {
+  let file = '';
+  try { file = decodeURIComponent(path.posix.basename(new URL(sidecarUrl).pathname)); } catch {}
+  const lower = file.toLowerCase();
+  if (/\b(eng|english|en)\b/.test(lower) || /\.(eng|english|en)\./i.test(file)) return 'English';
+  if (/\b(hin|hindi|hi)\b/.test(lower) || /\.(hin|hindi|hi)\./i.test(file)) return 'Hindi';
+  if (/\b(ben|bengali|bangla|bn)\b/.test(lower) || /\.(ben|bengali|bangla|bn)\./i.test(file)) return 'Bengali';
+  return file ? file.replace(/\.(srt|vtt|ass|ssa)$/i, '') : `Subtitle ${index + 1}`;
+}
+
+async function remoteSubtitleExists(sidecarUrl, req) {
+  const headers = {
+    'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0',
+    Accept: 'text/vtt,text/plain,*/*',
+    'Accept-Encoding': 'identity',
+  };
+  try {
+    const head = await remoteProbe(sidecarUrl, 'HEAD', headers, 2500);
+    if (head.ok) return true;
+    if (![403, 405].includes(head.status)) return false;
+  } catch {}
+  try {
+    const get = await remoteProbe(sidecarUrl, 'GET', { ...headers, Range: 'bytes=0-511' }, 2500);
+    return !!get.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function discoverRemoteSubtitleTracks(srcUrl, req) {
+  const candidates = remoteSubtitleCandidateUrls(srcUrl).slice(0, 16);
+  if (!candidates.length) return [];
+  const checks = await Promise.all(candidates.map(async (candidate, index) => {
+    const ok = await remoteSubtitleExists(candidate, req);
+    if (!ok) return null;
+    const ext = path.posix.extname(new URL(candidate).pathname).toLowerCase();
+    return {
+      index,
+      label: remoteSubtitleLabel(candidate, index),
+      lang: /\.en(?:g|glish)?\./i.test(candidate) ? 'en' : '',
+      src: candidate,
+      ext,
+      sidecar: true
+    };
+  }));
+  return checks.filter(Boolean).slice(0, 8);
+}
+
+function isAllowedRemoteSubtitleSidecar(srcUrl, sidecarUrl) {
+  const candidates = new Set(remoteSubtitleCandidateUrls(srcUrl));
+  return candidates.has(sidecarUrl);
+}
+
+function fetchRemoteText(url, req, maxBytes = 5 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const mod = parsed.protocol === 'https:' ? https : http;
+    const chunks = [];
+    let total = 0;
+    const upstream = mod.request(parsed, {
+      method: 'GET',
+      headers: {
+        'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0',
+        Accept: 'text/vtt,text/plain,*/*',
+        'Accept-Encoding': 'identity',
+      },
+      timeout: 15000,
+    }, upstreamRes => {
+      const status = upstreamRes.statusCode || 0;
+      if (status < 200 || status >= 400) {
+        upstreamRes.resume();
+        reject(new Error(`subtitle request failed ${status}`));
+        return;
+      }
+      upstreamRes.on('data', chunk => {
+        total += chunk.length;
+        if (total > maxBytes) {
+          upstream.destroy(new Error('subtitle too large'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      upstreamRes.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    });
+    upstream.on('error', reject);
+    upstream.on('timeout', () => upstream.destroy(new Error('subtitle request timed out')));
+    req.on('close', () => upstream.destroy());
+    upstream.end();
+  });
+}
+
+async function sendRemoteSidecarSubtitleAsVtt(req, res, srcUrl, sidecarUrl) {
+  if (!isAllowedRemoteSubtitleSidecar(srcUrl, sidecarUrl)) {
+    return jsonError(res, 403, 'REMOTE_SUBTITLE_NOT_ALLOWED', 'Remote subtitle path is not allowed');
+  }
+  try {
+    const raw = await fetchRemoteText(sidecarUrl, req);
+    const ext = path.posix.extname(new URL(sidecarUrl).pathname).toLowerCase();
+    let body = raw;
+    if (ext === '.srt') body = srtToVtt(raw);
+    else if (ext === '.ass' || ext === '.ssa') body = assToVtt(raw);
+    else if (!/^WEBVTT\b/i.test(body.trim())) body = `WEBVTT\n\n${body}`;
+    res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.send(body);
+  } catch (e) {
+    console.error('[FTP Sidecar Subtitle] Error:', e.message);
+    if (!res.headersSent) res.status(502).send('WEBVTT\n\n');
   }
 }
 
@@ -1929,6 +2076,20 @@ function svFifaCachePayload(payload) {
   return payload;
 }
 
+function svFifaRefreshLiveCache() {
+  if (fifaLiveInFlight) return fifaLiveInFlight;
+  fifaLiveInFlight = svFifaFetchRealPayload()
+    .then(payload => svFifaCachePayload(payload))
+    .catch(err => {
+      svFifaWarn('endpoint fallback', err);
+      if (fifaLiveLastGood) return svFifaCachePayload(svFifaMarkStale(fifaLiveLastGood, 'cache'));
+      return svFifaCachePayload(svFifaEmptyPayload(FIFA_LIVE_REAL_UNAVAILABLE, false, 'none'));
+    })
+    .finally(() => { fifaLiveInFlight = null; });
+
+  return fifaLiveInFlight;
+}
+
 function svFifaFetchJson(rawUrl, options = {}, redirects = 0) {
   return new Promise((resolve, reject) => {
     let parsed;
@@ -2083,6 +2244,7 @@ const FIFA_TEAM_COUNTRY_CODES = {
   australia: 'AU',
   austria: 'AT',
   belgium: 'BE',
+  'bosnia herzegovina': 'BA',
   'bosnia-herzegovina': 'BA',
   bosniaherzegovina: 'BA',
   brazil: 'BR',
@@ -2094,25 +2256,33 @@ const FIFA_TEAM_COUNTRY_CODES = {
   drcongo: 'CD',
   'democratic republic of congo': 'CD',
   croatia: 'HR',
+  curacao: 'CW',
   czechia: 'CZ',
   denmark: 'DK',
+  ecuador: 'EC',
+  egypt: 'EG',
   england: 'GB-ENG',
   france: 'FR',
   germany: 'DE',
   ghana: 'GH',
   haiti: 'HT',
   iraq: 'IQ',
+  iran: 'IR',
   italy: 'IT',
+  'ivory coast': 'CI',
+  'cote d ivoire': 'CI',
   japan: 'JP',
   jordan: 'JO',
   mexico: 'MX',
   morocco: 'MA',
   netherlands: 'NL',
+  'new zealand': 'NZ',
   norway: 'NO',
   panama: 'PA',
   paraguay: 'PY',
   portugal: 'PT',
   qatar: 'QA',
+  'saudi arabia': 'SA',
   scotland: 'GB-SCT',
   senegal: 'SN',
   'south africa': 'ZA',
@@ -2120,13 +2290,17 @@ const FIFA_TEAM_COUNTRY_CODES = {
   'south korea': 'KR',
   southkorea: 'KR',
   spain: 'ES',
+  sweden: 'SE',
   switzerland: 'CH',
+  tunisia: 'TN',
   turkiye: 'TR',
   turkey: 'TR',
   'türkiye': 'TR',
   'united states': 'US',
   unitedstates: 'US',
   usa: 'US',
+  uruguay: 'UY',
+  'cape verde': 'CV',
   wales: 'GB-WLS',
   uzbekistan: 'UZ'
 };
@@ -2586,15 +2760,8 @@ async function svFifaFetchEspn() {
   const recentResults = events
     .filter(match => match.status === 'FT')
     .sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
-  let news = null;
-  try {
-    news = await svFifaFetchJson(`${FIFA_LIVE_ESPN_BASE}/fifa.world/news?limit=8`, { timeout: FIFA_LIVE_UPSTREAM_TIMEOUT_MS, maxBytes: 1024 * 1024 });
-  } catch (e) {
-    svFifaWarn('ESPN news unavailable', e);
-  }
   const headlines = svFifaNormalizeEspnHeadlines(
-    scoreboards.flatMap(board => svFifaArray(board?.events).flatMap(event => svFifaArray(event?.competitions?.[0]?.headlines))),
-    news?.articles
+    scoreboards.flatMap(board => svFifaArray(board?.events).flatMap(event => svFifaArray(event?.competitions?.[0]?.headlines)))
   );
   return svFifaFinalizePayload({
     liveMatches,
@@ -2626,21 +2793,24 @@ async function svFifaFetchRealPayload() {
   return svFifaEmptyPayload(FIFA_LIVE_REAL_UNAVAILABLE, false, 'none');
 }
 
-async function svGetFifaLivePayload() {
+async function svGetFifaLivePayload(options = {}) {
   const now = Date.now();
   if (fifaLiveCache && fifaLiveCache.expiresAt > now) return fifaLiveCache.payload;
+  if (options.allowStale && fifaLiveLastGood) {
+    svFifaRefreshLiveCache();
+    return svFifaMarkStale(fifaLiveLastGood, 'cache');
+  }
   if (fifaLiveInFlight) return fifaLiveInFlight;
+  return svFifaRefreshLiveCache();
+}
 
-  fifaLiveInFlight = svFifaFetchRealPayload()
-    .then(payload => svFifaCachePayload(payload))
-    .catch(err => {
-      svFifaWarn('endpoint fallback', err);
-      if (fifaLiveLastGood) return svFifaCachePayload(svFifaMarkStale(fifaLiveLastGood, 'cache'));
-      return svFifaCachePayload(svFifaEmptyPayload(FIFA_LIVE_REAL_UNAVAILABLE, false, 'none'));
+function svWarmFifaLiveCache(reason = 'startup') {
+  svFifaRefreshLiveCache()
+    .then(payload => {
+      const total = svFifaArray(payload?.liveMatches).length + svFifaArray(payload?.upcomingMatches).length + svFifaArray(payload?.recentResults).length;
+      console.log(`[FIFA Live] ${reason} cache ready: ${total} matches from ${payload?.source || 'none'}${payload?.stale ? ' (stale)' : ''}`);
     })
-    .finally(() => { fifaLiveInFlight = null; });
-
-  return fifaLiveInFlight;
+    .catch(err => svFifaWarn(`${reason} cache warmup failed`, err));
 }
 
 function svFifaCleanProvider(value) {
@@ -3311,7 +3481,9 @@ app.get('/api/fifa-live', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store, max-age=0, must-revalidate');
   res.setHeader('Pragma', 'no-cache');
   try {
-    res.json(await svGetFifaLivePayload());
+    const payload = await svGetFifaLivePayload({ allowStale: true });
+    res.setHeader('X-StreamVault-Fifa-Cache', payload?.stale ? 'stale-refreshing' : 'fresh');
+    res.json(payload);
   } catch (e) {
     svFifaWarn('endpoint response failed', e);
     res.json(svFifaEmptyPayload(FIFA_LIVE_REAL_UNAVAILABLE, false, 'none'));
@@ -3481,26 +3653,27 @@ function svResolveUrl(base, relative) {
   return new URL(String(relative || '').trim(), base).href;
 }
 
-function svLiveProxyPath(channelId, upstreamUrl) {
+function svLiveProxyPath(channelId, upstreamUrl, options = {}) {
   const isPlaylist = /\.m3u8(?:$|[?#])/i.test(upstreamUrl);
   return isPlaylist
-    ? `/live/${encodeURIComponent(channelId)}/playlist.m3u8?src=${encodeURIComponent(upstreamUrl)}`
+    ? `/live/${encodeURIComponent(channelId)}/playlist.m3u8?src=${encodeURIComponent(upstreamUrl)}${options.fast ? '&fast=1' : ''}`
     : `/live/${encodeURIComponent(channelId)}/segment?url=${encodeURIComponent(upstreamUrl)}`;
 }
 
-function svRewriteLiveUri(channelId, baseUrl, uri) {
-  return svLiveProxyPath(channelId, svResolveUrl(baseUrl, uri));
+function svRewriteLiveUri(channelId, baseUrl, uri, options = {}) {
+  return svLiveProxyPath(channelId, svResolveUrl(baseUrl, uri), options);
 }
 
-async function svFetchBuffer(url) {
+async function svFetchBuffer(url, options = {}) {
   return new Promise((resolve, reject) => {
     let sourceUrl;
     try { sourceUrl = svAssertHttpUrl(url); } catch (e) { return reject(e); }
 
     const startedAt = Date.now();
     const mod = sourceUrl.startsWith('https://') ? https : http;
+    const timeoutMs = Math.max(1500, Number(options.timeoutMs || 15000));
     const req = mod.get(sourceUrl, {
-      timeout: 15000,
+      timeout: timeoutMs,
       headers: svLiveHeaders(sourceUrl),
       agent: sourceUrl.startsWith('https://') ? svLiveHttpsAgent : svLiveHttpAgent,
     }, res => {
@@ -3524,23 +3697,46 @@ async function svFetchBuffer(url) {
     });
 
     req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+    req.on('timeout', () => { req.destroy(new Error('Timeout')); });
   });
 }
 
-function rewriteM3u8(content, channelId, sourceBaseUrl) {
+function rewriteM3u8(content, channelId, sourceBaseUrl, options = {}) {
   return String(content || '').replace(/\r\n/g, '\n').split('\n').map(line => {
     const trimmed = line.trim();
     if (!trimmed) return line;
 
     if (trimmed.startsWith('#')) {
       return line.replace(/\bURI=(?:"([^"]+)"|([^,\s]+))/gi, (_, quotedUri, bareUri) =>
-        `URI="${svRewriteLiveUri(channelId, sourceBaseUrl, quotedUri || bareUri)}"`
+        `URI="${svRewriteLiveUri(channelId, sourceBaseUrl, quotedUri || bareUri, options)}"`
       );
     }
 
-    return svRewriteLiveUri(channelId, sourceBaseUrl, trimmed);
+    return svRewriteLiveUri(channelId, sourceBaseUrl, trimmed, options);
   }).join('\n');
+}
+
+function svAddFastLiveStart(content) {
+  const lines = String(content || '').replace(/\r\n/g, '\n').split('\n');
+  if (lines.some(line => line.includes('#EXT-X-START'))) return lines.join('\n');
+  if (lines.some(line => line.includes('#EXT-X-STREAM-INF'))) return lines.join('\n');
+  const insertAt = Math.max(1, lines.findIndex((line, index) => index > 0 && !line.trim().startsWith('#')) - 1);
+  lines.splice(insertAt > 0 ? insertAt : 1, 0, '#EXT-X-START:TIME-OFFSET=-6,PRECISE=NO');
+  return lines.join('\n');
+}
+
+function svLiveSourceCandidates(ch, requestedSource) {
+  const candidates = [];
+  const add = value => {
+    const text = String(value || '').trim();
+    if (text && !candidates.includes(text)) candidates.push(text);
+  };
+  if (requestedSource) add(requestedSource);
+  else {
+    add(ch?.url);
+    if (Array.isArray(ch?.fallbackUrls)) ch.fallbackUrls.forEach(add);
+  }
+  return candidates;
 }
 
 function svTrimLiveMediaPlaylist(content, maxSegments = SV_LIVE_MEDIA_SEGMENT_WINDOW) {
@@ -3582,8 +3778,8 @@ function svTrimLiveMediaPlaylist(content, maxSegments = SV_LIVE_MEDIA_SEGMENT_WI
 }
 
 
-async function svFetchM3u8Text(url) {
-  const result = await svFetchBuffer(url);
+async function svFetchM3u8Text(url, options = {}) {
+  const result = await svFetchBuffer(url, options);
   const text = result.body.toString('utf8');
 
   if (result.status < 200 || result.status >= 300) {
@@ -3605,30 +3801,49 @@ async function svFetchM3u8Text(url) {
 
 app.get('/live/:channelId/playlist.m3u8', async (req, res) => {
   const ch = channels.find(c => c.id === req.params.channelId);
-  const sourceUrl = String(req.query.src || (ch && ch.url) || '').trim();
+  const requestedSource = String(req.query.src || '').trim();
+  const candidates = svLiveSourceCandidates(ch, requestedSource);
+  const fast = req.query.fast !== '0';
 
   const ip2 = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
   tracker.trackStreamStart(ip2, req.params.channelId, ch?.name || req.params.channelId, 'live', req.headers['user-agent'] || '');
 
-  if (!sourceUrl) return res.status(404).send('Channel URL missing');
+  if (!candidates.length) return res.status(404).send('Channel URL missing');
 
+  let lastError = null;
   try {
-    const fetched = await svFetchM3u8Text(sourceUrl);
+    let fetched = null;
+    for (const candidate of candidates) {
+      const attempts = fast ? 2 : 1;
+      for (let attempt = 0; attempt < attempts; attempt++) {
+        try {
+          fetched = await svFetchM3u8Text(candidate, { timeoutMs: fast ? SV_LIVE_FAST_PLAYLIST_TIMEOUT_MS : SV_LIVE_PLAYLIST_TIMEOUT_MS });
+          break;
+        } catch (e) {
+          lastError = e;
+          svLiveDebugLog('playlist candidate failed', { channel: req.params.channelId, candidate, attempt: attempt + 1, error: e.message });
+        }
+      }
+      if (fetched) break;
+    }
+    if (!fetched) throw lastError || new Error('No live playlist candidates worked');
+
     const isMaster = fetched.text.includes('#EXT-X-STREAM-INF');
-    const playlistText = isMaster ? fetched.text : svTrimLiveMediaPlaylist(fetched.text);
-    const rewritten = rewriteM3u8(playlistText, req.params.channelId, fetched.url);
+    let playlistText = isMaster ? fetched.text : svTrimLiveMediaPlaylist(fetched.text, fast ? SV_LIVE_FAST_MEDIA_SEGMENT_WINDOW : SV_LIVE_MEDIA_SEGMENT_WINDOW);
+    if (fast && !isMaster) playlistText = svAddFastLiveStart(playlistText);
+    const rewritten = rewriteM3u8(playlistText, req.params.channelId, fetched.url, { fast });
 
     res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('X-SV-Live-Playlist-Type', isMaster ? 'master' : 'media');
-    if (!isMaster) res.setHeader('X-SV-Live-Segment-Window', String(SV_LIVE_MEDIA_SEGMENT_WINDOW));
+    if (!isMaster) res.setHeader('X-SV-Live-Segment-Window', String(fast ? SV_LIVE_FAST_MEDIA_SEGMENT_WINDOW : SV_LIVE_MEDIA_SEGMENT_WINDOW));
     res.setHeader('X-SV-Upstream-Status', String(fetched.status || 0));
     res.setHeader('X-SV-Upstream-Ms', String(fetched.elapsedMs || 0));
     svLiveDebugLog('playlist', {
       channel: req.params.channelId,
       type: isMaster ? 'master' : 'media',
-      source: sourceUrl,
+      source: fetched.url,
       fetched: fetched.url,
       status: fetched.status,
       ms: fetched.elapsedMs,
@@ -3640,6 +3855,24 @@ app.get('/live/:channelId/playlist.m3u8', async (req, res) => {
     res.status(502).send('Cannot reach channel source: ' + e.message);
   }
 });
+
+function svLiveAdvanceDatedSegmentUrl(sourceUrl) {
+  try {
+    const parsed = new URL(sourceUrl);
+    const match = parsed.pathname.match(/^(.*\/)(\d{4})\/(\d{2})\/(\d{2})\/(\d{2})\/(\d{2})\/(\d{2})-(\d{5})\.([a-z0-9]+)$/i);
+    if (!match) return '';
+    const [, prefix, yyyy, mm, dd, hh, min, ss, durText, ext] = match;
+    const durationMs = Math.max(1000, Math.round((Number(durText) || 6000) / 1000) * 1000);
+    const next = new Date(Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd), Number(hh), Number(min), Number(ss)));
+    if (Number.isNaN(next.getTime())) return '';
+    next.setUTCMilliseconds(next.getUTCMilliseconds() + durationMs);
+    const pad = value => String(value).padStart(2, '0');
+    parsed.pathname = `${prefix}${next.getUTCFullYear()}/${pad(next.getUTCMonth() + 1)}/${pad(next.getUTCDate())}/${pad(next.getUTCHours())}/${pad(next.getUTCMinutes())}/${pad(next.getUTCSeconds())}-${durText}.${ext}`;
+    return parsed.href;
+  } catch {
+    return '';
+  }
+}
 
 function svStreamLiveSegmentWithRetry(channelId, sourceUrl, res, attempt = 0, redirectsLeft = 5) {
   svLivePruneSegmentCache();
@@ -3721,6 +3954,14 @@ function svStreamLiveSegmentWithRetry(channelId, sourceUrl, res, attempt = 0, re
       return;
     }
 
+    const advancedSegmentUrl = (status === 404 || status === 410) ? svLiveAdvanceDatedSegmentUrl(sourceUrl) : '';
+    if (advancedSegmentUrl && attempt < SV_LIVE_SEGMENT_ADVANCE_RETRIES) {
+      proxyRes.resume();
+      svLiveDebugLog('advance expired segment', { status, attempt: attempt + 1, from: sourceUrl, to: advancedSegmentUrl });
+      retryClients(advancedSegmentUrl, attempt + 1, 80);
+      return;
+    }
+
     if (status >= 400 && attempt < 2) {
       proxyRes.resume();
       svLiveDebugLog('retry segment status', { status, attempt: attempt + 1, url: sourceUrl });
@@ -3781,6 +4022,13 @@ function svStreamLiveSegmentWithRetry(channelId, sourceUrl, res, attempt = 0, re
   inflight.request = proxyReq;
 
   proxyReq.on('error', e => {
+    const advancedSegmentUrl = svLiveAdvanceDatedSegmentUrl(sourceUrl);
+    if (advancedSegmentUrl && attempt < SV_LIVE_SEGMENT_ADVANCE_RETRIES) {
+      svLiveDebugLog('advance segment after error', { error: e.message, attempt: attempt + 1, from: sourceUrl, to: advancedSegmentUrl });
+      retryClients(advancedSegmentUrl, attempt + 1, 80);
+      return;
+    }
+
     if (attempt < 2) {
       svLiveDebugLog('retry segment error', { error: e.message, attempt: attempt + 1, url: sourceUrl });
       retryClients(sourceUrl, attempt + 1);
@@ -4388,6 +4636,88 @@ function looseTitleScore(a, b) {
   return overlap / Math.max(aw.size, bw.size);
 }
 
+function playbackTitleYear(value) {
+  return String(value || '').match(/(?:19|20)\d{2}/)?.[0] || '';
+}
+
+function findPlaybackCatalogItem(items, requestedId, requestedTitle, requestedYear, isPlayable) {
+  const available = (items || []).filter(item => item && isPlayable(item));
+  const id = String(requestedId || '');
+  const direct = available.find(item => String(item.id || '') === id);
+  if (direct) return direct;
+
+  const title = String(requestedTitle || '').trim();
+  if (!title) return null;
+  const key = normalizedTitleKey(title);
+  const year = playbackTitleYear(requestedYear || title);
+  const exact = available.filter(item => normalizedTitleKey(item.name || item.title || item.file) === key);
+  if (exact.length) {
+    return exact.find(item => !year || playbackTitleYear(item.year || item.name || item.title) === year) || exact[0];
+  }
+
+  let best = null;
+  let bestScore = 0;
+  for (const item of available) {
+    const score = looseTitleScore(title, item.name || item.title || item.file)
+      + (year && playbackTitleYear(item.year || item.name || item.title) === year ? 0.08 : 0);
+    if (score > bestScore) {
+      best = item;
+      bestScore = score;
+    }
+  }
+  return bestScore >= 0.72 ? best : null;
+}
+
+// Lightweight home cards intentionally omit stream URLs. Resolve the trusted
+// catalog source only after the user presses Watch, keeping the home feed small.
+app.get('/api/playback/movie/:id', (req, res) => {
+  const movie = findPlaybackCatalogItem(
+    allApiMoviesForDetails(),
+    req.params.id,
+    req.query.title,
+    req.query.year,
+    item => !!item.streamUrl
+  );
+  if (!movie) return jsonError(res, 404, 'MOVIE_PLAYBACK_NOT_FOUND', 'Playable movie source was not found');
+  res.setHeader('Cache-Control', 'private, max-age=300');
+  return res.json({
+    ok: true,
+    id: req.params.id,
+    title: movie.name || movie.title || '',
+    streamUrl: movie.streamUrl,
+    isFtp: true,
+    streamAvailable: true,
+    hasStream: true,
+  });
+});
+
+// Series summaries contain counts only. Hydrate seasons and episode URLs on
+// detail click instead of putting the full series catalog back in home-feed.json.
+app.get('/api/series/detail', (req, res) => {
+  const show = findPlaybackCatalogItem(
+    allApiSeriesForDetails(),
+    req.query.id,
+    req.query.name || req.query.title,
+    req.query.year,
+    item => Object.values(item.seasons || {}).some(eps => Array.isArray(eps) && eps.some(ep => ep.streamUrl || ep.streamId != null))
+  );
+  if (!show) return jsonError(res, 404, 'SERIES_PLAYBACK_NOT_FOUND', 'Playable series episodes were not found');
+  const seasons = show.seasons || {};
+  const episodeCount = Object.values(seasons).reduce((total, eps) => total + (Array.isArray(eps) ? eps.length : 0), 0);
+  res.setHeader('Cache-Control', 'private, max-age=300');
+  return res.json({
+    ...show,
+    id: req.query.id || show.id,
+    type: 'series',
+    isFtp: !!show.isFtp,
+    isSummary: false,
+    streamAvailable: episodeCount > 0,
+    hasStream: episodeCount > 0,
+    seasonCount: Object.keys(seasons).length,
+    episodeCount,
+  });
+});
+
 function localSimilarForDetails(item, mediaType) {
   const genres = splitDetailGenres(item?.genre);
   const source = mediaType === 'tv' ? allApiSeriesForDetails() : allApiMoviesForDetails();
@@ -4816,7 +5146,6 @@ const SV_HOME_SECTIONS = [
   ['warnerRow','warner','Warner Bros'],
   ['hboRow','hbo','HBO'],
   ['appleTvRow','apple','Apple TV+'],
-  ['trendingRow','trending','🔥 Trending Now'], ['seriesRow','series','Series'], ['newRow','new','New to StreamVault'],
   ['indianRow','indian','Indian Movies & Drama'],
   ['animeRow','anime','Anime'], ['koreanRow','koreanDrama','Korean Drama'], ['horrorRow','horrorNights','Horror Nights'],
   ['scifiRow','cyberpunkScifi','Cyberpunk & Sci-Fi'], ['mindfuckRow','mindfuck','Mindfuck Movies'],
@@ -4830,10 +5159,51 @@ const SV_HOME_SECTIONS = [
   ['liveConcertsRow','liveConcerts','Live Concerts'], ['documentaryRow','documentaryVault','Documentary Vault'],
   ['ghibliRow','ghibli','Studio Ghibli'], ['romanticRow','romanceMidnight','Romance After Midnight'], ['comingSoonRow','comingSoon','Coming Soon'],
   ['dramaRow','drama','Drama & Emotion'], ['spanishRow','spanish','Spanish & Latino'], ['highRatedRow','topRated','⭐ Top Rated (8+)'],
-  ['allRow','allMovies','All Movies'], ['recentlyAddedRow','recentlyAdded','Recently Added'], ['mostWatchedTodayRow','mostWatchedToday','Most Watched Today']
+  ['allRow','allMovies','All Movies'], ['recentlyAddedRow','recentlyAdded','Recently Added'], ['mostWatchedTodayRow','mostWatchedToday','Most Watched Today'],
+  ['trendingRow','trending','🔥 Trending Now'], ['seriesRow','series','Series'], ['newRow','new','New to StreamVault']
 ];
 
+const SV_PREBUILT_HOME_FEED_FILE = path.join(__dirname, 'home-feed.json');
+const SV_PREBUILT_HOME_FEED = loadJSON(SV_PREBUILT_HOME_FEED_FILE, null);
+const SV_PREBUILT_HOME_ROWS = new Map(
+  (Array.isArray(SV_PREBUILT_HOME_FEED?.rows) ? SV_PREBUILT_HOME_FEED.rows : [])
+    .filter(row => row?.rowId && Array.isArray(row.items))
+    .map(row => [row.rowId, row])
+);
+const svPrebuiltHomeJsonCache = new Map();
+const SV_HOME_MIN_PREBUILT_ITEMS = 8;
+const SV_DYNAMIC_HOME_SECTION_KEYS = new Set(['warner','hbo']);
+
+function svPrebuiltHomePayload(limit) {
+  if (!SV_PREBUILT_HOME_ROWS.size) return null;
+  const rows = SV_HOME_SECTIONS.map(([rowId, sectionKey, title]) => {
+    const cached = SV_PREBUILT_HOME_ROWS.get(rowId);
+    let items = Array.isArray(cached?.items) ? cached.items : [];
+    if (SV_DYNAMIC_HOME_SECTION_KEYS.has(sectionKey) || (items.length > 0 && items.length < Math.min(limit, SV_HOME_MIN_PREBUILT_ITEMS))) {
+      const fresh = svSectionList(sectionKey);
+      if (fresh.length > items.length) items = fresh;
+    }
+    if (!items.length) return null;
+    return { rowId, sectionKey, title, items:items.slice(0, limit) };
+  }).filter(Boolean);
+  const hero = (rows.find(row => row.rowId === 'newRow')?.items || rows[0]?.items || [])
+    .filter(item => item.poster || item.backdrop)
+    .slice(0, 10);
+  return {
+    ok:true,
+    generatedAt:SV_PREBUILT_HOME_FEED.generatedAt || null,
+    source:`${SV_PREBUILT_HOME_FEED.source || 'prebuilt-home-feed'}:cached`,
+    hero,
+    rows
+  };
+}
+
+let svNormalMovieItemsCache = null;
+let svNormalSeriesItemsCache = null;
+const svSectionListCache = new Map();
+
 function svNormalMovieItems() {
+  if (svNormalMovieItemsCache) return svNormalMovieItemsCache;
   const localMovies = (_movieList || buildMovieListSync()).map(m => ({ ...m, type:'movie', _sourceRank:0 }));
   const ftpMovies = getCachedMovies()
     .filter(m => !isCartoonOrAnime(m))
@@ -4844,15 +5214,17 @@ function svNormalMovieItems() {
       language:m.language || '', productionCompanies:m.productionCompanies || [], streamUrl:m.streamUrl, isFtp:true, _sourceRank:1
     }));
   const seen = new Set();
-  return [...localMovies, ...ftpMovies].filter(item => {
+  svNormalMovieItemsCache = [...localMovies, ...ftpMovies].filter(item => {
     const key = `${String(item.name || item.title || '').toLowerCase()}|${item.year || ''}|${item.tmdbId || ''}|${item.streamUrl || ''}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+  return svNormalMovieItemsCache;
 }
 
 function svNormalSeriesItems() {
+  if (svNormalSeriesItemsCache) return svNormalSeriesItemsCache;
   const localSeries = (_seriesList || buildSeriesListSync()).map(s => ({ ...s, type:'series', _sourceRank:0 }));
   const ftpSeries = getCachedSeries()
     .filter(s => !isCartoonOrAnime(s))
@@ -4870,12 +5242,13 @@ function svNormalSeriesItems() {
       _sourceRank:1
     }));
   const seen = new Set();
-  return [...localSeries, ...ftpSeries].filter(item => {
+  svNormalSeriesItemsCache = [...localSeries, ...ftpSeries].filter(item => {
     const key = `${String(item.name || item.title || '').toLowerCase()}|${item.year || ''}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+  return svNormalSeriesItemsCache;
 }
 
 function svHomeText(item) {
@@ -5070,7 +5443,7 @@ function svUpgradeTmdbImage(url, wide = false) {
 }
 
 function svFeaturedHdStudioItem(item) {
-  const next = { ...item, _wideStudio: true };
+  const next = { ...item };
   if (next.poster) next.poster = svUpgradeTmdbImage(next.poster, false);
   if (next.backdrop) next.backdrop = svUpgradeTmdbImage(next.backdrop, true);
   if (!next.backdrop && next.poster) next.backdrop = next.poster;
@@ -5134,55 +5507,60 @@ function svLatestNetflixSection(all) {
 
 
 function svSectionList(key) {
+  const cacheKey = String(key || 'allMovies');
+  if (svSectionListCache.has(cacheKey)) return svSectionListCache.get(cacheKey);
   const moviesOnly = svNormalMovieItems();
   const seriesOnly = svNormalSeriesItems();
   const all = [...moviesOnly, ...seriesOnly];
+  let list;
   const pick = (list, fn) => svHomeSort(list.filter(item => fn(svHomeText(item), item)));
   switch (key) {
-    case 'series': return svHomeSort(seriesOnly);
-    case 'allMovies': return svHomeSort(moviesOnly);
-    case 'topRated': return svHomeSort(all.filter(i => svRatingNum(i) >= 8));
-    case 'new': case 'recentlyAdded': return svHomeSort(all).sort((a,b)=>svYearNum(b)-svYearNum(a));
-    case 'trending': case 'mostWatchedToday': return svHomeSort(all).slice(0, 300);
-    case 'netflix': return svLatestNetflixSection(all);
-    case 'marvel': return svPopularFeaturedSection(all, 'marvel');
-    case 'dc': return svPopularFeaturedSection(all, 'dc');
-    case 'universal': return svStudioSection(all, 'universal');
-    case 'disney': return svStudioSection(all, 'disney');
-    case 'warner': return svStudioSection(all, 'warner');
-    case 'hbo': return svStudioSection(all, 'hbo');
-    case 'apple': return svStudioSection(all, 'apple');
-    case 'indian': return pick(all, t => svHasAny(t, ['hindi','bangla','bengali','kolkata','tamil','telugu','malayalam','kannada','punjabi','bollywood','south indian','india']));
-    case 'anime': return pick(all, t => svHasAny(t, ['anime','animation','japanese','demon slayer','naruto','one piece','jujutsu','attack on titan']));
-    case 'koreanDrama': return pick(all, t => svHasAny(t, ['korean','k-drama','k drama','korea']));
-    case 'horrorNights': return pick(all, t => svHasAny(t, ['horror','ghost','haunt','demon','evil','conjuring','scream','strangers']));
-    case 'cyberpunkScifi': return pick(all, t => svHasAny(t, ['sci-fi','science fiction','cyberpunk','space','alien','robot','ai','future','matrix','blade runner']));
-    case 'mindfuck': return pick(all, t => svHasAny(t, ['mind','dream','memory','loop','inception','tenet','shutter island','memento','black mirror']));
-    case 'cultClassics': return pick(all, t => svHasAny(t, ['cult','classic','pulp fiction','fight club','trainspotting','big lebowski']));
-    case 'a24': return pick(all, t => svHasAny(t, ['a24','hereditary','midsommar','moonlight','lady bird','ex machina','uncut gems','everything everywhere']));
-    case 'nostalgia90s': return pick(all, (t,i) => svYearNum(i) >= 1990 && svYearNum(i) <= 1999);
-    case 'midnightCinema': return pick(all, t => svHasAny(t, ['midnight','neon','noir','cult','horror','thriller']));
-    case 'trueCrime': return pick(all, t => svHasAny(t, ['true crime','crime documentary','serial killer','murder','detective']));
-    case 'psychThriller': return pick(all, t => svHasAny(t, ['psychological','thriller','mystery','suspense','obsession']));
-    case 'adultAnimation': return pick(all, t => svHasAny(t, ['adult animation','rick and morty','family guy','south park','bojack']));
-    case 'postApocalyptic': return pick(all, t => svHasAny(t, ['apocalypse','post-apocalyptic','zombie','wasteland','last of us','walking dead']));
-    case 'feelGood': return pick(all, t => svHasAny(t, ['comedy','family','feel good','romance','adventure']));
-    case 'darkComedy': return pick(all, t => svHasAny(t, ['dark comedy','black comedy','satire']));
-    case 'timeTravel': return pick(all, t => svHasAny(t, ['time travel','time loop','back to the future','timeline']));
-    case 'spaceAi': return pick(all, t => svHasAny(t, ['space','artificial intelligence',' ai ','robot','mars','moon','interstellar']));
-    case 'crimeSyndicates': return pick(all, t => svHasAny(t, ['crime','mafia','gang','cartel','syndicate','godfather','peaky blinders']));
-    case 'zombie': return pick(all, t => svHasAny(t, ['zombie','undead','walking dead','resident evil']));
-    case 'indieGems': return pick(all, t => svHasAny(t, ['indie','festival','independent']));
-    case 'hiddenMasterpieces': return svHomeSort(all.filter(i => svRatingNum(i) >= 7 && (i.poster || i.backdrop))).slice(0, 500);
-    case 'liveConcerts': return pick(all, t => svHasAny(t, ['concert','music','live','documentary']));
-    case 'documentaryVault': return pick(all, t => svHasAny(t, ['documentary','docu','nature','history','biography']));
-    case 'ghibli': return pick(all, t => svHasAny(t, ['ghibli','miyazaki','spirited away','totoro','howl']));
-    case 'romanceMidnight': return pick(all, t => svHasAny(t, ['romance','romantic','love','relationship']));
-    case 'comingSoon': return svHomeSort(all.filter(i => svYearNum(i) >= new Date().getFullYear()));
-    case 'drama': return pick(all, t => svHasAny(t, ['drama','emotion','life','family']));
-    case 'spanish': return pick(all, t => svHasAny(t, ['spanish','latino','latin','mexico','argentina','colombia']));
-    default: return svHomeSort(all);
+    case 'series': list = svHomeSort(seriesOnly); break;
+    case 'allMovies': list = svHomeSort(moviesOnly); break;
+    case 'topRated': list = svHomeSort(all.filter(i => svRatingNum(i) >= 8)); break;
+    case 'new': case 'recentlyAdded': list = svHomeSort(all).sort((a,b)=>svYearNum(b)-svYearNum(a)); break;
+    case 'trending': case 'mostWatchedToday': list = svHomeSort(all).slice(0, 300); break;
+    case 'netflix': list = svLatestNetflixSection(all); break;
+    case 'marvel': list = svPopularFeaturedSection(all, 'marvel'); break;
+    case 'dc': list = svPopularFeaturedSection(all, 'dc'); break;
+    case 'universal': list = svStudioSection(all, 'universal'); break;
+    case 'disney': list = svStudioSection(all, 'disney'); break;
+    case 'warner': list = svStudioSection(all, 'warner'); break;
+    case 'hbo': list = svStudioSection(all, 'hbo'); break;
+    case 'apple': list = svStudioSection(all, 'apple'); break;
+    case 'indian': list = pick(all, t => svHasAny(t, ['hindi','bangla','bengali','kolkata','tamil','telugu','malayalam','kannada','punjabi','bollywood','south indian','india'])); break;
+    case 'anime': list = pick(all, t => svHasAny(t, ['anime','animation','japanese','demon slayer','naruto','one piece','jujutsu','attack on titan'])); break;
+    case 'koreanDrama': list = pick(all, t => svHasAny(t, ['korean','k-drama','k drama','korea'])); break;
+    case 'horrorNights': list = pick(all, t => svHasAny(t, ['horror','ghost','haunt','demon','evil','conjuring','scream','strangers'])); break;
+    case 'cyberpunkScifi': list = pick(all, t => svHasAny(t, ['sci-fi','science fiction','cyberpunk','space','alien','robot','ai','future','matrix','blade runner'])); break;
+    case 'mindfuck': list = pick(all, t => svHasAny(t, ['mind','dream','memory','loop','inception','tenet','shutter island','memento','black mirror'])); break;
+    case 'cultClassics': list = pick(all, t => svHasAny(t, ['cult','classic','pulp fiction','fight club','trainspotting','big lebowski'])); break;
+    case 'a24': list = pick(all, t => svHasAny(t, ['a24','hereditary','midsommar','moonlight','lady bird','ex machina','uncut gems','everything everywhere'])); break;
+    case 'nostalgia90s': list = pick(all, (t,i) => svYearNum(i) >= 1990 && svYearNum(i) <= 1999); break;
+    case 'midnightCinema': list = pick(all, t => svHasAny(t, ['midnight','neon','noir','cult','horror','thriller'])); break;
+    case 'trueCrime': list = pick(all, t => svHasAny(t, ['true crime','crime documentary','serial killer','murder','detective'])); break;
+    case 'psychThriller': list = pick(all, t => svHasAny(t, ['psychological','thriller','mystery','suspense','obsession'])); break;
+    case 'adultAnimation': list = pick(all, t => svHasAny(t, ['adult animation','rick and morty','family guy','south park','bojack'])); break;
+    case 'postApocalyptic': list = pick(all, t => svHasAny(t, ['apocalypse','post-apocalyptic','zombie','wasteland','last of us','walking dead'])); break;
+    case 'feelGood': list = pick(all, t => svHasAny(t, ['comedy','family','feel good','romance','adventure'])); break;
+    case 'darkComedy': list = pick(all, t => svHasAny(t, ['dark comedy','black comedy','satire'])); break;
+    case 'timeTravel': list = pick(all, t => svHasAny(t, ['time travel','time loop','back to the future','timeline'])); break;
+    case 'spaceAi': list = pick(all, t => svHasAny(t, ['space','artificial intelligence',' ai ','robot','mars','moon','interstellar'])); break;
+    case 'crimeSyndicates': list = pick(all, t => svHasAny(t, ['crime','mafia','gang','cartel','syndicate','godfather','peaky blinders'])); break;
+    case 'zombie': list = pick(all, t => svHasAny(t, ['zombie','undead','walking dead','resident evil'])); break;
+    case 'indieGems': list = pick(all, t => svHasAny(t, ['indie','festival','independent'])); break;
+    case 'hiddenMasterpieces': list = svHomeSort(all.filter(i => svRatingNum(i) >= 7 && (i.poster || i.backdrop))).slice(0, 500); break;
+    case 'liveConcerts': list = pick(all, t => svHasAny(t, ['concert','music','live','documentary'])); break;
+    case 'documentaryVault': list = pick(all, t => svHasAny(t, ['documentary','docu','nature','history','biography'])); break;
+    case 'ghibli': list = pick(all, t => svHasAny(t, ['ghibli','miyazaki','spirited away','totoro','howl'])); break;
+    case 'romanceMidnight': list = pick(all, t => svHasAny(t, ['romance','romantic','love','relationship'])); break;
+    case 'comingSoon': list = svHomeSort(all.filter(i => svYearNum(i) >= new Date().getFullYear())); break;
+    case 'drama': list = pick(all, t => svHasAny(t, ['drama','emotion','life','family'])); break;
+    case 'spanish': list = pick(all, t => svHasAny(t, ['spanish','latino','latin','mexico','argentina','colombia'])); break;
+    default: list = svHomeSort(all); break;
   }
+  svSectionListCache.set(cacheKey, list);
+  return list;
 }
 
 app.get('/api/section/:key', (req, res) => {
@@ -5190,6 +5568,15 @@ app.get('/api/section/:key', (req, res) => {
     const key = String(req.params.key || 'allMovies');
     const page = Math.max(0, parseInt(req.query.page || '0', 10) || 0);
     const limit = Math.min(120, Math.max(1, parseInt(req.query.limit || '24', 10) || 24));
+    const prebuilt = req.query.summary === '1' && page === 0
+      ? Array.from(SV_PREBUILT_HOME_ROWS.values()).find(row => row.sectionKey === key)
+      : null;
+    if (!SV_DYNAMIC_HOME_SECTION_KEYS.has(key) && prebuilt?.items?.length >= Math.min(limit, SV_HOME_MIN_PREBUILT_ITEMS)) {
+      const items = prebuilt.items.slice(0, limit);
+      res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=3600');
+      res.setHeader('X-StreamVault-Section', 'prebuilt');
+      return res.json({ key, items, total:prebuilt.items.length, page:0, pages:1 });
+    }
     const list = svSectionList(key);
     const start = page * limit;
     res.setHeader('Cache-Control', 'public, max-age=60');
@@ -5203,6 +5590,17 @@ app.get('/api/section/:key', (req, res) => {
 app.get('/api/home-feed', (req, res) => {
   try {
     const limit = Math.min(50, Math.max(6, parseInt(req.query.limit || '18', 10) || 18));
+    const prebuilt = svPrebuiltHomePayload(limit);
+    if (prebuilt) {
+      let json = svPrebuiltHomeJsonCache.get(limit);
+      if (!json) {
+        json = JSON.stringify(prebuilt);
+        svPrebuiltHomeJsonCache.set(limit, json);
+      }
+      res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=3600');
+      res.setHeader('X-StreamVault-Feed', 'prebuilt');
+      return res.type('application/json').send(json);
+    }
     const rows = SV_HOME_SECTIONS.map(([rowId, sectionKey, title]) => {
       const items = svSectionList(sectionKey).slice(0, limit);
       return { rowId, sectionKey, title, items };
@@ -6357,6 +6755,29 @@ app.get('/api/stream-seek/:id', async (req, res) => {
   }
 });
 
+function parseSingleByteRange(header, fileSize) {
+  const value = String(header || '').trim();
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(value);
+  if (!match || (!match[1] && !match[2])) return null;
+
+  let start;
+  let end;
+  if (!match[1]) {
+    const suffixLength = Number(match[2]);
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) return null;
+    start = Math.max(0, fileSize - suffixLength);
+    end = fileSize - 1;
+  } else {
+    start = Number(match[1]);
+    end = match[2] ? Number(match[2]) : fileSize - 1;
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)) return null;
+    end = Math.min(end, fileSize - 1);
+  }
+
+  if (start < 0 || start >= fileSize || end < start) return null;
+  return { start, end };
+}
+
 function directStream(req, res, filePath, entry) {
   const ext = path.extname(filePath).toLowerCase();
   const qualityParam = req.query.quality || 'auto';
@@ -6382,20 +6803,17 @@ function directStream(req, res, filePath, entry) {
   res.setHeader('Cache-Control', mobilePlayback ? 'no-cache, no-store, must-revalidate' : 'private, max-age=0, must-revalidate');
   
   if (range) {
-    // Parse range header (supports both "bytes=start-end" and "bytes=start-")
-    const matches = range.replace(/bytes=/, '').split('-');
-    const start = parseInt(matches[0], 10);
-    const end = matches[1] ? parseInt(matches[1], 10) : fileSize - 1;
-    const chunkSize = (end - start) + 1;
-    
-    // Validate range
-    if (start >= fileSize || start > end) {
+    const parsedRange = parseSingleByteRange(range, fileSize);
+    if (!parsedRange) {
       res.writeHead(416, {
         'Content-Range': `bytes */${fileSize}`,
+        'Content-Length': '0',
         'Content-Type': contentType
       });
       return res.end();
     }
+    const { start, end } = parsedRange;
+    const chunkSize = (end - start) + 1;
     
     // Send partial content
     res.writeHead(206, {
@@ -6403,6 +6821,8 @@ function directStream(req, res, filePath, entry) {
       'Content-Length': chunkSize,
       'Content-Type': contentType
     });
+
+    if (req.method === 'HEAD') return res.end();
     
     const stream = fs.createReadStream(filePath, { ...readOptions, start, end });
     if (bytesPerSec) {
@@ -6422,6 +6842,8 @@ function directStream(req, res, filePath, entry) {
       'Content-Length': fileSize,
       'Content-Type': contentType
     });
+
+    if (req.method === 'HEAD') return res.end();
     
     const stream = fs.createReadStream(filePath, readOptions);
     if (bytesPerSec) {
@@ -6799,11 +7221,16 @@ function streamRemotePlaybackProxy(req, res, media, matched, srcUrl = media.deco
   const headers = {
     'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0',
     Accept: '*/*',
+    'Accept-Encoding': 'identity',
   };
   if (req.headers.range) headers.Range = req.headers.range;
 
   const mod = srcUrl.startsWith('https://') ? https : http;
-  const proxyReq = mod.get(srcUrl, { headers, timeout: 20000 }, proxyRes => {
+  const proxyReq = mod.request(srcUrl, {
+    method: req.method === 'HEAD' ? 'HEAD' : 'GET',
+    headers,
+    timeout: 20000,
+  }, proxyRes => {
     try { req.socket?.setNoDelay?.(true); res.socket?.setNoDelay?.(true); proxyRes.socket?.setNoDelay?.(true); } catch {}
     const status = proxyRes.statusCode || 200;
     const location = proxyRes.headers.location;
@@ -6830,14 +7257,21 @@ function streamRemotePlaybackProxy(req, res, media, matched, srcUrl = media.deco
       : proxyRes.headers['content-type'];
     const passHeaders = {
       'Content-Type': contentType,
-      'Accept-Ranges': proxyRes.headers['accept-ranges'] || 'bytes',
       'Access-Control-Allow-Origin': '*',
+      'Access-Control-Expose-Headers': 'Content-Range, Accept-Ranges, Content-Length, Content-Type',
       'Cache-Control': 'no-store',
     };
+    const acceptsBytes = String(proxyRes.headers['accept-ranges'] || '').toLowerCase() === 'bytes'
+      || (status === 206 && !!proxyRes.headers['content-range']);
+    if (acceptsBytes) passHeaders['Accept-Ranges'] = 'bytes';
     if (proxyRes.headers['content-length']) passHeaders['Content-Length'] = proxyRes.headers['content-length'];
     if (proxyRes.headers['content-range']) passHeaders['Content-Range'] = proxyRes.headers['content-range'];
 
     res.writeHead(status, passHeaders);
+    if (req.method === 'HEAD') {
+      proxyRes.resume();
+      return res.end();
+    }
     proxyRes.pipe(res);
   });
 
@@ -6859,6 +7293,7 @@ function streamRemotePlaybackProxy(req, res, media, matched, srcUrl = media.deco
     }
   });
   res.on('close', () => proxyReq.destroy());
+  proxyReq.end();
 }
 
 app.get('/api/playback/ftp', (req, res) => {
@@ -7000,7 +7435,10 @@ app.get(['/api/ftp/media-info', '/api/ftp/info'], async (req, res) => {
   console.log(`[FTP Media Info] final play URL: ${urls.finalPlayUrl}`);
 
   try {
-    const info = await getCachedMediaInfo(media.decodedUrl);
+    const [info, sidecarSubtitleTracks] = await Promise.all([
+      getCachedMediaInfo(media.decodedUrl),
+      discoverRemoteSubtitleTracks(media.decodedUrl, req).catch(() => [])
+    ]);
     res.json({
       ok: true,
       requestedUrl: media.requestedUrl,
@@ -7009,6 +7447,7 @@ app.get(['/api/ftp/media-info', '/api/ftp/info'], async (req, res) => {
       playUrl: urls.finalPlayUrl,
       finalPlayUrl: urls.finalPlayUrl,
       ...info,
+      sidecarSubtitleTracks,
       duration: Number(info.duration) || 0,
     });
   } catch (e) {
@@ -7036,6 +7475,14 @@ app.get('/api/ftp/subtitle/:track.vtt', (req, res) => {
   }
 
   const srcUrl = media.decodedUrl;
+  const sidecarRaw = String(req.query.sidecar || '').trim();
+  if (sidecarRaw) {
+    let sidecarUrl;
+    try { sidecarUrl = new URL(sidecarRaw, srcUrl).href; } catch {
+      return jsonError(res, 400, 'INVALID_SUBTITLE_URL', 'Invalid remote subtitle URL');
+    }
+    return sendRemoteSidecarSubtitleAsVtt(req, res, srcUrl, sidecarUrl);
+  }
   const trackIdx = Math.max(0, parseInt(req.params.track || '0', 10) || 0);
   const streamIdx = parseInt(req.query.stream ?? '', 10);
   const mapTarget = Number.isFinite(streamIdx) && streamIdx >= 0 ? `0:${streamIdx}` : `0:s:${trackIdx}`;
@@ -7089,18 +7536,9 @@ app.get('/api/ftp/subtitle/:track.vtt', (req, res) => {
 });
 
 app.get('/api/ftp/stream', async (req, res) => {
-  let media;
-  try {
-    media = readRemoteUrlParam(req, ['url', 'streamUrl', 'movie', 'movieUrl', 'src']);
-  } catch (e) {
-    return jsonError(res, e.status || 400, e.code || 'INVALID_URL', e.message, {
-      requestedUrl: e.requestedUrl,
-      decodedUrl: e.decodedUrl,
-    });
-  }
-
-  const srcUrl = media.decodedUrl;
-  const matched = findCatalogItemByStreamUrl(srcUrl);
+  const trusted = readTrustedRemotePlaybackMedia(req, res, true);
+  if (!trusted) return;
+  const { media, srcUrl, matched } = trusted;
   const urls = remotePlayUrls(srcUrl);
   console.log(`[FTP Stream] requested URL: ${media.requestedUrl}`);
   console.log(`[FTP Stream] decoded URL: ${srcUrl}`);
@@ -7587,10 +8025,13 @@ app.use((err, req, res, next) => { console.error('Unhandled error:', err.message
 buildFileIndex();
 buildInstantLists();                                   // ⚡ instant — sync, ~10ms
 filterCartoonsAndAnime();                              // 🧹 remove cartoons/anime (with logging)
-setTimeout(() => {
-  try { svGetFastSearchIndex(); }
-  catch (e) { console.warn('⚠ Search index warmup failed:', e.message); }
-}, 2000);                                             // ⚡ build massive search index before user searches
+if (process.env.SV_SEARCH_WARMUP === '1') {
+  const searchWarmupDelay = Math.max(30000, parseInt(process.env.SV_SEARCH_WARMUP_DELAY_MS || '120000', 10) || 120000);
+  setTimeout(() => {
+    try { svGetFastSearchIndex(); }
+    catch (e) { console.warn('⚠ Search index warmup failed:', e.message); }
+  }, searchWarmupDelay);
+}
 setTimeout(() => runBackgroundEnrichment(), 60000);    // 🔄 fill missing posters after startup settles
 
 const os = require('os');
@@ -7616,4 +8057,8 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n📲 Using DIRECT STREAMING (fastest playback, no HLS delay)`);
   console.log(`✨ Seeking, pausing, and all controls work instantly\n`);
   console.log(`🧹 Cartoon/Anime filter active — only real movies & series are shown`);
+  setTimeout(() => svWarmFifaLiveCache('startup'), 750);
+  setTimeout(() => {
+    svGetFifaNewsPayload().catch(err => svFifaWarn('startup news warmup failed', err));
+  }, 2500);
 });

@@ -2118,6 +2118,10 @@
 
   function svClearFifaCountdown(){
     clearInterval(svFifaLiveState.countdownTimer);
+    if(window.__svFifaFastCountdownTimer){
+      clearInterval(window.__svFifaFastCountdownTimer);
+      window.__svFifaFastCountdownTimer = null;
+    }
     svFifaLiveState.countdownTimer = null;
     svFifaLiveState.countdownMatch = null;
     svFifaLiveState.countdownMatchKey = '';

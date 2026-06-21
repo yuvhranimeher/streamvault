@@ -1270,48 +1270,6 @@ function playbackUrlHasUnsupportedVideoHint(srcUrl) {
   return /(x265|h265|hevc|10bit|10-bit|av1|vp9|vp8)/i.test(String(srcUrl || ''));
 }
 
-function playbackUrlHasRemuxContainerHint(srcUrl) {
-  const clean = String(srcUrl || '').split('?')[0].toLowerCase();
-  return /\.(mkv|webm|avi|flv|ts|m2ts|mpegts|wmv|mov)(?:$|[?#])/i.test(clean) || /(matroska|webm|remux)/i.test(clean);
-}
-
-function playbackUrlHasUnsafeAudioHint(srcUrl) {
-  return /\b(ac-?3|e-?ac-?3|ddp?|dts|truehd|atmos|flac|opus|vorbis|pcm)\b/i.test(String(srcUrl || ''));
-}
-
-function playbackUrlHasTrackComplexityHint(srcUrl) {
-  return /\[(?:dual|multi)[^\]]*audio\]|\b(?:dual|multi)[ ._-]*audio\b|\b(e-?sub|m-?subs?|multi[ ._-]*subs?|multi[ ._-]*subtitles?|subbed)\b/i.test(String(srcUrl || ''));
-}
-
-function serverPlaybackDecision({ scope = 'local', srcUrl = '', requestedMode = 'direct', forceHls = false } = {}) {
-  const normalized = forceHls ? 'hls' : normalizePlaybackMode(requestedMode, 'direct');
-  const explicitServerMode = normalized === 'hls' || normalized === 'audio' || normalized === 'remux' || normalized === 'proxy';
-  const explicitServerTransform = normalized === 'hls' || normalized === 'audio' || normalized === 'remux';
-  const unsupportedVideo = playbackUrlHasUnsupportedVideoHint(srcUrl);
-  const remuxContainer = playbackUrlHasRemuxContainerHint(srcUrl);
-  const unsafeAudio = playbackUrlHasUnsafeAudioHint(srcUrl);
-  const trackComplexity = playbackUrlHasTrackComplexityHint(srcUrl);
-
-  if (unsupportedVideo && normalized !== 'hls') {
-    return { mode: 'hls', fallbackReason: 'auto:unsupported-video', unsupportedVideo };
-  }
-  if ((remuxContainer || unsafeAudio || trackComplexity) && !explicitServerTransform) {
-    return {
-      mode: 'audio',
-      fallbackReason: remuxContainer ? 'auto:container-remux' : unsafeAudio ? 'auto:unsafe-audio' : 'auto:track-complexity',
-      unsupportedVideo
-    };
-  }
-  if (explicitServerMode) {
-    return { mode: normalized, fallbackReason: `requested:${normalized}`, unsupportedVideo };
-  }
-  return {
-    mode: scope === 'ftp' ? 'proxy' : 'direct',
-    fallbackReason: scope === 'ftp' ? 'auto:browser-safe-proxy' : 'auto:browser-safe-direct',
-    unsupportedVideo
-  };
-}
-
 function readTrustedRemotePlaybackMedia(req, res, errorAsJson = true) {
   let media;
   try {
@@ -6781,16 +6739,10 @@ app.get('/api/refresh-poster/:id', async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 function localPlaybackPlan(id, req, entry, filePath) {
   const requestedMode = req.query.forceHls === '1' ? 'hls' : normalizePlaybackMode(req.query.mode, 'direct');
-  const decision = serverPlaybackDecision({
-    scope: 'local',
-    srcUrl: entry.file || filePath,
-    requestedMode,
-    forceHls: req.query.forceHls === '1',
-  });
   const startSec = playbackStartFromReq(req);
   const query = playbackQueryFromReq(req);
   let src;
-  let mode = decision.mode;
+  let mode = requestedMode;
 
   if (mode === 'hls') {
     src = localPlaybackHlsUrl(id, req);
@@ -6806,8 +6758,7 @@ function localPlaybackPlan(id, req, entry, filePath) {
     id,
     filename: entry.file,
     directPlayable: isRemoteDirectPlayable(filePath),
-    unsupportedVideoHint: decision.unsupportedVideo || playbackUrlHasUnsupportedVideoHint(entry.file),
-    fallbackReason: decision.fallbackReason,
+    unsupportedVideoHint: playbackUrlHasUnsupportedVideoHint(entry.file),
     mode,
     transport: mode,
     src,
@@ -7477,21 +7428,14 @@ app.get('/api/playback/ftp', (req, res) => {
   const { media, srcUrl, matched } = trusted;
 
   const requestedMode = req.query.forceHls === '1' ? 'hls' : normalizePlaybackMode(req.query.mode, 'direct');
-  const decision = serverPlaybackDecision({
-    scope: 'ftp',
-    srcUrl,
-    requestedMode,
-    forceHls: req.query.forceHls === '1',
-  });
-  const mode = decision.mode === 'direct' ? 'redirect' : decision.mode;
+  const mode = requestedMode === 'direct' ? 'redirect' : requestedMode;
   const planRequested = req.query.plan === '1' || req.query.json === '1' || req.query.format === 'json';
   const urls = remotePlaybackUrls(srcUrl);
-  const audioSelection = playbackAudioSelectionFromReq(req);
 
   console.log(`[FTP Playback] requested URL: ${media.requestedUrl}`);
   console.log(`[FTP Playback] decoded URL: ${srcUrl}`);
   console.log(`[FTP Playback] matched catalog item: ${catalogLogLabel(matched)}`);
-  console.log(`[FTP Playback] mode: ${planRequested ? 'plan:' : ''}${mode} reason=${decision.fallbackReason} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} subtitleCount=0`);
+  console.log(`[FTP Playback] mode: ${planRequested ? 'plan:' : ''}${mode}`);
 
   if (planRequested) {
     let playUrl = urls.redirectUrl;
@@ -7507,10 +7451,7 @@ app.get('/api/playback/ftp', (req, res) => {
       decodedUrl: srcUrl,
       matchedCatalogItem: matched,
       directPlayable: urls.directPlayable,
-      unsupportedVideoHint: decision.unsupportedVideo || playbackUrlHasUnsupportedVideoHint(srcUrl),
-      fallbackReason: decision.fallbackReason,
-      audioStream: audioSelection.audioStreamIdx,
-      subtitleCount: 0,
+      unsupportedVideoHint: playbackUrlHasUnsupportedVideoHint(srcUrl),
       mode: mode === 'redirect' ? 'direct' : mode,
       transport: mode,
       src: playUrl,
@@ -7533,6 +7474,7 @@ app.get('/api/playback/ftp', (req, res) => {
   }
 
   if (mode === 'remux' || mode === 'audio') {
+    const audioSelection = playbackAudioSelectionFromReq(req);
     console.log(`[FTP Playback FFmpeg] ${remoteFilename(srcUrl)} mode=${mode} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap}`);
     return streamFfmpegMp4(req, res, {
       input: srcUrl,
@@ -7546,6 +7488,7 @@ app.get('/api/playback/ftp', (req, res) => {
 
   if (mode === 'hls') {
     const startSec = playbackStartFromReq(req);
+    const audioSelection = playbackAudioSelectionFromReq(req);
     const audioMap = audioSelection.audioMap;
     console.log(`[FTP Playback HLS] ${remoteFilename(srcUrl)} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioMap}`);
     const preset = mobileHlsPresetFromQuality(req.query.quality);

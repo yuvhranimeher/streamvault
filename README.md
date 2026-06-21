@@ -107,6 +107,12 @@ Mobile playback may use FFmpeg/HLS only when required.
 
 Playback and FFmpeg routes are the riskiest parts of the project and should be changed last.
 
+Stable playback checkpoint:
+
+- `860d4f7` (`stable-playback-20260621`) is the stable playback base.
+- Do not change media playback/source logic unless a specific title fails.
+- Future subtitle, audio, search, and UI work must preserve this playback behavior.
+
 ---
 
 ## 5. Main Files

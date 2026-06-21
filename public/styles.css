@@ -7519,11 +7519,29 @@ html[data-theme="light"] .fifa-live-section{
 }
 
 /* Premium video player controls */
+.player-wrap.premium-player{
+  --player-font:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,sans-serif;
+  --player-accent:#22c55e;
+  --player-accent-strong:#16a34a;
+  font-family:var(--player-font);
+}
+.player-wrap.premium-player,
+.player-wrap.premium-player button,
+.player-wrap.premium-player input,
+.player-wrap.premium-player .player-dropdown,
+.player-wrap.premium-player .spd-series,
+.player-wrap.premium-player .progress-preview{
+  font-family:var(--player-font);
+}
+.player-wrap.premium-player:not(.show-cursor),
+.player-wrap.premium-player:not(.show-cursor) .player-tap-zone{
+  cursor:none;
+}
 .player-wrap.premium-player .player-ui{
   background:
-    linear-gradient(to bottom,rgba(0,0,0,.74) 0%,rgba(0,0,0,.32) 15%,transparent 42%),
-    linear-gradient(to top,rgba(0,0,0,.72) 0%,rgba(0,0,0,.38) 18%,transparent 48%);
-  transition:opacity .24s ease,visibility .24s ease;
+    linear-gradient(to bottom,rgba(0,0,0,.68) 0%,rgba(0,0,0,.26) 16%,transparent 42%),
+    linear-gradient(to top,rgba(0,0,0,.70) 0%,rgba(0,0,0,.32) 18%,transparent 48%);
+  transition:opacity .18s ease,visibility .18s ease;
 }
 .player-wrap.premium-player .player-ui.hidden{
   opacity:0;
@@ -7535,35 +7553,60 @@ html[data-theme="light"] .fifa-live-section{
 .player-wrap.premium-player .player-back,
 .player-wrap.premium-player .skip-btn,
 .player-wrap.premium-player .play-pause-center{
-  background:rgba(10,12,16,.52);
-  border:1px solid rgba(255,255,255,.18);
-  box-shadow:0 12px 36px rgba(0,0,0,.36);
-  backdrop-filter:blur(16px) saturate(140%);
-  -webkit-backdrop-filter:blur(16px) saturate(140%);
+  background:rgba(12,14,18,.66);
+  border:1px solid rgba(255,255,255,.16);
+  box-shadow:none;
+  backdrop-filter:none;
+  -webkit-backdrop-filter:none;
 }
 .player-wrap.premium-player .player-back:hover,
 .player-wrap.premium-player .skip-btn:hover,
 .player-wrap.premium-player .play-pause-center:hover{
-  background:rgba(255,255,255,.16);
-  border-color:rgba(255,255,255,.3);
+  background:rgba(255,255,255,.14);
+  border-color:rgba(255,255,255,.28);
+}
+.player-wrap.premium-player .skip-center{
+  gap:32px;
+}
+.player-wrap.premium-player .skip-btn{
+  width:50px;
+  height:50px;
+  font-size:.78rem;
+}
+.player-wrap.premium-player .skip-btn svg{
+  width:22px;
+  height:22px;
+}
+.player-wrap.premium-player .skip-btn span{
+  font-size:.52rem;
+}
+.player-wrap.premium-player .play-pause-center{
+  width:60px;
+  height:60px;
+}
+.player-wrap.premium-player .play-pause-center svg{
+  width:28px;
+  height:28px;
 }
 .player-wrap.premium-player .player-title{
   font-size:clamp(.92rem,1.4vw,1.1rem);
   letter-spacing:0;
-  text-shadow:0 2px 12px rgba(0,0,0,.7);
+  text-shadow:0 1px 8px rgba(0,0,0,.62);
+  font-family:var(--player-font);
 }
 .player-wrap.premium-player .player-subtitle-title{
   color:rgba(255,255,255,.66);
+  font-family:var(--player-font);
 }
 .player-wrap.premium-player .player-bottom{
   margin:0 calc(22px + var(--sr)) calc(var(--sb) + 20px) calc(22px + var(--sl));
   padding:14px 16px 15px;
-  border:1px solid rgba(255,255,255,.14);
-  border-radius:16px;
-  background:linear-gradient(180deg,rgba(20,23,29,.76),rgba(8,10,14,.82));
-  box-shadow:0 18px 56px rgba(0,0,0,.54),inset 0 1px 0 rgba(255,255,255,.08);
-  backdrop-filter:blur(22px) saturate(150%);
-  -webkit-backdrop-filter:blur(22px) saturate(150%);
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:12px;
+  background:rgba(10,12,16,.82);
+  box-shadow:0 8px 24px rgba(0,0,0,.34);
+  backdrop-filter:none;
+  -webkit-backdrop-filter:none;
 }
 .player-wrap.premium-player .progress-wrap{
   height:28px;
@@ -7581,17 +7624,17 @@ html[data-theme="light"] .fifa-live-section{
   height:7px;
 }
 .player-wrap.premium-player .progress-buffered{
-  background:rgba(255,255,255,.32);
+  background:rgba(255,255,255,.28);
 }
 .player-wrap.premium-player .progress-played{
-  background:linear-gradient(90deg,#ff2938,#ff6b5f);
-  box-shadow:0 0 18px rgba(229,9,20,.46);
+  background:linear-gradient(90deg,var(--player-accent-strong),var(--player-accent));
+  box-shadow:none;
 }
 .player-wrap.premium-player .progress-thumb{
   width:16px;
   height:16px;
   background:#fff;
-  box-shadow:0 2px 12px rgba(0,0,0,.55),0 0 0 5px rgba(229,9,20,.16);
+  box-shadow:0 1px 6px rgba(0,0,0,.45),0 0 0 4px rgba(34,197,94,.18);
 }
 .player-wrap.premium-player .progress-tooltip{
   display:none;
@@ -7604,8 +7647,8 @@ html[data-theme="light"] .fifa-live-section{
   padding:7px;
   border-radius:12px;
   border:1px solid rgba(255,255,255,.16);
-  background:rgba(9,11,15,.9);
-  box-shadow:0 18px 48px rgba(0,0,0,.62);
+  background:rgba(9,11,15,.94);
+  box-shadow:0 8px 22px rgba(0,0,0,.42);
   color:#fff;
   opacity:0;
   transform:translate(-50%,8px) scale(.98);
@@ -7613,8 +7656,8 @@ html[data-theme="light"] .fifa-live-section{
   pointer-events:none;
   transition:opacity .14s ease,transform .14s ease;
   z-index:8;
-  backdrop-filter:blur(18px) saturate(145%);
-  -webkit-backdrop-filter:blur(18px) saturate(145%);
+  backdrop-filter:none;
+  -webkit-backdrop-filter:none;
 }
 .progress-preview.show{
   opacity:1;
@@ -7638,6 +7681,7 @@ html[data-theme="light"] .fifa-live-section{
   font-weight:800;
   font-variant-numeric:tabular-nums;
   letter-spacing:0;
+  font-family:var(--player-font);
 }
 .player-wrap.premium-player .controls-row{
   gap:8px;
@@ -7652,7 +7696,8 @@ html[data-theme="light"] .fifa-live-section{
   color:rgba(255,255,255,.84);
   border-radius:999px;
   padding:10px 14px;
-  transition:background .16s ease,border-color .16s ease,color .16s ease,transform .16s ease;
+  transition:background .14s ease,border-color .14s ease,color .14s ease,transform .12s ease;
+  font-family:var(--player-font);
 }
 .player-wrap.premium-player .ctrl:hover,
 .player-wrap.premium-player .ctrl:focus-visible{
@@ -7666,9 +7711,9 @@ html[data-theme="light"] .fifa-live-section{
 }
 .player-wrap.premium-player .ctrl.active{
   color:#fff;
-  background:rgba(229,9,20,.24);
-  border-color:rgba(255,91,104,.58);
-  box-shadow:0 0 0 1px rgba(229,9,20,.12),0 10px 26px rgba(229,9,20,.16);
+  background:rgba(34,197,94,.20);
+  border-color:rgba(34,197,94,.55);
+  box-shadow:none;
 }
 .player-wrap.premium-player .ctrl svg{
   width:21px;
@@ -7702,7 +7747,31 @@ html[data-theme="light"] .fifa-live-section{
   height:15px;
 }
 .player-wrap.premium-player .time-display{
-  display:none!important;
+  display:inline-flex!important;
+  align-items:center;
+  gap:0;
+  flex:0 0 auto;
+  min-width:max-content;
+  color:rgba(255,255,255,.74);
+  font-size:.78rem;
+  font-weight:650;
+  font-variant-numeric:tabular-nums;
+  line-height:1;
+  font-family:var(--player-font);
+}
+.player-wrap.live-player .time-display{
+  color:var(--player-accent);
+  font-weight:800;
+  letter-spacing:.02em;
+}
+.player-wrap.live-player .time-display::before{
+  content:'';
+  display:inline-block;
+  width:6px;
+  height:6px;
+  border-radius:50%;
+  margin-right:7px;
+  background:var(--player-accent);
 }
 .player-wrap.live-player .progress-wrap,
 .player-wrap.live-player .series-player-bar,
@@ -7736,10 +7805,11 @@ html[data-theme="light"] .fifa-live-section{
 .spd-series{
   background:rgba(12,14,19,.94)!important;
   border:1px solid rgba(255,255,255,.14)!important;
-  border-radius:14px!important;
-  box-shadow:0 24px 70px rgba(0,0,0,.72),inset 0 1px 0 rgba(255,255,255,.06)!important;
-  backdrop-filter:blur(20px) saturate(150%)!important;
-  -webkit-backdrop-filter:blur(20px) saturate(150%)!important;
+  border-radius:12px!important;
+  box-shadow:0 10px 28px rgba(0,0,0,.46)!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,sans-serif!important;
 }
 .pd-header,
 .spd-series-season-header{
@@ -7758,7 +7828,7 @@ html[data-theme="light"] .fifa-live-section{
 .pd-item.active,
 .spd-series-item.active{
   color:#fff!important;
-  background:rgba(229,9,20,.16)!important;
+  background:rgba(34,197,94,.16)!important;
 }
 @media(max-width:639px){
   .player-wrap.premium-player .player-top{
@@ -7767,7 +7837,18 @@ html[data-theme="light"] .fifa-live-section{
   .player-wrap.premium-player .player-bottom{
     margin:0 calc(10px + var(--sr)) calc(var(--sb) + 10px) calc(10px + var(--sl));
     padding:10px;
-    border-radius:14px;
+    border-radius:12px;
+  }
+  .player-wrap.premium-player .skip-center{
+    gap:28px;
+  }
+  .player-wrap.premium-player .skip-btn{
+    width:54px;
+    height:54px;
+  }
+  .player-wrap.premium-player .play-pause-center{
+    width:64px;
+    height:64px;
   }
   .player-wrap.premium-player .controls-row{
     justify-content:center;
@@ -7814,6 +7895,17 @@ html[data-theme="light"] .fifa-live-section{
   }
   .player-wrap.premium-player .ctrl{
     padding:8px;
+  }
+  .player-wrap.premium-player .skip-center{
+    gap:22px;
+  }
+  .player-wrap.premium-player .skip-btn{
+    width:50px;
+    height:50px;
+  }
+  .player-wrap.premium-player .play-pause-center{
+    width:60px;
+    height:60px;
   }
   .player-wrap.premium-player .ctrl svg{
     width:18px;

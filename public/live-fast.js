@@ -49,8 +49,11 @@
     if(sub)sub.textContent='Starting live stream...';
     badge?.classList.add('show');
     progress?.classList.add('live-mode');
-    document.getElementById('timeDur').textContent='LIVE';
-    document.getElementById('timeNow').textContent='';
+    if(typeof setLiveTimer==='function')setLiveTimer();
+    else{
+      document.getElementById('timeDur').textContent='LIVE';
+      document.getElementById('timeNow').textContent='';
+    }
     document.getElementById('playerModal').classList.add('open');
     spinner?.classList.add('on');
     document.body.style.overflow='hidden';

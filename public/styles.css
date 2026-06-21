@@ -7558,12 +7558,14 @@ html[data-theme="light"] .fifa-live-section{
   box-shadow:none;
   backdrop-filter:none;
   -webkit-backdrop-filter:none;
+  transition:background .12s ease,border-color .12s ease,color .12s ease;
 }
 .player-wrap.premium-player .player-back:hover,
 .player-wrap.premium-player .skip-btn:hover,
 .player-wrap.premium-player .play-pause-center:hover{
   background:rgba(255,255,255,.14);
   border-color:rgba(255,255,255,.28);
+  transform:none;
 }
 .player-wrap.premium-player .skip-center{
   gap:32px;
@@ -7604,7 +7606,7 @@ html[data-theme="light"] .fifa-live-section{
   border:1px solid rgba(255,255,255,.12);
   border-radius:12px;
   background:rgba(10,12,16,.82);
-  box-shadow:0 8px 24px rgba(0,0,0,.34);
+  box-shadow:none;
   backdrop-filter:none;
   -webkit-backdrop-filter:none;
 }
@@ -7621,7 +7623,7 @@ html[data-theme="light"] .fifa-live-section{
 }
 .player-wrap.premium-player .progress-wrap:hover .progress-track,
 .player-wrap.premium-player .progress-wrap.dragging .progress-track{
-  height:7px;
+  height:5px;
 }
 .player-wrap.premium-player .progress-buffered{
   background:rgba(255,255,255,.28);
@@ -7648,7 +7650,7 @@ html[data-theme="light"] .fifa-live-section{
   border-radius:12px;
   border:1px solid rgba(255,255,255,.16);
   background:rgba(9,11,15,.94);
-  box-shadow:0 8px 22px rgba(0,0,0,.42);
+  box-shadow:none;
   color:#fff;
   opacity:0;
   transform:translate(-50%,8px) scale(.98);
@@ -7785,10 +7787,10 @@ html[data-theme="light"] .fifa-live-section{
   display:none!important;
 }
 .player-wrap.live-player.has-live-captions .sub-tool{
-  display:block!important;
+  display:none!important;
 }
 .player-wrap.live-player.has-live-captions .tool-sep{
-  display:block!important;
+  display:none!important;
 }
 .player-wrap.live-player .player-bottom{
   max-width:min(620px,calc(100vw - 44px - var(--sl) - var(--sr)));
@@ -7806,7 +7808,7 @@ html[data-theme="light"] .fifa-live-section{
   background:rgba(12,14,19,.94)!important;
   border:1px solid rgba(255,255,255,.14)!important;
   border-radius:12px!important;
-  box-shadow:0 10px 28px rgba(0,0,0,.46)!important;
+  box-shadow:none!important;
   backdrop-filter:none!important;
   -webkit-backdrop-filter:none!important;
   font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,sans-serif!important;

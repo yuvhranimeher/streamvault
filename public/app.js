@@ -70,6 +70,11 @@ let seekPreviewRaf=0;
 let seekPreviewPending=null;
 let seekPreviewMetrics=null;
 let seekPreviewHideTimer=null;
+let playerDomCache=null;
+let playerProgressRaf=0;
+let playerProgressPending=null;
+let playerUiClock=null;
+let playerPointerRaf=0;
 let currentLiveCat='All';
 let isLiveMode=false;
 let hlsInstance=null;
@@ -2224,8 +2229,104 @@ function playerControlsFocused(){
   return !!active.closest?.('#playerUI,.player-dropdown,.spd-series');
 }
 
+function playerEls(){
+  if(playerDomCache?.wrap?.isConnected)return playerDomCache;
+  playerDomCache={
+    modal:document.getElementById('playerModal'),
+    wrap:document.getElementById('playerWrap'),
+    ui:document.getElementById('playerUI'),
+    progressWrap:document.getElementById('progressWrap'),
+    progressPlayed:document.getElementById('progressPlayed'),
+    progressBuffered:document.getElementById('progressBuffered'),
+    progressThumb:document.getElementById('progressThumb'),
+    progressTooltip:document.getElementById('progressTooltip'),
+    progressPreview:document.getElementById('progressPreview'),
+    progressPreviewCanvas:document.getElementById('progressPreviewCanvas'),
+    progressPreviewTime:document.getElementById('progressPreviewTime'),
+    timeNow:document.getElementById('timeNow'),
+    timeSep:document.getElementById('timeSep'),
+    timeDur:document.getElementById('timeDur'),
+    spinner:document.getElementById('playerSpinner'),
+    liveBadge:document.getElementById('playerLiveBadge')
+  };
+  return playerDomCache;
+}
+
+function setTextIfChanged(el,text){
+  if(el && el.textContent !== text)el.textContent=text;
+}
+
+function setStyleIfChanged(el,prop,value){
+  if(el && el.style[prop] !== value)el.style[prop]=value;
+}
+
+function savePlayerProgress(current,duration){
+  if(!currentStreamId || _ftpStreamUrl || duration <= 0 || isNaN(current))return;
+  if(vid._lstSv && Date.now()-vid._lstSv <= 5000)return;
+  vid._lstSv=Date.now();
+  const progress=current/duration;
+  if(progress>0.02 && progress<0.95){
+    watchProgress[currentStreamId]={progress,updatedAt:Date.now()};
+    try{localStorage.setItem('sv_progress',JSON.stringify(watchProgress));}catch(_){}
+  }
+}
+
+function renderPlayerProgress(current,duration,save=false){
+  if(isLiveMode)return;
+  const d=Number(duration);
+  if(!validDurationSeconds(d))return;
+  const now=Math.max(0,Number(current) || 0);
+  const pct=Math.min(1,Math.max(0,now/d));
+  const pctText=(pct*100).toFixed(3)+'%';
+  const els=playerEls();
+  setStyleIfChanged(els.progressPlayed,'width',pctText);
+  setStyleIfChanged(els.progressThumb,'left',pctText);
+  setTextIfChanged(els.timeNow,fmtTime(now));
+  if(save)savePlayerProgress(now,d);
+}
+
+function flushPlayerProgress(){
+  playerProgressRaf=0;
+  const pending=playerProgressPending;
+  playerProgressPending=null;
+  if(!pending)return;
+  renderPlayerProgress(pending.current,pending.duration,pending.save);
+}
+
+function schedulePlayerProgressRender(current=playbackTime(),duration=playerDuration(),options={}){
+  if(isLiveMode || (progressDragging && !options.force))return;
+  const save=!!options.save || !!playerProgressPending?.save;
+  playerProgressPending={current,duration,save};
+  if(!playerProgressRaf)playerProgressRaf=requestAnimationFrame(flushPlayerProgress);
+}
+
+function startPlayerUiClock(){
+  if(playerUiClock || isLiveMode)return;
+  playerUiClock=setInterval(()=>{
+    if(vid.paused || progressDragging || isLiveMode)return;
+    schedulePlayerProgressRender(playbackTime(),playerDuration());
+  },250);
+}
+
+function stopPlayerUiClock(){
+  if(!playerUiClock)return;
+  clearInterval(playerUiClock);
+  playerUiClock=null;
+}
+
+function notePlayerPointerActivity(wrap=document.getElementById('playerWrap')){
+  if(!wrap)return;
+  playerHovering=true;
+  wrap.classList.add('show-cursor');
+  if(playerPointerRaf)return;
+  playerPointerRaf=requestAnimationFrame(()=>{
+    playerPointerRaf=0;
+    showUI();
+  });
+}
+
 function setTimeSeparatorVisible(visible){
-  const sep=document.getElementById('timeSep');
+  const sep=playerEls().timeSep;
   if(sep){
     sep.textContent=visible?' / ':'';
     sep.style.display=visible?'':'none';
@@ -2233,18 +2334,18 @@ function setTimeSeparatorVisible(visible){
 }
 
 function setDurationTimer(currentText=null,durationText=null){
-  const nowEl=document.getElementById('timeNow');
-  const durEl=document.getElementById('timeDur');
+  const els=playerEls();
+  const nowEl=els.timeNow;
+  const durEl=els.timeDur;
   setTimeSeparatorVisible(true);
-  if(nowEl && currentText!==null)nowEl.textContent=currentText;
-  if(durEl && durationText!==null)durEl.textContent=durationText;
+  if(currentText!==null)setTextIfChanged(nowEl,currentText);
+  if(durationText!==null)setTextIfChanged(durEl,durationText);
 }
 
 function setLiveTimer(){
-  const nowEl=document.getElementById('timeNow');
-  const durEl=document.getElementById('timeDur');
-  if(nowEl)nowEl.textContent='';
-  if(durEl)durEl.textContent='LIVE';
+  const els=playerEls();
+  setTextIfChanged(els.timeNow,'');
+  setTextIfChanged(els.timeDur,'LIVE');
   setTimeSeparatorVisible(false);
 }
 
@@ -2294,7 +2395,7 @@ function resetSeekPreview(){
   seekPreviewFrameBlocked=false;
   seekPreviewLastCaptureAt=0;
   seekPreviewMetrics=null;
-  const preview=document.getElementById('progressPreview');
+  const preview=playerEls().progressPreview;
   if(preview)preview.classList.remove('frame-ok');
 }
 
@@ -2321,8 +2422,9 @@ function seekPreviewCaptureAllowed(){
 }
 
 function captureSeekPreviewFrame(force=false){
-  const preview=document.getElementById('progressPreview');
-  const canvas=document.getElementById('progressPreviewCanvas');
+  const els=playerEls();
+  const preview=els.progressPreview;
+  const canvas=els.progressPreviewCanvas;
   if(!preview || !canvas || seekPreviewFrameBlocked)return false;
   if(!seekPreviewThumbnailEnabled()){
     preview.classList.remove('frame-ok');
@@ -2359,8 +2461,9 @@ function captureSeekPreviewFrame(force=false){
 }
 
 function measureSeekPreviewMetrics(){
-  const preview=document.getElementById('progressPreview');
-  const pw=document.getElementById('progressWrap');
+  const els=playerEls();
+  const preview=els.progressPreview;
+  const pw=els.progressWrap;
   if(!preview || !pw)return {previewWidth:168,wrapWidth:1};
   return {
     previewWidth:preview.offsetWidth || 168,
@@ -2373,9 +2476,10 @@ function flushSeekPreview(){
   const pending=seekPreviewPending;
   seekPreviewPending=null;
   if(!pending)return;
-  const preview=document.getElementById('progressPreview');
-  const timeEl=document.getElementById('progressPreviewTime');
-  const pw=document.getElementById('progressWrap');
+  const els=playerEls();
+  const preview=els.progressPreview;
+  const timeEl=els.progressPreviewTime;
+  const pw=els.progressWrap;
   const d=pending.d;
   if(!preview || !timeEl || !pw || isLiveMode || !validDurationSeconds(d) || vid.readyState < 1){
     hideSeekPreview();
@@ -2387,7 +2491,7 @@ function flushSeekPreview(){
   }
   const clamped=Math.max(0,Math.min(1,pending.p));
   const target=clamped*d;
-  timeEl.textContent=fmtTime(target);
+  setTextIfChanged(timeEl,fmtTime(target));
   preview.classList.add('show');
   seekPreviewVisible=true;
   if(seekPreviewThumbnailEnabled())captureSeekPreviewFrame();
@@ -2398,7 +2502,7 @@ function flushSeekPreview(){
   const minLeft=wrapWidth > previewWidth ? previewWidth/2 : wrapWidth/2;
   const maxLeft=wrapWidth > previewWidth ? wrapWidth-previewWidth/2 : wrapWidth/2;
   const left=Math.max(minLeft,Math.min(maxLeft,clamped*wrapWidth));
-  preview.style.left=left+'px';
+  setStyleIfChanged(preview,'left',left.toFixed(1)+'px');
 }
 
 function updateSeekPreview(p,d){
@@ -2407,7 +2511,7 @@ function updateSeekPreview(p,d){
 }
 
 function hideSeekPreview(delay=0){
-  const preview=document.getElementById('progressPreview');
+  const preview=playerEls().progressPreview;
   if(!preview)return;
   if(seekPreviewRaf){
     cancelAnimationFrame(seekPreviewRaf);
@@ -3551,10 +3655,7 @@ function updateProgress(){
   const duration = playerDuration();
   if(!duration)return;
   const current = playbackTime();
-  const pct=Math.min(1,Math.max(0,current/duration));
-  document.getElementById('progressPlayed').style.width=(pct*100)+'%';
-  document.getElementById('progressThumb').style.left=(pct*100)+'%';
-  document.getElementById('timeNow').textContent=fmtTime(current);
+  schedulePlayerProgressRender(current,duration,{save:true});
   updateWatchProgress(currentStreamId,current,duration);
 }
 function updatePlayIcons(paused){
@@ -3565,14 +3666,18 @@ function updatePlayIcons(paused){
 function hideUI(){
   if(vid.paused || playerMenusOpen() || progressDragging || playerControlsFocused())return;
   clearTimeout(uiHideTimer);
-  document.getElementById('playerUI').classList.add('hidden');
-  document.getElementById('playerWrap').classList.remove('show-cursor');
-  document.getElementById('playerWrap').classList.add('subtitles-low');
+  const els=playerEls();
+  els.ui?.classList.add('hidden');
+  els.wrap?.classList.remove('show-cursor');
+  els.wrap?.classList.add('subtitles-low');
+  hideSeekPreview();
   uiVisible=false;
 }
 function showUI(){
-  document.getElementById('playerUI').classList.remove('hidden');
-  const wrap=document.getElementById('playerWrap');
+  const els=playerEls();
+  els.ui?.classList.remove('hidden');
+  const wrap=els.wrap;
+  if(!wrap)return;
   wrap.classList.remove('subtitles-low');
   wrap.classList.add('show-cursor');
   uiVisible=true;
@@ -3953,6 +4058,16 @@ async function ftpSeekTo(seconds){
 
 function closePlayer(){
   clearInterval(vid._pi);clearTimeout(uiHideTimer);
+  stopPlayerUiClock();
+  if(playerProgressRaf){
+    cancelAnimationFrame(playerProgressRaf);
+    playerProgressRaf=0;
+  }
+  playerProgressPending=null;
+  if(playerPointerRaf){
+    cancelAnimationFrame(playerPointerRaf);
+    playerPointerRaf=0;
+  }
   resetSeekPreview();
   playerHovering=false;
   vid.pause();
@@ -5400,23 +5515,13 @@ function dur() {
     updateSubtitleOverlay();
     if(isLiveMode||progressDragging)return;
     const ct=playbackTime();
-    document.getElementById('timeNow').textContent=fmtTime(ct);
     const d=dur(); if(!d)return;
-    const p=Math.min(ct/d,1);
-    document.getElementById('progressPlayed').style.width=(p*100)+'%';
-    document.getElementById('progressThumb').style.left=(p*100)+'%';
-    if(currentStreamId&&!_ftpStreamUrl&&d>0&&!isNaN(ct)){
-      if(!vid._lstSv||Date.now()-vid._lstSv>5000){
-        vid._lstSv=Date.now();
-        const pv=ct/d;
-        if(pv>0.02&&pv<0.95){watchProgress[currentStreamId]={progress:pv,updatedAt:Date.now()};try{localStorage.setItem('sv_progress',JSON.stringify(watchProgress));}catch(_){}}
-      }
-    }
+    schedulePlayerProgressRender(ct,d,{save:true});
   };
   vid._prH=()=>{
     const d=dur(); if(!d)return;
     let mb=0;for(let i=0;i<vid.buffered.length;i++)mb=Math.max(mb,vid.buffered.end(i));
-    document.getElementById('progressBuffered').style.width=(Math.min(((vid._sourceOffset||0)+mb)/d,1)*100)+'%';
+    setStyleIfChanged(playerEls().progressBuffered,'width',(Math.min(((vid._sourceOffset||0)+mb)/d,1)*100).toFixed(3)+'%');
   };
   // Replace vid._mdH with:
 vid._mdH = () => {
@@ -5433,16 +5538,17 @@ vid._mdH = () => {
       if(duration && currentStreamId)maybeResumeProgress(currentStreamId, duration);
     }
   }
-};
+  };
   vid._enH=()=>{
+    stopPlayerUiClock();
     updatePlayIcons(true);
     if(currentStreamId&&!_ftpStreamUrl){watchProgress[currentStreamId]={progress:0.99,updatedAt:Date.now()};try{localStorage.setItem('sv_progress',JSON.stringify(watchProgress));}catch(_){}}
   };
   vid._waH=()=>document.getElementById('playerSpinner').classList.add('on');
-  vid._plH=()=>{document.getElementById('playerSpinner').classList.remove('on');scheduleHideUI();};
+  vid._plH=()=>{document.getElementById('playerSpinner').classList.remove('on');startPlayerUiClock();schedulePlayerProgressRender(playbackTime(),dur());scheduleHideUI();};
   vid._cpH=()=>{document.getElementById('playerSpinner').classList.remove('on');};
-  vid._paH=()=>{updatePlayIcons(false);scheduleHideUI();};
-  vid._puH=()=>{updatePlayIcons(true);showUI();};
+  vid._paH=()=>{updatePlayIcons(false);startPlayerUiClock();scheduleHideUI();};
+  vid._puH=()=>{stopPlayerUiClock();updatePlayIcons(true);schedulePlayerProgressRender(playbackTime(),dur(),{force:true});showUI();};
   vid._skH=()=>setTimeout(updateSubtitleOverlay,60);
   vid.addEventListener('timeupdate',    vid._tuH);
   vid.addEventListener('progress',      vid._prH);
@@ -5466,11 +5572,11 @@ vid._mdH = () => {
     }
     function visual(p,d){
       dragT=p*d;
-      document.getElementById('progressPlayed').style.width=(p*100)+'%';
-      document.getElementById('progressThumb').style.left=(p*100)+'%';
-      document.getElementById('progressTooltip').style.left=(p*100)+'%';
-      document.getElementById('progressTooltip').textContent=fmtTime(dragT);
-      document.getElementById('timeNow').textContent=fmtTime(dragT);
+      const pctText=(p*100).toFixed(3)+'%';
+      const els=playerEls();
+      setStyleIfChanged(els.progressPlayed,'width',pctText);
+      setStyleIfChanged(els.progressThumb,'left',pctText);
+      setTextIfChanged(els.timeNow,fmtTime(dragT));
       updateSeekPreview(p,d);
       showUI();
     }
@@ -5490,8 +5596,6 @@ vid._mdH = () => {
       const d=dur(); if(!d)return;
       const p=getP(e);
       if(progressDragging){visual(p,d);return;}
-      document.getElementById('progressTooltip').style.left=(p*100)+'%';
-      document.getElementById('progressTooltip').textContent=fmtTime(p*d);
       updateSeekPreview(p,d);
     });
     pw.addEventListener('mouseleave',()=>{if(!progressDragging)hideSeekPreview();});
@@ -5520,8 +5624,8 @@ vid._mdH = () => {
   const wrap=document.getElementById('playerWrap');
   if(!wrap._bound){
     wrap._bound=true;
-    wrap.addEventListener('mouseenter',()=>{playerHovering=true;wrap.classList.add('show-cursor');showUI();});
-    wrap.addEventListener('mousemove',()=>{playerHovering=true;wrap.classList.add('show-cursor');showUI();});
+    wrap.addEventListener('mouseenter',()=>notePlayerPointerActivity(wrap));
+    wrap.addEventListener('mousemove',()=>notePlayerPointerActivity(wrap),{passive:true});
     wrap.addEventListener('mouseleave',()=>{playerHovering=false;hideSeekPreview();scheduleHideUI();});
     wrap.addEventListener('focusin',showUI);
     wrap.addEventListener('focusout',()=>setTimeout(scheduleHideUI,0));

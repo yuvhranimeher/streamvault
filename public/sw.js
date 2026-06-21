@@ -1,4 +1,5 @@
-const SV_CACHE_VERSION = '20260620-player-tracks-sections-final1';
+const SV_CACHE_VERSION = '20260621-real-browser-track-loading1';
+const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_f24d652_REAL';
 const SV_POSTER_CACHE = `streamvault-posters-${SV_CACHE_VERSION}`;
 const SV_ASSET_CACHE = `streamvault-assets-${SV_CACHE_VERSION}`;
 const SV_API_CACHE = `streamvault-api-${SV_CACHE_VERSION}`;
@@ -47,6 +48,19 @@ async function cacheFirst(request, cacheName) {
   return fresh;
 }
 
+async function networkFirst(request, cacheName) {
+  const cache = await caches.open(cacheName);
+  try {
+    const fresh = await fetch(new Request(request, { cache: 'reload' }));
+    if (fresh && fresh.ok) cache.put(request, fresh.clone());
+    return fresh;
+  } catch (err) {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    throw err;
+  }
+}
+
 async function brieflyCachedHomeFeed(request) {
   const cache = await caches.open(SV_API_CACHE);
   const cached = await cache.match(request);
@@ -76,6 +90,16 @@ async function networkOnly(request) {
   return fetch(new Request(request, { cache: 'no-store' }));
 }
 
+self.addEventListener('message', event => {
+  if (event.data?.type !== 'SV_CLEAR_ASSET_CACHE') return;
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys
+      .filter(key => key.startsWith('streamvault-assets-') && key !== SV_ASSET_CACHE)
+      .map(key => caches.delete(key)));
+  })());
+});
+
 self.addEventListener('fetch', event => {
   const request = event.request;
   if (request.method !== 'GET') return;
@@ -93,7 +117,7 @@ self.addEventListener('fetch', event => {
   }
 
   if (isStaticAsset(url)) {
-    event.respondWith(cacheFirst(request, SV_ASSET_CACHE));
+    event.respondWith(networkFirst(request, SV_ASSET_CACHE));
     return;
   }
 

@@ -1,4 +1,14 @@
 const SV_THEME_KEY = 'sv_theme';
+const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_f24d652_REAL';
+const SV_ASSET_VERSION = '20260621-real-browser-track-loading1';
+function mediaFixLog(step, data={}){
+  try{console.warn(`[${SV_MEDIA_FIX_MARKER}] ${step}`, data);}catch(_){}
+}
+try{
+  window.SV_MEDIA_FIX_MARKER = SV_MEDIA_FIX_MARKER;
+  window.SV_ASSET_VERSION = SV_ASSET_VERSION;
+  mediaFixLog('active', {assetVersion: SV_ASSET_VERSION});
+}catch(_){}
 const SV_DEBUG_LOGS = (()=>{ try{return new URLSearchParams(location.search).has('debug') || localStorage.getItem('sv_debug') === '1';}catch{return false;} })();
 if(!SV_DEBUG_LOGS){
   console.log = function(){};
@@ -250,10 +260,48 @@ function selectedAudioTrack(){
 function appendSelectedAudioParams(params){
   const selected=selectedAudioTrack();
   const streamIndex=selected?.streamIndex ?? selected?.sourceIndex;
-  if(currentAudioIdx > 0){
+  const hasMultipleAudio=availableAudio.length > 1;
+  if(currentAudioIdx > 0 || (hasMultipleAudio && Number.isFinite(streamIndex))){
     params.set('audio', String(Math.max(0,currentAudioIdx || 0)));
     if(Number.isFinite(streamIndex))params.set('audioStream', String(streamIndex));
   }
+}
+
+function audioDebugSummary(track, index=currentAudioIdx){
+  return {
+    index,
+    relativeIndex:track?.relativeIndex ?? track?.index ?? index,
+    streamIndex:track?.streamIndex ?? track?.sourceIndex ?? null,
+    language:track?.language || track?.lang || '',
+    title:track?.title || track?.label || '',
+    codec:track?.codec || '',
+    channels:track?.channels ?? null,
+    filenameHint:!!track?.filenameHint
+  };
+}
+
+function subtitleDebugSummary(track, index=currentSubIdx){
+  return {
+    index,
+    relativeIndex:track?.relativeIndex ?? track?.index ?? index,
+    streamIndex:track?.streamIndex ?? track?.sourceIndex ?? null,
+    source:track?.src || '',
+    embedded:!!track?.embedded,
+    sidecar:!!track?.sidecar,
+    language:track?.language || track?.lang || '',
+    label:track?.label || track?.title || '',
+    codec:track?.codec || ''
+  };
+}
+
+function audioTracksFromFilenameHints(value){
+  return filenameAudioHints(value).map((hint,index)=>({
+    index,
+    relativeIndex:index,
+    language:hint,
+    title:hint,
+    filenameHint:true
+  }));
 }
 
 function renderAudioTracks(){
@@ -1941,12 +1989,14 @@ function refreshDesktopNativeAudioTracks(){
   if(isMobilePlaybackClient())return;
   const nativeTracks=desktopNativeAudioTracks();
   const hasDiscovered = availableAudio.some(track=>Number.isFinite(track?.sourceIndex ?? track?.streamIndex));
-  if(!hasDiscovered && (nativeTracks.length > 1 || (nativeTracks.length && availableAudio.length <= 1)))availableAudio=nativeTracks;
-  if(hlsInstance && nativeTracks.length){
-    currentAudioIdx=Math.max(0,Math.min(availableAudio.length-1,Number(hlsInstance.audioTrack)||0));
-  }else if(nativeTracks.length){
-    const enabled=availableAudio.findIndex(track=>track.nativeTrack?.enabled);
-    currentAudioIdx=enabled>=0?enabled:0;
+  if(!hasDiscovered){
+    if(nativeTracks.length > 1 || (nativeTracks.length && availableAudio.length <= 1))availableAudio=nativeTracks;
+    if(hlsInstance && nativeTracks.length){
+      currentAudioIdx=Math.max(0,Math.min(availableAudio.length-1,Number(hlsInstance.audioTrack)||0));
+    }else if(nativeTracks.length){
+      const enabled=availableAudio.findIndex(track=>track.nativeTrack?.enabled);
+      currentAudioIdx=enabled>=0?enabled:0;
+    }
   }
   renderAudioTracks();
   const nativeList=vid.audioTracks;
@@ -1990,12 +2040,16 @@ function mediaInfoHasRemuxContainer(info){
   return ['matroska','webm','avi','flv','mpegts'].some(c=>container.includes(c));
 }
 
-function startupPlaybackOptions(info){
+function startupPlaybackOptions(info, sourceUrl=''){
   const selected=selectedAudioTrack();
   const explicitAudio=currentAudioIdx > 0 && Number.isFinite(selected?.streamIndex ?? selected?.sourceIndex);
   const multiAudio=availableAudio.length > 1;
-  if(mediaInfoHasUnsupportedVideo(info))return {forceHls:true};
-  if(mediaInfoHasRemuxContainer(info) || multiAudio || explicitAudio)return {forceAudio:true};
+  const source=String(sourceUrl || '').toLowerCase();
+  const hintedUnsupported=/(x265|h265|hevc|10bit|10-bit|av1|vp9|vp8)/i.test(source);
+  const hintedRemux=/\.(mkv|webm|avi|flv|ts|m2ts)(?:$|[?#])/i.test(source) || /(matroska|webm)/i.test(source);
+  const hintedMultiAudio=/\[(?:dual|multi)[^\]]*audio\]|\b(?:dual|multi)[ ._-]*audio\b/i.test(source);
+  if(mediaInfoHasUnsupportedVideo(info) || hintedUnsupported)return {forceHls:true};
+  if(mediaInfoHasRemuxContainer(info) || hintedRemux || multiAudio || explicitAudio || hintedMultiAudio)return {forceAudio:true};
   return {};
 }
 
@@ -2194,6 +2248,12 @@ async function fetchFtpPlaybackPlan(streamUrl, start=0, options={}){
   if(options.forceRemux)params.set('mode','remux');
   if(options.forceAudio)params.set('mode','audio');
   if(options.mode)params.set('mode', options.mode);
+  mediaFixLog('fetch FTP playback plan',{
+    url:streamUrl,
+    start,
+    options,
+    selectedAudio:audioDebugSummary(selectedAudioTrack(),currentAudioIdx)
+  });
   const r = await fetch('/api/playback/ftp?' + params.toString());
   if(!r.ok){
     let message = `playback ${r.status}`;
@@ -2329,6 +2389,23 @@ function ftpTranscodeSrc(url, start=0){
   return '/api/ftp/stream?' + params.toString();
 }
 
+function ftpStreamPlaybackPlan(url, start=0){
+  const src=ftpTranscodeSrc(url,start);
+  return {
+    ok:true,
+    decodedUrl:url,
+    directPlayable:false,
+    mode:'stream',
+    transport:'stream',
+    src,
+    playUrl:src,
+    finalPlayUrl:src,
+    transcodeUrl:src,
+    audioTranscodeUrl:src,
+    duration:0
+  };
+}
+
 function localTranscodeSrc(id, start=0){
   const params = new URLSearchParams();
   params.set('mobile', '1');
@@ -2408,6 +2485,7 @@ function resolveFtpPlayUrl(streamUrl){
 }
 
 async function loadFtpTrackOptions(streamUrl){
+  const requestedUrl=String(streamUrl || '').trim();
   availableAudio = [{index:0,title:'Default Audio'}];
   availableSubs = [];
   currentAudioIdx = 0;
@@ -2416,11 +2494,16 @@ async function loadFtpTrackOptions(streamUrl){
   const subList = document.getElementById('subList');
   if(subList)subList.innerHTML = `<div class="pd-item" style="color:#444;pointer-events:none">Loading subtitles...</div>`;
   updateSubBtn();
+  mediaFixLog('load FTP metadata start', {url:requestedUrl});
 
   const controller = new AbortController();
-  const timeout = setTimeout(()=>controller.abort(), 15000);
+  const timeout = setTimeout(()=>controller.abort(), 45000);
   try{
-    const r = await fetch(`/api/ftp/media-info?url=${encodeURIComponent(streamUrl)}`, {signal: controller.signal});
+    const r = await fetch(`/api/ftp/media-info?url=${encodeURIComponent(requestedUrl)}`, {
+      signal: controller.signal,
+      cache:'no-store',
+      headers:{'Cache-Control':'no-cache'}
+    });
     if(!r.ok)throw new Error(`metadata ${r.status}`);
     const data = await r.json();
     const audioTracks = Array.isArray(data.audioTracks) ? data.audioTracks : [];
@@ -2431,11 +2514,18 @@ async function loadFtpTrackOptions(streamUrl){
     }
 
     if(audioTracks.length){
-      const hints=filenameAudioHints(streamUrl);
+      const hints=filenameAudioHints(requestedUrl);
       const discovered = normalizeDiscoveredAudioTracks(audioTracks,hints);
       availableAudio = discovered.length ? discovered : [{index:0,title:'Default Audio'}];
       currentAudioIdx = preferredAudioTrackIndex(availableAudio);
       renderAudioTracks();
+    }else{
+      const hintedTracks=audioTracksFromFilenameHints(requestedUrl);
+      if(hintedTracks.length > 1){
+        availableAudio=hintedTracks;
+        currentAudioIdx=preferredAudioTrackIndex(availableAudio);
+        renderAudioTracks();
+      }
     }
 
     const embeddedSubs = subtitleTracks.map((track,i)=>({
@@ -2462,6 +2552,16 @@ async function loadFtpTrackOptions(streamUrl){
       }
     }
     renderSubtitleTracks();
+    mediaFixLog('loaded FTP audio tracks',{
+      url:requestedUrl,
+      selected:audioDebugSummary(selectedAudioTrack(),currentAudioIdx),
+      tracks:availableAudio.map((track,index)=>audioDebugSummary(track,index))
+    });
+    mediaFixLog('loaded FTP subtitle tracks',{
+      url:requestedUrl,
+      count:availableSubs.length,
+      tracks:availableSubs.map((track,index)=>subtitleDebugSummary(track,index))
+    });
     playbackDebug('ftp tracks loaded',{
       selectedAudio:currentAudioIdx,
       audioStream:selectedAudioTrack()?.streamIndex ?? selectedAudioTrack()?.sourceIndex ?? null,
@@ -2472,7 +2572,20 @@ async function loadFtpTrackOptions(streamUrl){
     return data;
   }catch(e){
     console.warn('[FTP] Track metadata unavailable:', e.message);
-    if(subList)subList.innerHTML = `<div class="pd-item" style="color:#444;pointer-events:none">No subtitles found</div>`;
+    const hintedTracks=audioTracksFromFilenameHints(requestedUrl);
+    if(hintedTracks.length > 1){
+      availableAudio=hintedTracks;
+      currentAudioIdx=preferredAudioTrackIndex(availableAudio);
+      renderAudioTracks();
+    }
+    mediaFixLog('FTP metadata failed',{
+      url:requestedUrl,
+      message:e.message,
+      fallbackAudio:availableAudio.map((track,index)=>audioDebugSummary(track,index))
+    });
+    if(subList && !availableSubs.length){
+      subList.innerHTML = `<div class="pd-item" style="color:#444" onclick="ensureFtpTrackOptionsLoaded({force:true})">Could not load subtitles. Tap to retry.</div>`;
+    }
     return null;
   }finally{
     clearTimeout(timeout);
@@ -2613,8 +2726,12 @@ async function loadFtpDuration(streamUrl){
 
 function fallbackOrderForRemote(url, plan={}){
   const unsupported = plan?.unsupportedVideoHint || urlHasUnsupportedVideoHint(url);
+  const selected=selectedAudioTrack();
+  const explicitAudio=availableAudio.length > 1 || currentAudioIdx > 0 || Number.isFinite(selected?.streamIndex ?? selected?.sourceIndex);
+  if(unsupported)return ['transcode','hls'];
+  if(explicitAudio)return ['audio','transcode','hls','proxy'];
   const order = ['proxy'];
-  if(!unsupported)order.push('remux','audio');
+  order.push('remux','audio');
   order.push('transcode','hls');
   return order;
 }
@@ -2627,7 +2744,7 @@ function fallbackOrderForLocal(plan={}){
 async function attachFtpFallbackStep(resolvedStreamUrl, name, step, failedAt){
   playbackDebug('ftp fallback start', {step, failedAt, error:videoErrorInfo()});
   const fallback = step === 'transcode'
-    ? { ok:true, mode:'stream', src:ftpTranscodeSrc(resolvedStreamUrl, failedAt), duration:_ftpDuration || 0 }
+    ? ftpStreamPlaybackPlan(resolvedStreamUrl, failedAt)
     : await fetchFtpPlaybackPlan(resolvedStreamUrl, failedAt, playbackOptionsForStep(step));
   if(_ftpStreamUrl !== resolvedStreamUrl)return true;
   const fallbackMode = fallback.mode || step;
@@ -2831,7 +2948,7 @@ async function playMedia(id, name, year){
   try{
     // Desktop's direct route is deterministic. Attach it immediately so the
     // play() call remains inside the card/episode click's user activation.
-    const startupOptions = startupPlaybackOptions(startupInfo);
+    const startupOptions = startupPlaybackOptions(startupInfo, typeof localFileForStreamId==='function'?localFileForStreamId(id):'');
     const needsServerStart = !!(startupOptions.forceAudio || startupOptions.forceHls || startupOptions.mode);
     const plan = (mobilePlayback || needsServerStart)
       ? await fetchLocalPlaybackPlan(id,0,startupOptions)
@@ -2882,7 +2999,12 @@ async function playMedia(id, name, year){
 }
 
 async function switchAudioWithServer(idx){
-  if(vid._audioSwitchPending)return;
+  if(vid._audioSwitchPending){
+    vid._queuedAudioSwitchIdx=idx;
+    mediaFixLog('queued audio switch',{idx,selected:audioDebugSummary(availableAudio[idx],idx)});
+    closeAllDropdowns();
+    return;
+  }
   const selected=availableAudio[idx];
   if(!selected)return;
   const previousIdx=currentAudioIdx;
@@ -2899,13 +3021,30 @@ async function switchAudioWithServer(idx){
   document.getElementById('playerSpinner')?.classList.add('on');
   vid._sourceOffset=target;
   vid.pause();
+  mediaFixLog('selected audio switch',{
+    ftp:!!ftpUrl,
+    url:ftpUrl || localId,
+    target,
+    from:previousIdx,
+    to:idx,
+    selected:audioDebugSummary(selected,idx)
+  });
 
+  let completed=false;
+  let timeout;
   const finish=()=>{
-    if(token!==vid._audioSwitchToken)return;
+    if(token!==vid._audioSwitchToken || completed)return;
+    completed=true;
+    clearTimeout(timeout);
     vid._audioSwitchPending=false;
     document.getElementById('playerSpinner')?.classList.remove('on');
+    const queuedIdx=Number.isInteger(vid._queuedAudioSwitchIdx) ? vid._queuedAudioSwitchIdx : null;
+    vid._queuedAudioSwitchIdx=null;
+    if(queuedIdx !== null && queuedIdx !== currentAudioIdx){
+      setTimeout(()=>switchAudioWithServer(queuedIdx),0);
+    }
   };
-  const timeout=setTimeout(finish,12000);
+  timeout=setTimeout(finish,12000);
   vid.addEventListener('canplay',function onAudioCanPlay(){
     vid.removeEventListener('canplay',onAudioCanPlay);
     clearTimeout(timeout);
@@ -2938,6 +3077,12 @@ async function switchAudioWithServer(idx){
     if(!attached)throw new Error('Audio stream could not be attached');
     if(wasPlaying)vid.play().catch(()=>{});
     showToast(`Audio: ${selected.title||audioTrackTitle(selected,idx)}`);
+    mediaFixLog('audio switch attached',{
+      ftp:!!ftpUrl,
+      mode:plan.mode,
+      src:plan.src,
+      selected:audioDebugSummary(selected,idx)
+    });
     playbackDebug('server audio switch',{
       idx,
       target,
@@ -3127,13 +3272,29 @@ let _ftpCurrentTime=0;
 let _ftpSeekPending=false;
 let _ftpNeedsTranscode=false;
 let _ftpTrackLoadPromise=null;
+let _ftpTrackLoadFailed=false;
 
-function ensureFtpTrackOptionsLoaded(){
+function ensureFtpTrackOptionsLoaded(options={}){
   if(!_ftpStreamUrl)return Promise.resolve();
-  if(_ftpTrackLoadPromise)return _ftpTrackLoadPromise;
+  const force=!!options.force;
+  const hasLoadedTracks=availableAudio.length > 1 || availableSubs.length > 0;
+  if(_ftpTrackLoadPromise && !force && (!_ftpTrackLoadFailed || hasLoadedTracks))return _ftpTrackLoadPromise;
   const subList = document.getElementById('subList');
   if(subList)subList.innerHTML = `<div class="pd-item" style="color:#444;pointer-events:none">Loading subtitles...</div>`;
-  _ftpTrackLoadPromise = loadFtpTrackOptions(_ftpStreamUrl).catch(()=>{});
+  _ftpTrackLoadFailed=false;
+  const loadingUrl=_ftpStreamUrl;
+  _ftpTrackLoadPromise = loadFtpTrackOptions(loadingUrl)
+    .then(data=>{
+      _ftpTrackLoadFailed=!data;
+      if(!data && _ftpStreamUrl === loadingUrl)_ftpTrackLoadPromise=null;
+      return data;
+    })
+    .catch(err=>{
+      _ftpTrackLoadFailed=true;
+      if(_ftpStreamUrl === loadingUrl)_ftpTrackLoadPromise=null;
+      mediaFixLog('FTP metadata promise failed',{url:loadingUrl,message:err?.message || String(err)});
+      return null;
+    });
   return _ftpTrackLoadPromise;
 }
 
@@ -3146,6 +3307,7 @@ async function playFtpMedia(streamUrl, name, year){
       return;
     }
     const mobilePlayback = isMobilePlaybackClient();
+    mediaFixLog('selected FTP media URL',{url:requestedStreamUrl,name,year,mobilePlayback});
     console.log('[Playback] FTP proxy URL', ftpProxySrc(requestedStreamUrl));
 
     isLiveMode = false;
@@ -3164,6 +3326,7 @@ async function playFtpMedia(streamUrl, name, year){
     _ftpDuration = 0;
     _ftpNeedsTranscode = false;
     _ftpTrackLoadPromise = null;
+    _ftpTrackLoadFailed = false;
     _currentFtpPlaybackPlan = null;
     _ftpCurrentTime = 0;
     _ftpSeekPending = false;
@@ -3208,19 +3371,26 @@ async function playFtpMedia(streamUrl, name, year){
     updateSubBtn();
     let startupInfo = null;
     try{
-      _ftpTrackLoadPromise = loadFtpTrackOptions(requestedStreamUrl);
-      startupInfo = await _ftpTrackLoadPromise;
+      startupInfo = await ensureFtpTrackOptionsLoaded({force:true});
     }catch(e){
       playbackDebug('ftp startup track metadata failed',{message:e.message});
     }
 
     let playInfo;
-    const startupOptions = startupPlaybackOptions(startupInfo);
+    const startupOptions = startupPlaybackOptions(startupInfo, requestedStreamUrl);
+    mediaFixLog('FTP startup playback options',{
+      url:requestedStreamUrl,
+      options:startupOptions,
+      selectedAudio:audioDebugSummary(selectedAudioTrack(),currentAudioIdx),
+      metadataLoaded:!!startupInfo
+    });
     const needsServerStart = !!(startupOptions.forceAudio || startupOptions.forceHls || startupOptions.mode);
     if(!mobilePlayback){
       // Never redirect an HTTPS desktop page to the private/HTTP media origin.
       // The same-origin proxy preserves Range/206 responses and encoded names.
-      playInfo = needsServerStart
+      playInfo = startupOptions.forceHls
+        ? ftpStreamPlaybackPlan(requestedStreamUrl,0)
+        : needsServerStart
         ? await fetchFtpPlaybackPlan(requestedStreamUrl,0,startupOptions)
         : localFtpPlaybackPlan(requestedStreamUrl, {forceProxy:true});
     }else{
@@ -3277,6 +3447,12 @@ async function playFtpMedia(streamUrl, name, year){
     }, {once:true});
 
     console.log(`[Playback] FTP ${playbackMode}`);
+    mediaFixLog('attach FTP source',{
+      url:resolvedStreamUrl,
+      mode:playbackMode,
+      src:finalPlayUrl,
+      selectedAudio:audioDebugSummary(selectedAudioTrack(),currentAudioIdx)
+    });
     const attachPromise = attachPlayerSource(finalPlayUrl, playbackMode);
     const initialPlay = !mobilePlayback
       ? vid.play().catch(e=>handleInitialPlayRejection(e, ()=>{
@@ -3515,6 +3691,12 @@ function setFtpSubtitle(idx){
     setTrackMode(track,true);
     setTimeout(()=>{setTrackMode(track,true);updateSubtitleOverlay();},100);
   }
+  mediaFixLog('selected FTP subtitle',{
+    idx:currentSubIdx,
+    selected:currentSubIdx>=0?subtitleDebugSummary(availableSubs[currentSubIdx],currentSubIdx):null,
+    src:currentSubIdx>=0?ftpSubtitleSrc(currentSubIdx):'',
+    sourceUnchanged:sourceBefore===vid.currentSrc
+  });
   renderSubtitleTracks();
   closeAllDropdowns();
   showToast(currentSubIdx===-1?'Subtitles off':availableSubs[currentSubIdx]?.label||'Subtitles on');
@@ -4762,7 +4944,7 @@ vid._mdH = () => {
   if (isLiveMode) return;
   if(!isMobilePlaybackClient()){
     refreshDesktopNativeAudioTracks();
-    if(_ftpStreamUrl)refreshDesktopNativeSubtitleTracks(false);
+    if(_ftpStreamUrl)refreshDesktopNativeSubtitleTracks(true);
   }
   const newDur = vid.duration;
   if (newDur && isFinite(newDur) && newDur > 0) {
@@ -5104,9 +5286,26 @@ function svStartPosterObserver(){
 }
 if(document.readyState === 'loading')document.addEventListener('DOMContentLoaded', svStartPosterObserver, { once:true });
 else svStartPosterObserver();
+function svRefreshStaleAssetCaches(){
+  if(!('caches' in window))return;
+  caches.keys()
+    .then(keys=>Promise.all(keys
+      .filter(key=>/^streamvault-assets-/.test(key) && !key.includes(SV_ASSET_VERSION))
+      .map(key=>caches.delete(key))))
+    .then(deleted=>{
+      if(deleted?.some(Boolean))mediaFixLog('cleared stale asset caches',{assetVersion:SV_ASSET_VERSION});
+    })
+    .catch(()=>{});
+}
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('/sw.js?v=20260620-player-tracks-sections-final1').catch(()=>{});
+    svRefreshStaleAssetCaches();
+    navigator.serviceWorker.register(`/sw.js?v=${SV_ASSET_VERSION}`)
+      .then(reg=>{
+        reg.update?.();
+        navigator.serviceWorker.controller?.postMessage?.({type:'SV_CLEAR_ASSET_CACHE',version:SV_ASSET_VERSION});
+      })
+      .catch(()=>{});
   }, { once:true });
 }
 function svChannelColor(ch={}){

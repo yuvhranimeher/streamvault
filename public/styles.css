@@ -7922,3 +7922,123 @@ html[data-theme="light"] .fifa-live-section{
     width:136px;
   }
 }
+
+/* Shared website section spacing */
+:root{
+  --sv-section-gap:.95rem;
+  --sv-section-header-gap:6px;
+  --sv-section-flow-gap:8px;
+  --sv-section-track-extra:8px;
+}
+.sv-section-spacing{
+  margin-block-end:var(--sv-section-gap);
+}
+.sv-section-header-spacing{
+  margin-block-end:var(--sv-section-header-gap);
+}
+#mainSection > .row,
+.content > .row,
+.library-groups > section{
+  margin-bottom:var(--sv-section-gap)!important;
+}
+#mainSection > .row:last-child,
+.content > .row:last-child,
+.library-groups > section:last-child{
+  margin-bottom:0!important;
+}
+.featured-showcase,
+.featured-showcase.sv-fifa-hero{
+  margin-bottom:var(--sv-section-gap)!important;
+}
+.row-header,
+.featured-showcase .row-header,
+#liveHomeRow .row-header,
+.movies-header,
+.live-section-header,
+.search-page-header,
+.library-header,
+.section-page-header,
+.downloads-header{
+  margin-bottom:var(--sv-section-header-gap)!important;
+}
+#mainSection > .row:not(#marvelRow):not(#dcRow) > .cards-track,
+.content > .row:not(#marvelRow):not(#dcRow) > .cards-track{
+  height:calc(var(--card-h) + var(--sv-section-track-extra))!important;
+  padding-top:2px!important;
+  padding-bottom:4px!important;
+}
+#marvelTrack,
+#dcTrack,
+#mainSection #marvelRow #marvelTrack,
+#mainSection #dcRow #dcTrack{
+  height:calc(var(--sv-studio-card-h) + var(--sv-section-track-extra))!important;
+  max-height:calc(var(--sv-studio-card-h) + var(--sv-section-track-extra))!important;
+  padding-top:2px!important;
+  padding-bottom:4px!important;
+}
+#mainSection #marvelRow #marvelTrack .card,
+#mainSection #dcRow #dcTrack .card{
+  flex:0 0 var(--sv-studio-card-w)!important;
+  width:var(--sv-studio-card-w)!important;
+  min-width:var(--sv-studio-card-w)!important;
+  max-width:var(--sv-studio-card-w)!important;
+  height:var(--sv-studio-card-h)!important;
+  min-height:var(--sv-studio-card-h)!important;
+  max-height:var(--sv-studio-card-h)!important;
+}
+.live-home-track{
+  padding-top:2px!important;
+  padding-bottom:4px!important;
+}
+.featured-track,
+#heroCards.featured-track,
+#heroCards.sv-featured-poster-track,
+.library-row,
+.sm-related-track,
+.detail-related-track{
+  padding-top:2px!important;
+  padding-bottom:4px!important;
+}
+.movies-filters,
+.live-cats,
+.search-heading,
+.library-section-subtitle,
+.downloads-search-bar,
+.downloads-filter-chips,
+.downloads-warning,
+.active-filters{
+  margin-bottom:var(--sv-section-flow-gap)!important;
+}
+.library-groups{
+  gap:var(--sv-section-gap)!important;
+}
+.load-more-wrap,
+.section-load-more{
+  margin-top:var(--sv-section-gap)!important;
+  padding-top:0!important;
+}
+@media(max-width:759px){
+  :root{
+    --sv-section-gap:.85rem;
+    --sv-section-flow-gap:8px;
+    --sv-section-track-extra:6px;
+  }
+  #mainSection > #liveHomeRow,
+  #mainSection > #marvelRow,
+  #mainSection > #dcRow{
+    margin-bottom:var(--sv-section-gap)!important;
+  }
+  .featured-showcase.sv-fifa-hero{
+    margin-bottom:var(--sv-section-gap)!important;
+  }
+  .cards-track,
+  .live-home-track,
+  .featured-track,
+  #heroCards.featured-track,
+  #heroCards.sv-featured-poster-track,
+  .library-row,
+  .sm-related-track,
+  .detail-related-track{
+    padding-bottom:4px!important;
+  }
+}

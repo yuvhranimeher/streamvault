@@ -90,12 +90,15 @@
     <div class="search-box">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="rgba(255,255,255,.35)" style="flex-shrink:0"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
       <input type="text" id="searchInputDesktop" placeholder="Search…" oninput="handleSearch(this.value)" autocomplete="off">
+      <button class="search-clear-btn" type="button" onclick="clearGlobalSearch()" aria-label="Clear search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41-6.3-6.29-6.3 6.29-1.41-1.41L9.17 12 2.88 5.71l1.41-1.42 6.3 6.3 6.3-6.3 1.41 1.42z"/></svg>
+      </button>
     </div>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" aria-label="Toggle theme" title="Toggle theme">
       <svg class="sun-icon" viewBox="0 0 24 24"><path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.8 1.42-1.42zM1 13h3v-2H1v2zm10-12v3h2V1h-2zm9.45 3.46l-1.41-1.41-1.8 1.79 1.42 1.42 1.79-1.8zM17.24 19.16l1.8 1.79 1.41-1.41-1.79-1.8-1.42 1.42zM20 11v2h3v-2h-3zM12 6a6 6 0 1 0 0 12A6 6 0 0 0 12 6zm-1 17h2v-3h-2v3zM3.55 19.54l1.41 1.41 1.8-1.79-1.42-1.42-1.79 1.8z"/></svg>
       <svg class="moon-icon" viewBox="0 0 24 24"><path d="M12.1 2.1a9.9 9.9 0 1 0 9.8 11.5 7.4 7.4 0 0 1-9.5-9.5c.2-.7.1-1.4-.3-2z"/></svg>
     </button>
-    <button class="search-toggle" onclick="switchTab('search')" aria-label="Search">
+    <button class="search-toggle" onclick="openSearchOverlay()" aria-label="Search">
       <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
     </button>
   </div>
@@ -106,6 +109,9 @@
     <div class="search-overlay-box">
       <svg viewBox="0 0 24 24" width="18" height="18" fill="rgba(255,255,255,.3)"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
       <input type="search" id="searchInputMobile" placeholder="Search movies &amp; series…" oninput="handleSearch(this.value)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      <button class="search-clear-btn" type="button" onclick="clearGlobalSearch()" aria-label="Clear search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41-6.3-6.29-6.3 6.29-1.41-1.41L9.17 12 2.88 5.71l1.41-1.42 6.3 6.3 6.3-6.3 1.41 1.42z"/></svg>
+      </button>
     </div>
     <button class="search-cancel" onclick="closeSearchOverlay()">Cancel</button>
   </div>
@@ -397,10 +403,6 @@
     </div>
   </div>
   <div class="movies-filters" id="moviesFilters">
-    <div class="movies-search-wrap">
-      <svg viewBox="0 0 24 24" width="15" height="15" fill="rgba(255,255,255,.35)" style="flex-shrink:0"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-      <input type="search" id="moviesSearchInput" placeholder="Search movies…" oninput="debounceMoviesPage()" autocomplete="off" autocorrect="off" spellcheck="false">
-    </div>
     <button class="filter-toggle-btn" type="button" onclick="toggleFilterPanel('moviesFilters')" aria-label="Show movie filters" aria-expanded="false">
       <svg viewBox="0 0 24 24"><path d="M3 5h18v2H3V5zm4 6h10v2H7v-2zm3 6h4v2h-4v-2z"/></svg>
     </button>
@@ -496,10 +498,6 @@
     </div>
   </div>
   <div class="movies-filters" id="seriesFilters">
-    <div class="movies-search-wrap">
-      <svg viewBox="0 0 24 24" width="15" height="15" fill="rgba(255,255,255,.35)" style="flex-shrink:0"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-      <input type="search" id="seriesSearchInput" placeholder="Search series…" oninput="debounceSeriesPage()" autocomplete="off" autocorrect="off" spellcheck="false">
-    </div>
     <button class="filter-toggle-btn" type="button" onclick="toggleFilterPanel('seriesFilters')" aria-label="Show series filters" aria-expanded="false">
       <svg viewBox="0 0 24 24"><path d="M3 5h18v2H3V5zm4 6h10v2H7v-2zm3 6h4v2h-4v-2z"/></svg>
     </button>
@@ -588,10 +586,6 @@
       <div class="search-page-title">Search</div>
       <div class="search-page-subtitle">Find movies and shows in your StreamVault library</div>
     </div>
-  </div>
-  <div class="search-page-bar">
-    <svg viewBox="0 0 24 24" width="22" height="22"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-    <input type="search" id="searchPageInput" placeholder="Search movies and shows" oninput="handleSearch(this.value)" autocomplete="off" autocorrect="off" spellcheck="false">
   </div>
   <div class="search-heading" id="searchLabel">Start typing to search your vault</div>
   <div class="search-grid" id="searchGrid"></div>

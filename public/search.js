@@ -10,9 +10,49 @@
   let activePages = 1;
   let loading = false;
   let lastTarget = 'desktop';
+  const SEARCH_INPUT_IDS = ['searchInputDesktop', 'searchInputMobile'];
 
   function isSeriesItem(item){
     return !!(item && (item._isSeries || item.type === 'series' || item.type === 'tv' || item.seasons));
+  }
+
+  function searchInputs(){
+    return SEARCH_INPUT_IDS.map(id=>document.getElementById(id)).filter(Boolean);
+  }
+
+  function searchQueryFromInputs(){
+    const active = document.activeElement;
+    if(active && SEARCH_INPUT_IDS.includes(active.id))return active.value || '';
+    const desktop = document.getElementById('searchInputDesktop');
+    if(desktop?.value)return desktop.value;
+    return document.getElementById('searchInputMobile')?.value || '';
+  }
+
+  function updateSearchControls(){
+    searchInputs().forEach(input=>{
+      const wrap = input.closest('.search-box,.search-overlay-box');
+      const hasQuery = !!String(input.value || '').trim();
+      if(wrap)wrap.classList.toggle('has-query', hasQuery);
+      const clear = wrap?.querySelector('.search-clear-btn');
+      if(clear){
+        clear.setAttribute('aria-hidden', hasQuery ? 'false' : 'true');
+        clear.tabIndex = hasQuery ? 0 : -1;
+      }
+    });
+  }
+
+  function syncSearchInputs(q, source=null){
+    const value = String(q || '');
+    searchInputs().forEach(input=>{
+      if(input !== source && input.value !== value)input.value = value;
+    });
+    updateSearchControls();
+  }
+
+  function focusGlobalSearchInput(){
+    const overlayOpen = document.getElementById('searchOverlay')?.classList.contains('open');
+    const target = overlayOpen ? document.getElementById('searchInputMobile') : document.getElementById('searchInputDesktop');
+    target?.focus?.();
   }
 
   function resultHTML(item){
@@ -128,15 +168,44 @@
   }
 
   renderSearchPage = function(q=''){
-    const input = document.getElementById('searchPageInput');
-    if(input && input.value !== q && document.activeElement !== input)input.value = q;
+    syncSearchInputs(q);
     return runSearch(q, { mobile:false, append:false });
   };
 
   handleSearch = function(q){
+    const source = SEARCH_INPUT_IDS.includes(document.activeElement?.id) ? document.activeElement : null;
+    syncSearchInputs(q, source);
     clearTimeout(timer);
     timer = setTimeout(()=>runSearch(q, { append:false }), SEARCH_DELAY);
   };
+
+  clearGlobalSearch = function(opts={}){
+    clearTimeout(timer);
+    if(controller){
+      controller.abort();
+      controller = null;
+    }
+    activeQuery = '';
+    activePage = 1;
+    activePages = 1;
+    loading = false;
+    syncSearchInputs('');
+
+    const mobileOpen = document.getElementById('searchOverlay')?.classList.contains('open');
+    const mobileGrid = document.getElementById('mobileSearchGrid');
+    const mobileLabel = document.getElementById('mobileSearchLabel');
+    if(mobileGrid)mobileGrid.innerHTML = '';
+    if(mobileLabel)mobileLabel.textContent = '';
+
+    if(currentTab === 'search' && !mobileOpen){
+      renderRecent(document.getElementById('searchGrid'), document.getElementById('searchLabel'));
+    }
+    if(opts.focus !== false)focusGlobalSearchInput();
+  };
+
+  window.getGlobalSearchQuery = searchQueryFromInputs;
+  window.updateGlobalSearchControls = updateSearchControls;
+  window.focusGlobalSearchInput = focusGlobalSearchInput;
 
   document.addEventListener('scroll', ()=>{
     if(currentTab !== 'search' || loading || lastTarget !== 'desktop')return;
@@ -153,4 +222,10 @@
       runSearch(activeQuery, { mobile:true, append:true });
     }
   }, { passive:true });
+
+  document.addEventListener('input', event=>{
+    if(SEARCH_INPUT_IDS.includes(event.target?.id))updateSearchControls();
+  });
+
+  updateSearchControls();
 })();

@@ -68,26 +68,37 @@ function getMediaInfo(filePath) {
       if (code !== 0) return reject(new Error(`ffprobe failed: ${stderr}`));
       try {
         const info = JSON.parse(stdout);
-        const audioTracks = info.streams
+        const streams = Array.isArray(info.streams) ? info.streams : [];
+        const sourceName = path.basename(filePath || '');
+        const audioTracks = streams
           .filter(s => s.codec_type === 'audio')
           .map((s, i) => ({
             index: s.index,
+            streamIndex: s.index,
+            relativeIndex: i,
             codec: s.codec_name,
             language: s.tags?.language || 'und',
             title: s.tags?.title || `Audio ${i + 1}`,
-            channels: s.channels || 2
+            channels: s.channels || 0,
+            channelLayout: s.channel_layout || '',
+            default: s.disposition?.default === 1,
+            forced: s.disposition?.forced === 1,
           }));
 
-        const subtitleTracks = info.streams
+        const subtitleTracks = streams
           .filter(s => s.codec_type === 'subtitle')
           .map((s, i) => ({
             index: s.index,
+            streamIndex: s.index,
+            relativeIndex: i,
             codec: s.codec_name,
             language: s.tags?.language || 'und',
-            title: s.tags?.title || `Subtitle ${i + 1}`
+            title: s.tags?.title || subtitleLabelFromName(sourceName, `Subtitle ${i + 1}`),
+            default: s.disposition?.default === 1,
+            forced: s.disposition?.forced === 1,
           }));
 
-        const videoStream = info.streams.find(s => s.codec_type === 'video');
+        const videoStream = streams.find(s => s.codec_type === 'video');
 
         resolve({ 
           audioTracks, 
@@ -1186,10 +1197,20 @@ function isTrustedRemotePlaybackUrl(srcUrl, matched) {
   }
 }
 
-function playbackAudioMapFromReq(req) {
+function playbackAudioSelectionFromReq(req) {
   const audioStreamIdx = parseInt(req.query.audioStream ?? '', 10);
   const audioIdx = Math.max(0, parseInt(req.query.audio || '0', 10) || 0);
-  return Number.isFinite(audioStreamIdx) && audioStreamIdx >= 0 ? `0:${audioStreamIdx}?` : `0:a:${audioIdx}?`;
+  const hasAbsoluteStream = Number.isFinite(audioStreamIdx) && audioStreamIdx >= 0;
+  return {
+    audioIdx,
+    audioStreamIdx: hasAbsoluteStream ? audioStreamIdx : null,
+    audioMap: hasAbsoluteStream ? `0:${audioStreamIdx}?` : `0:a:${audioIdx}?`,
+    source: hasAbsoluteStream ? 'absolute-stream' : 'relative-audio',
+  };
+}
+
+function playbackAudioMapFromReq(req) {
+  return playbackAudioSelectionFromReq(req).audioMap;
 }
 
 function playbackStartFromReq(req) {
@@ -1369,9 +1390,13 @@ function remoteSubtitleCandidateUrls(srcUrl) {
   if (!ext) return [];
   const basePath = parsed.pathname.slice(0, -ext.length);
   const suffixes = [
+    '.esub.vtt', '.e-sub.vtt', '.msubs.vtt', '.m-subs.vtt', '.multi.vtt', '.multi-subs.vtt',
     '.en.vtt', '.eng.vtt', '.english.vtt', '.vtt',
+    '.esub.srt', '.e-sub.srt', '.msubs.srt', '.m-subs.srt', '.multi.srt', '.multi-subs.srt',
     '.en.srt', '.eng.srt', '.english.srt', '.srt',
+    '.esub.ass', '.e-sub.ass', '.msubs.ass', '.m-subs.ass', '.multi.ass', '.multi-subs.ass',
     '.en.ass', '.eng.ass', '.english.ass', '.ass',
+    '.esub.ssa', '.e-sub.ssa', '.msubs.ssa', '.m-subs.ssa', '.multi.ssa', '.multi-subs.ssa',
     '.en.ssa', '.eng.ssa', '.english.ssa', '.ssa'
   ];
   const out = [];
@@ -1392,6 +1417,8 @@ function remoteSubtitleLabel(sidecarUrl, index) {
   let file = '';
   try { file = decodeURIComponent(path.posix.basename(new URL(sidecarUrl).pathname)); } catch {}
   const lower = file.toLowerCase();
+  if (/\b(m-?subs?|multi[ ._-]*subs?|multi[ ._-]*subtitles?)\b/i.test(lower)) return 'Multi Subtitles';
+  if (/\b(e-?sub)\b/i.test(lower)) return 'English';
   if (/\b(eng|english|en)\b/.test(lower) || /\.(eng|english|en)\./i.test(file)) return 'English';
   if (/\b(hin|hindi|hi)\b/.test(lower) || /\.(hin|hindi|hi)\./i.test(file)) return 'Hindi';
   if (/\b(ben|bengali|bangla|bn)\b/.test(lower) || /\.(ben|bengali|bangla|bn)\./i.test(file)) return 'Bengali';
@@ -1669,18 +1696,81 @@ async function getPosterInfo(filename, type = '') {
 }
 
 // ── Subtitle discovery ────────────────────────────────────────────────────────
+function normalizeSubtitleMatchName(value) {
+  return String(value || '')
+    .replace(/\.[a-z0-9]{2,5}$/i, '')
+    .replace(/\[[^\]]*\]|\([^\)]*\)/g, ' ')
+    .replace(/\b(2160p|1080p|720p|540p|480p|4k|uhd|hdr|webrip|web-rip|webdl|web-dl|bluray|brrip|hdrip|hdtv|dvdrip|x264|x265|h264|h265|hevc|aac|ac3|eac3|ddp?|dts|truehd|atmos|10bit|8bit|nf|amzn|hmax|dsnp|itunes|pahe|rarbg|yts|galaxyrg|esub|msubs?|multi[ ._-]*subs?|subs?|subtitles?|dual[ ._-]*audio|multi[ ._-]*audio|hindi|english|bengali|bangla|tamil|telugu|malayalam)\b/ig, ' ')
+    .replace(/[._-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function subtitleNameLooksRelated(videoBase, subtitleBase) {
+  const videoLower = String(videoBase || '').toLowerCase();
+  const subLower = String(subtitleBase || '').toLowerCase();
+  if (!videoLower || !subLower) return false;
+  if (subLower === videoLower || subLower.startsWith(`${videoLower}.`) || subLower.startsWith(`${videoLower}-`) || subLower.startsWith(`${videoLower}_`) || subLower.startsWith(`${videoLower} `)) return true;
+
+  const videoClean = normalizeSubtitleMatchName(videoBase);
+  const subClean = normalizeSubtitleMatchName(subtitleBase);
+  if (!videoClean || !subClean) return false;
+  if (videoClean === subClean || subClean.startsWith(videoClean) || videoClean.startsWith(subClean)) return true;
+
+  const videoTokens = new Set(videoClean.split(/\s+/).filter(token => token.length > 1));
+  const subTokens = subClean.split(/\s+/).filter(token => token.length > 1);
+  if (videoTokens.size < 2 || subTokens.length < 2) return false;
+  const overlap = subTokens.filter(token => videoTokens.has(token)).length;
+  return overlap / Math.max(videoTokens.size, subTokens.length) >= 0.72;
+}
+
+function subtitleLangFromName(value) {
+  const lower = String(value || '').toLowerCase();
+  if (/\b(e-?sub|eng|english|en)\b|[._\s-](eng|english|en)[._\s-]/i.test(lower)) return 'en';
+  if (/\b(hin|hindi|hi)\b|[._\s-](hin|hindi|hi)[._\s-]/i.test(lower)) return 'hi';
+  if (/\b(ben|bengali|bangla|bn)\b|[._\s-](ben|bengali|bangla|bn)[._\s-]/i.test(lower)) return 'bn';
+  if (/\b(tam|tamil|ta)\b|[._\s-](tam|tamil|ta)[._\s-]/i.test(lower)) return 'ta';
+  if (/\b(tel|telugu|te)\b|[._\s-](tel|telugu|te)[._\s-]/i.test(lower)) return 'te';
+  return '';
+}
+
+function subtitleLabelFromName(value, fallback = 'Subtitle') {
+  const lower = String(value || '').toLowerCase();
+  if (/\b(m-?subs?|multi[ ._-]*subs?|multi[ ._-]*subtitles?)\b/i.test(lower)) return 'Multi Subtitles';
+  if (/\b(e-?sub|eng|english|en)\b|[._\s-](eng|english|en)[._\s-]/i.test(lower)) return 'English';
+  if (/\b(hin|hindi|hi)\b|[._\s-](hin|hindi|hi)[._\s-]/i.test(lower)) return 'Hindi';
+  if (/\b(ben|bengali|bangla|bn)\b|[._\s-](ben|bengali|bangla|bn)[._\s-]/i.test(lower)) return 'Bengali';
+  const clean = String(value || '')
+    .replace(/\.(srt|vtt|ass|ssa)$/i, '')
+    .replace(/^[._\-\s]+|[._\-\s]+$/g, '')
+    .replace(/[._-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return clean || fallback;
+}
+
 function findSubtitleTracks(dir, videoFile) {
-  const base = path.basename(videoFile, path.extname(videoFile)).toLowerCase();
+  const videoBaseRaw = path.basename(videoFile, path.extname(videoFile));
+  const videoBase = videoBaseRaw.toLowerCase();
   const tracks = [];
   let entries = [];
   try { entries = fs.readdirSync(dir); } catch { return tracks; }
   for (const f of entries) {
     const ext = path.extname(f).toLowerCase();
     if (!SUB_EXTS.includes(ext)) continue;
-    const fname = path.basename(f, ext).toLowerCase();
-    if (!fname.startsWith(base)) continue;
-    const suffix = fname.slice(base.length).replace(/^[\._\-\s]+/, '');
-    tracks.push({ label: suffix ? suffix.charAt(0).toUpperCase() + suffix.slice(1) : 'Default', lang: suffix.slice(0, 2) || 'en', ext, filePath: path.join(dir, f) });
+    const fnameRaw = path.basename(f, ext);
+    const fname = fnameRaw.toLowerCase();
+    if (!subtitleNameLooksRelated(videoBase, fname)) continue;
+    const suffix = fname.startsWith(videoBase)
+      ? fnameRaw.slice(videoBaseRaw.length).replace(/^[\._\-\s]+/, '')
+      : fnameRaw;
+    tracks.push({
+      label: subtitleLabelFromName(suffix || fnameRaw, 'Default'),
+      lang: subtitleLangFromName(suffix || fnameRaw) || 'en',
+      ext,
+      filePath: path.join(dir, f),
+    });
   }
   return tracks;
 }
@@ -4472,7 +4562,7 @@ function startMobileHlsSession({
     playlistPath
   );
 
-  console.log(`[Mobile HLS] start ${sessionId} input=${input}`);
+  console.log(`[Mobile HLS] start ${sessionId} input=${input} audioMap=${audioMap}`);
   const process = spawn(FFMPEG_BIN, ffmpegArgs);
   const session = { process, dir: sessionDir, createdAt: Date.now(), lastAccess: Date.now(), clientId, error: null };
   mobileHlsSessions.set(sessionId, session);
@@ -4516,10 +4606,13 @@ app.get('/api/mobile-hls/local/:id/index.m3u8', (req, res) => {
   const filePath = entryPath(entry);
   if (!fs.existsSync(filePath)) return res.status(404).send('File missing');
   const startSec = parseFloat(req.query.start) || 0;
+  const audioSelection = playbackAudioSelectionFromReq(req);
+  const audioMap = audioSelection.audioMap;
   const preset = mobileHlsPresetFromQuality(req.query.quality);
-  const key = hlsSessionKey('local', filePath, startSec, preset.key);
+  const key = hlsSessionKey('local', filePath, startSec, `${audioMap}|${preset.key}`);
   const clientId = /^[a-zA-Z0-9_-]{8,80}$/.test(String(req.query.client || '')) ? String(req.query.client) : '';
-  const playlistPath = startMobileHlsSession({ scope: 'local', key, input: filePath, startSec, clientId, preset });
+  console.log(`[Mobile HLS Local] ${entry.file} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioMap}`);
+  const playlistPath = startMobileHlsSession({ scope: 'local', key, input: filePath, startSec, audioMap, clientId, preset });
   sendMobileHlsPlaylist(res, 'local', key, playlistPath);
 });
 
@@ -4963,10 +5056,12 @@ app.get('/api/mobile-hls/ftp/index.m3u8', (req, res) => {
   if (!trusted) return;
   const srcUrl = trusted.srcUrl;
   const startSec = parseFloat(req.query.start) || 0;
-  const audioMap = playbackAudioMapFromReq(req);
+  const audioSelection = playbackAudioSelectionFromReq(req);
+  const audioMap = audioSelection.audioMap;
   const preset = mobileHlsPresetFromQuality(req.query.quality);
   const key = hlsSessionKey('ftp', srcUrl, startSec, `${audioMap}|${preset.key}`);
   const clientId = /^[a-zA-Z0-9_-]{8,80}$/.test(String(req.query.client || '')) ? String(req.query.client) : '';
+  console.log(`[Mobile HLS FTP] ${remoteFilename(srcUrl)} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioMap}`);
   const playlistPath = startMobileHlsSession({ scope: 'ftp', key, input: srcUrl, startSec, audioMap, clientId, preset });
   sendMobileHlsPlaylist(res, 'ftp', key, playlistPath);
 });
@@ -5049,7 +5144,7 @@ function streamFfmpegMp4(req, res, options) {
   }
 
   const args = ffmpegMp4Args({ ...options, mode });
-  console.log(`[Media FFmpeg] ${mode} start ${label}`);
+  console.log(`[Media FFmpeg] ${mode} start ${label} audioMap=${options.audioMap || '0:a:0?'}`);
   activeMediaFfmpegStreams += 1;
   const ffmpeg = spawn(FFMPEG_BIN, args);
   let started = false;
@@ -6541,10 +6636,26 @@ app.get('/api/media-info/:id', async (req, res) => {
 
   try {
     const info = await getCachedMediaInfo(filePath);
-    res.json(info);
+    const sidecarSubtitleTracks = findSubtitleTracks(entry.dir, entry.file).map((t, i) => ({
+      index: i,
+      label: t.label,
+      lang: t.lang,
+      ext: t.ext,
+      src: `/subtitles/${idx}/${i}`,
+      sidecar: true,
+    }));
+    res.json({ ...info, sidecarSubtitleTracks });
   } catch (e) {
     console.error(`[Media Info] Error for ${entry.file}:`, e.message);
-    res.json({ audioTracks: [], subtitleTracks: [], videoCodec: 'unknown', duration: 0 });
+    const sidecarSubtitleTracks = findSubtitleTracks(entry.dir, entry.file).map((t, i) => ({
+      index: i,
+      label: t.label,
+      lang: t.lang,
+      ext: t.ext,
+      src: `/subtitles/${idx}/${i}`,
+      sidecar: true,
+    }));
+    res.json({ audioTracks: [], subtitleTracks: [], sidecarSubtitleTracks, videoCodec: 'unknown', duration: 0 });
   }
 });
 
@@ -6588,7 +6699,7 @@ app.get('/api/subtitles/:id', (req, res) => {
   const idx = parseInt(req.params.id, 10);
   const entry = fileIndex[idx];
   if (!entry) return res.json([]);
-  const tracks = findSubtitleTracks(entry.dir, entry.file).map((t, i) => ({ index: i, label: t.label, lang: t.lang, src: `/subtitles/${idx}/${i}` }));
+  const tracks = findSubtitleTracks(entry.dir, entry.file).map((t, i) => ({ index: i, label: t.label, lang: t.lang, ext: t.ext, src: `/subtitles/${idx}/${i}`, sidecar: true }));
   res.json(tracks);
 });
 
@@ -6682,11 +6793,13 @@ app.get('/api/playback/local/:id/stream', (req, res) => {
     return jsonError(res, 400, 'INVALID_PLAYBACK_MODE', 'Local stream mode must be remux or audio');
   }
 
+  const audioSelection = playbackAudioSelectionFromReq(req);
+  console.log(`[Local Playback Stream] ${entry.file} mode=${mode} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap}`);
   return streamFfmpegMp4(req, res, {
     input: filePath,
     mode,
     startSec: playbackStartFromReq(req),
-    audioMap: playbackAudioMapFromReq(req),
+    audioMap: audioSelection.audioMap,
     remote: false,
     label: entry.file,
   });
@@ -6702,8 +6815,9 @@ app.get('/stream/:id', async (req, res) => {
 
   const userAgent = req.headers['user-agent'] || '';
   const audioIdx = parseInt(req.query.audio || '0');
+  const explicitAudioStream = parseInt(req.query.audioStream ?? '', 10);
   const subtitleIdx = parseInt(req.query.subtitle ?? '-1');
-  const forceTranscode = audioIdx > 0 || subtitleIdx >= 0;
+  const forceTranscode = audioIdx > 0 || (Number.isFinite(explicitAudioStream) && explicitAudioStream >= 0) || subtitleIdx >= 0;
 
   try {
     const mobilePlayback = isMobilePlaybackRequest(req);
@@ -6736,9 +6850,11 @@ app.get('/api/stream-seek/:id', async (req, res) => {
   const startSec = parseFloat(req.query.start) || 0;
   try {
     const mediaInfo = await getCachedMediaInfo(filePath);
+    const audioSelection = playbackAudioSelectionFromReq(req);
     const ffmpegArgs = [];
     if (startSec > 0) ffmpegArgs.push('-ss', String(startSec));
-    ffmpegArgs.push('-i', filePath, '-map', '0:v:0', '-map', '0:a:0?');
+    console.log(`[Stream Seek] ${entry.file} start=${startSec} map=${audioSelection.audioMap}`);
+    ffmpegArgs.push('-i', filePath, '-map', '0:v:0', '-map', audioSelection.audioMap);
     ffmpegArgs.push('-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2');
     ffmpegArgs.push('-avoid_negative_ts', 'make_zero');
     ffmpegArgs.push('-movflags', 'frag_keyframe+empty_moov+default_base_moof');
@@ -6924,9 +7040,10 @@ function remuxStream(req, res, filePath, entry) {
   req.on('close', () => ffmpeg.kill('SIGKILL'));
 }
 
-// --- Transcode function (unchanged) ---
+// --- Transcode with explicit video/audio/subtitle stream mapping ---
 function transcodeStream(req, res, filePath, mediaInfo, entry) {
-  const audioIdx = parseInt(req.query.audio) || 0;
+  const audioSelection = playbackAudioSelectionFromReq(req);
+  const audioIdx = audioSelection.audioIdx;
   const subtitleIdx = parseInt(req.query.subtitle);
   const hasSubtitle = !isNaN(subtitleIdx) && subtitleIdx >= 0;
   const startSec = parseFloat(req.query.start) || 0;
@@ -6934,6 +7051,10 @@ function transcodeStream(req, res, filePath, mediaInfo, entry) {
 
   const validAudioTracks = mediaInfo.audioTracks || [];
   const selectedAudioIdx = audioIdx < validAudioTracks.length ? audioIdx : 0;
+  const selectedAudioTrack = validAudioTracks[selectedAudioIdx] || validAudioTracks[0] || null;
+  const selectedAudioMap = audioSelection.audioStreamIdx !== null
+    ? audioSelection.audioMap
+    : (Number.isFinite(selectedAudioTrack?.index) ? `0:${selectedAudioTrack.index}?` : `0:a:${selectedAudioIdx}?`);
 
   const ffmpegArgs = [];
   if (startSec > 0) ffmpegArgs.push('-ss', String(startSec));
@@ -6941,22 +7062,26 @@ function transcodeStream(req, res, filePath, mediaInfo, entry) {
   ffmpegArgs.push('-map', '0:v:0');
   
   if (validAudioTracks.length > 0) {
-    ffmpegArgs.push('-map', `0:a:${selectedAudioIdx}`);
+    ffmpegArgs.push('-map', selectedAudioMap);
   } else {
     ffmpegArgs.push('-map', '0:a:0?');
   }
 
   let subtitleFilter = '';
+  const externalSubs = hasSubtitle ? findSubtitleTracks(path.dirname(filePath), entry.file) : [];
   if (hasSubtitle) {
-    const externalSubs = findSubtitleTracks(path.dirname(filePath), entry.file);
     if (externalSubs[subtitleIdx]) {
       const subFile = externalSubs[subtitleIdx].filePath;
-      subtitleFilter = `subtitles='${subFile.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
-    } else if (mediaInfo.subtitleTracks && mediaInfo.subtitleTracks[subtitleIdx]) {
-      ffmpegArgs.push('-map', `0:s:${subtitleIdx}`);
+      subtitleFilter = `subtitles='${ffmpegFilterEscape(subFile)}'`;
+    } else if (mediaInfo.subtitleTracks && mediaInfo.subtitleTracks[subtitleIdx - externalSubs.length]) {
+      const selectedSubtitleTrack = mediaInfo.subtitleTracks[subtitleIdx - externalSubs.length];
+      const subtitleMap = Number.isFinite(selectedSubtitleTrack?.index) ? `0:${selectedSubtitleTrack.index}` : `0:s:${subtitleIdx - externalSubs.length}`;
+      ffmpegArgs.push('-map', subtitleMap);
       ffmpegArgs.push('-c:s', 'mov_text');
     }
   }
+
+  console.log(`[Transcode] ${entry.file} start=${startSec} audioIdx=${selectedAudioIdx} audioStream=${selectedAudioTrack?.index ?? 'relative'} map=${selectedAudioMap} subtitle=${hasSubtitle ? subtitleIdx : 'off'}`);
 
   const videoCodec = (mediaInfo.videoCodec || 'unknown').toLowerCase();
   const isH264 = videoCodec === 'h264' || videoCodec === 'avc1' || videoCodec === 'avc';
@@ -7054,6 +7179,7 @@ app.get('/subtitles/:id/embedded/:streamIdx.vtt', (req, res) => {
     '-map', `0:${streamIdx}?`,
     '-vn',
     '-an',
+    '-c:s', 'webvtt',
     '-f', 'webvtt',
     'pipe:1',
   ]);
@@ -7348,11 +7474,13 @@ app.get('/api/playback/ftp', (req, res) => {
   }
 
   if (mode === 'remux' || mode === 'audio') {
+    const audioSelection = playbackAudioSelectionFromReq(req);
+    console.log(`[FTP Playback FFmpeg] ${remoteFilename(srcUrl)} mode=${mode} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap}`);
     return streamFfmpegMp4(req, res, {
       input: srcUrl,
       mode,
       startSec: playbackStartFromReq(req),
-      audioMap: playbackAudioMapFromReq(req),
+      audioMap: audioSelection.audioMap,
       remote: true,
       label: remoteFilename(srcUrl),
     });
@@ -7360,7 +7488,9 @@ app.get('/api/playback/ftp', (req, res) => {
 
   if (mode === 'hls') {
     const startSec = playbackStartFromReq(req);
-    const audioMap = playbackAudioMapFromReq(req);
+    const audioSelection = playbackAudioSelectionFromReq(req);
+    const audioMap = audioSelection.audioMap;
+    console.log(`[FTP Playback HLS] ${remoteFilename(srcUrl)} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioMap}`);
     const preset = mobileHlsPresetFromQuality(req.query.quality);
     const key = hlsSessionKey('ftp', srcUrl, startSec, `${audioMap}|${preset.key}`);
     const clientId = /^[a-zA-Z0-9_-]{8,80}$/.test(String(req.query.client || '')) ? String(req.query.client) : '';
@@ -7503,6 +7633,7 @@ app.get('/api/ftp/subtitle/:track.vtt', (req, res) => {
     '-map', `${mapTarget}?`,
     '-vn',
     '-an',
+    '-c:s', 'webvtt',
     '-f', 'webvtt',
     'pipe:1',
   ];
@@ -7546,11 +7677,12 @@ app.get('/api/ftp/stream', async (req, res) => {
   console.log(`[FTP Stream] final play URL: ${urls.transcodeUrl}`);
 
   const startSec = parseFloat(req.query.start) || 0;
-  const audioIdx = Math.max(0, parseInt(req.query.audio || '0', 10) || 0);
-  const audioStreamIdx = parseInt(req.query.audioStream ?? '', 10);
+  const audioSelection = playbackAudioSelectionFromReq(req);
+  const audioIdx = audioSelection.audioIdx;
+  const audioStreamIdx = audioSelection.audioStreamIdx;
   const mobilePlayback = isMobilePlaybackRequest(req);
   const copyVideo = !mobilePlayback && isRemoteDirectPlayable(srcUrl) && remoteVideoCanCopy(srcUrl);
-  console.log(`[FTP] Transcoding: ${remoteFilename(srcUrl)} start=${startSec}`);
+  console.log(`[FTP] Transcoding: ${remoteFilename(srcUrl)} start=${startSec} audioIdx=${audioIdx} audioStream=${audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap}`);
 
   const ffmpegArgs = [
     '-hide_banner',

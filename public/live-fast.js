@@ -12,6 +12,12 @@
     isLiveMode=true;
     currentStreamId=null;
     liveDebug('open', { channelId, channelName });
+    if(typeof resetSeekPreview==='function')resetSeekPreview();
+    availableSubs=[];
+    availableAudio=[];
+    currentAudioIdx=0;
+    currentSpeed=1;
+    try{vid.playbackRate=1;}catch{}
 
     if(hlsInstance){try{hlsInstance.destroy();}catch{} hlsInstance=null;}
     if(typeof vid._svLiveCleanup==='function'){
@@ -29,6 +35,9 @@
     if(typeof closeAllDropdowns==='function')closeAllDropdowns();
     if(typeof hidePlayerNotice==='function')hidePlayerNotice();
     if(typeof hideSeriesPlayerBar==='function')hideSeriesPlayerBar();
+    if(typeof renderAudioTracks==='function')renderAudioTracks();
+    if(typeof renderSubtitleTracks==='function')renderSubtitleTracks();
+    if(typeof updateSpeedBtn==='function')updateSpeedBtn();
 
     const title=document.getElementById('playerTitle');
     const sub=document.getElementById('playerSubTitle');
@@ -45,6 +54,7 @@
     document.getElementById('playerModal').classList.add('open');
     spinner?.classList.add('on');
     document.body.style.overflow='hidden';
+    if(typeof refreshPlayerControlVisibility==='function')refreshPlayerControlVisibility();
     if(typeof showUI==='function')showUI();
 
     const proxySrc = '/live/' + encodeURIComponent(channelId) + '/playlist.m3u8?fast=1';
@@ -210,6 +220,7 @@
 
         hlsInstance.on(Hls.Events.MANIFEST_PARSED,()=>{
           liveDebug('manifest parsed');
+          if(typeof refreshPlayerControlVisibility==='function')refreshPlayerControlVisibility();
           vid.play().catch(()=>{});
         });
 

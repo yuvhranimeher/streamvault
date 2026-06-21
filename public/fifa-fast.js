@@ -4,6 +4,7 @@
   const CACHE_KEY = 'streamvault:fifa-live:last-real:v1';
   const FAST_PAST_MATCH_LIMIT = 6;
   const FAST_FORWARD_MATCH_LIMIT = 12;
+  const HALFTIME_COLOR = '#ef4444';
 
   function clean(value){
     const text = String(value == null ? '' : value).trim();
@@ -26,6 +27,7 @@
     try{
       const payload = window.__svFifaCachedPayload || JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
       if(!hasRealData(payload))return null;
+      if(payloadHasActiveMatch(payload))return null;
       return {
         ...payload,
         stale:true,
@@ -54,15 +56,64 @@
     return [provider(match), match.id, match.leagueSlug || ''].filter(Boolean).join(':');
   }
 
+  function normalizeStatusToken(value){
+    const raw = clean(value).toUpperCase().replace(/[\s.-]+/g,'_');
+    const compact = raw.replace(/_/g,'');
+    if(!raw)return '';
+    if(['HT','BT','HALFTIME','HALFTIMEBREAK','HALF_TIME','HALF_TIME_BREAK','BREAK_TIME'].includes(raw) || compact === 'HALFTIME')return 'HALFTIME';
+    if(['1H','FIRST_HALF','FIRSTHALF','STATUS_FIRST_HALF'].includes(raw) || compact === 'FIRSTHALF')return 'FIRST_HALF';
+    if(['2H','SECOND_HALF','SECONDHALF','STATUS_SECOND_HALF'].includes(raw) || compact === 'SECONDHALF')return 'SECOND_HALF';
+    if(['ET','EXTRA_TIME','EXTRATIME','P'].includes(raw) || compact === 'EXTRATIME')return 'EXTRA_TIME';
+    if(['LIVE','IN','IN_PROGRESS','INPROGRESS','STATUS_IN_PROGRESS','ONGOING','PLAYING'].includes(raw) || compact === 'INPROGRESS')return 'LIVE';
+    if(['FT','FINAL','STATUS_FINAL','FULL_TIME','FULLTIME','FINISHED','COMPLETE','COMPLETED','AET','PEN','PENALTY_SHOOTOUT','PENALTYSHOOTOUT'].includes(raw) || compact === 'FULLTIME')return 'FULL_TIME';
+    if(['POSTPONED','PPD','PST','CANCELED','CANCELLED','CANC','SUSP','SUSPENDED','ABD','ABANDONED'].includes(raw))return 'POSTPONED';
+    if(['NS','TBD','UPCOMING','SCHEDULED','PRE','PRE_GAME','PREGAME','NOT_STARTED'].includes(raw) || compact === 'NOTSTARTED')return 'UPCOMING';
+    return raw;
+  }
+
   function status(match){
-    const raw = clean(match && (match.status || match.state || match.statusType)).toUpperCase();
-    if(raw === 'LIVE' || raw === 'IN' || raw === 'IN_PROGRESS' || raw === 'HT')return { label:'LIVE', className:'is-live' };
-    if(raw === 'FT' || raw === 'FINAL' || raw === 'STATUS_FINAL')return { label:'FINAL', className:'is-result', extraClass:'is-final' };
-    return { label:'UPCOMING', className:'is-upcoming' };
+    const tokens = [
+      match && match.status,
+      match && match.state,
+      match && match.statusType,
+      match && match.phase,
+      match && match.period,
+      match && match.statusText
+    ];
+    const clock = clean(match && (match.minute || match.clock || match.displayClock || match.time));
+    if(/\b(?:HT|HALF\s*TIME|HALFTIME)\b/i.test(clock))tokens.unshift('HALFTIME');
+    let code = '';
+    for(const token of tokens){
+      code = normalizeStatusToken(token);
+      if(code)break;
+    }
+    if(!code && match && match.live)code = 'LIVE';
+    if(!code)code = 'UPCOMING';
+    const running = code === 'LIVE' || code === 'FIRST_HALF' || code === 'SECOND_HALF' || code === 'EXTRA_TIME';
+    const halftime = code === 'HALFTIME';
+    const finished = code === 'FULL_TIME' || code === 'FINISHED';
+    const upcoming = code === 'UPCOMING';
+    const postponed = code === 'POSTPONED';
+    return {
+      code,
+      running,
+      halftime,
+      finished,
+      upcoming,
+      postponed,
+      active:running || halftime,
+      label:halftime ? 'Half Time' : (finished ? 'FINAL' : (postponed ? 'POSTPONED' : (upcoming ? 'UPCOMING' : 'LIVE'))),
+      className:halftime ? 'is-halftime' : (finished ? 'is-result' : (postponed || upcoming ? 'is-upcoming' : 'is-live')),
+      extraClass:halftime ? 'is-halftime' : (finished ? 'is-final' : '')
+    };
+  }
+
+  function payloadHasActiveMatch(payload){
+    return ['liveMatches','upcomingMatches','recentResults'].some(name=>Array.isArray(payload && payload[name]) && payload[name].some(match=>status(match).active));
   }
 
   function updateLiveShortcut(payload){
-    const live = Array.isArray(payload && payload.liveMatches) && payload.liveMatches.some(match=>status(match).className === 'is-live');
+    const live = Array.isArray(payload && payload.liveMatches) && payload.liveMatches.some(match=>status(match).active);
     document.documentElement.classList.toggle('sv-fifa-match-live', !!live);
     const btn = document.getElementById('bnLiveMatch');
     if(btn){
@@ -83,10 +134,29 @@
     return date.toLocaleString([], { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
   }
 
+  function clockBaseSeconds(match){
+    const raw = clean(match && (match.minute || match.clock || match.displayClock || match.time));
+    if(!raw || /\b(?:HT|HALF\s*TIME|HALFTIME)\b/i.test(raw))return null;
+    const added = raw.match(/(\d+)\s*\+\s*(\d+)/);
+    if(added)return (Number(added[1]) + Number(added[2])) * 60;
+    const colon = raw.match(/(\d{1,3})\s*:\s*(\d{1,2})/);
+    if(colon)return Number(colon[1]) * 60 + Math.min(59, Number(colon[2]) || 0);
+    const number = raw.match(/\d{1,3}/);
+    return number ? Number(number[0]) * 60 : null;
+  }
+
+  function formatClock(seconds){
+    if(!Number.isFinite(seconds))return '';
+    const total = Math.max(0, Math.floor(seconds));
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2,'0')}`;
+  }
+
   function matchTime(match){
     const state = status(match);
-    if(state.className === 'is-live')return clean(match && (match.minute || match.clock || match.displayClock || match.statusText)) || 'Live';
-    if(state.className === 'is-result')return timeLabel(match && (match.startTime || match.kickoff)) || 'FT';
+    if(state.running)return formatClock(clockBaseSeconds(match)) || 'Live';
+    if(state.halftime)return 'Half Time';
+    if(state.finished)return 'FT';
+    if(state.postponed)return 'Postponed';
     return timeLabel(match && (match.startTime || match.kickoff));
   }
 
@@ -101,25 +171,16 @@
   function countdownText(match){
     if(!match)return '';
     const state = status(match);
-    if(state.className === 'is-live'){
-      const start = new Date((match && (match.startTime || match.kickoff)) || '');
-      if(!Number.isNaN(start.getTime())){
-        const hours = Math.max(0, (Date.now() - start.getTime()) / 3600000);
-        return `${hours.toFixed(2)} Live`;
-      }
-      const rawClock = clean(match && (match.minute || match.clock || match.displayClock || match.time));
-      const clock = rawClock.match(/(\d{1,3})(?:\s*\+\s*(\d{1,2}))?/);
-      if(clock){
-        const minutes = Number(clock[1]) + Number(clock[2] || 0);
-        return `${Math.max(0, minutes / 60).toFixed(2)} Live`;
-      }
-      return '--.-- Live';
+    if(state.halftime)return 'Half Time';
+    if(state.finished)return 'FT';
+    if(state.postponed)return 'Postponed';
+    if(state.running){
+      const base = window.__svFifaFastCountdownBaseSeconds;
+      const startedAt = window.__svFifaFastCountdownStartedAt || Date.now();
+      const seconds = Number.isFinite(base) ? base + Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) : clockBaseSeconds(match);
+      return formatClock(seconds) || '--:--';
     }
-    if(state.className === 'is-result')return 'Final';
-    const start = new Date((match && (match.startTime || match.kickoff)) || '');
-    if(Number.isNaN(start.getTime()))return '--.-- hours left';
-    const hours = Math.max(0, (start.getTime() - Date.now()) / 3600000);
-    return `${hours.toFixed(2)} hours left`;
+    return timeLabel(match && (match.startTime || match.kickoff));
   }
 
   function startCountdown(match){
@@ -132,16 +193,35 @@
     if(!match){
       el.textContent = '';
       el.hidden = true;
+      el.classList.remove('is-live','is-halftime','is-final','is-upcoming');
+      el.style.removeProperty('color');
+      el.style.removeProperty('border-color');
+      el.style.removeProperty('background');
       return;
     }
+    const state = status(match);
+    window.__svFifaFastCountdownBaseSeconds = state.running ? clockBaseSeconds(match) : null;
+    window.__svFifaFastCountdownStartedAt = Date.now();
     const update = ()=>{
       el.textContent = countdownText(match);
       el.hidden = !el.textContent;
+      el.classList.toggle('is-live', state.running);
+      el.classList.toggle('is-halftime', state.halftime);
+      el.classList.toggle('is-final', state.finished);
+      el.classList.toggle('is-upcoming', state.upcoming || state.postponed);
+      if(state.halftime){
+        el.style.setProperty('color', HALFTIME_COLOR);
+        el.style.setProperty('border-color', 'rgba(239,68,68,.55)');
+        el.style.setProperty('background', 'rgba(239,68,68,.12)');
+      }else{
+        el.style.removeProperty('color');
+        el.style.removeProperty('border-color');
+        el.style.removeProperty('background');
+      }
     };
     update();
-    const state = status(match);
-    if(state.className === 'is-live' || state.className === 'is-upcoming'){
-      window.__svFifaFastCountdownTimer = setInterval(update, 30000);
+    if(state.running){
+      window.__svFifaFastCountdownTimer = setInterval(update, 1000);
     }
   }
 
@@ -223,16 +303,29 @@
     return `<span class="fifa-team-name">${flagHtml}<span>${esc(teamName(match, side, fallback))}</span></span>`;
   }
 
+  function statusStyle(state){
+    return state && state.halftime ? ` style="color:${HALFTIME_COLOR};font-weight:950"` : '';
+  }
+
+  function statusLabelHtml(match, state){
+    const current = state || status(match);
+    const time = matchTime(match);
+    const dot = current.running ? '<span class="fifa-live-dot" aria-hidden="true"></span>' : '';
+    const label = `<span data-fifa-status-text${statusStyle(current)}>${esc(current.label)}</span>`;
+    const clock = time && time !== current.label ? `<span data-fifa-clock${statusStyle(current)}>${esc(time)}</span>` : '';
+    return `${dot}${label}${clock}`;
+  }
+
   function renderFeatured(match, key){
     const state = status(match);
     return `
-      <article class="fifa-featured-card-inner ${state.className} ${state.extraClass || ''} is-clickable" role="button" tabindex="0" data-fifa-match-key="${esc(key)}" aria-label="View details for ${esc(teamName(match,'home','home'))} versus ${esc(teamName(match,'away','away'))}">
+      <article class="fifa-featured-card-inner ${state.className} ${state.extraClass || ''} is-clickable" role="button" tabindex="0" data-fifa-match-key="${esc(key)}" data-fifa-status-code="${esc(state.code)}" aria-label="View details for ${esc(teamName(match,'home','home'))} versus ${esc(teamName(match,'away','away'))}">
         <div class="fifa-feature-scoreboard">
           <div class="fifa-feature-team fifa-feature-team-home">${teamHtml(match, 'home', 'Home')}</div>
           <div class="fifa-feature-score" aria-label="Featured match score">
-            <span>${esc(score(match && match.homeScore))}</span>
+            <span data-fifa-score-side="home">${esc(score(match && match.homeScore))}</span>
             <b>-</b>
-            <span>${esc(score(match && match.awayScore))}</span>
+            <span data-fifa-score-side="away">${esc(score(match && match.awayScore))}</span>
           </div>
           <div class="fifa-feature-team fifa-feature-team-away">${teamHtml(match, 'away', 'Away')}</div>
         </div>
@@ -246,14 +339,13 @@
     const kind = options && options.kind ? options.kind : (state.className === 'is-result' ? 'past' : 'forward');
     const startAttr = options && options.start ? ' data-fifa-carousel-start="1"' : '';
     return `
-      <article class="fifa-match-card ${state.className} ${state.extraClass || ''} is-clickable" role="button" tabindex="0" data-fifa-match-key="${esc(key)}" data-fifa-card-kind="${esc(kind)}"${startAttr} aria-label="View details for ${esc(teamName(match,'home','home'))} versus ${esc(teamName(match,'away','away'))}">
-        <div class="fifa-card-label ${state.className}">
-          ${state.className === 'is-live' ? '<span class="fifa-live-dot"></span>' : ''}${esc(state.label)}
-          <span>${esc(matchTime(match))}</span>
+      <article class="fifa-match-card ${state.className} ${state.extraClass || ''} is-clickable" role="button" tabindex="0" data-fifa-match-key="${esc(key)}" data-fifa-status-code="${esc(state.code)}" data-fifa-card-kind="${esc(kind)}"${startAttr} aria-label="View details for ${esc(teamName(match,'home','home'))} versus ${esc(teamName(match,'away','away'))}">
+        <div class="fifa-card-label ${state.className} ${state.extraClass || ''}" data-fifa-status-code="${esc(state.code)}">
+          ${statusLabelHtml(match, state)}
         </div>
         <div class="fifa-scoreboard">
-          <div class="fifa-team-line"><span>${teamHtml(match, 'home', 'Home')}</span><strong>${esc(score(match && match.homeScore))}</strong></div>
-          <div class="fifa-team-line"><span>${teamHtml(match, 'away', 'Away')}</span><strong>${esc(score(match && match.awayScore))}</strong></div>
+          <div class="fifa-team-line"><span>${teamHtml(match, 'home', 'Home')}</span><strong data-fifa-score-side="home">${esc(score(match && match.homeScore))}</strong></div>
+          <div class="fifa-team-line"><span>${teamHtml(match, 'away', 'Away')}</span><strong data-fifa-score-side="away">${esc(score(match && match.awayScore))}</strong></div>
         </div>
         <div class="fifa-match-meta">${esc(matchMeta(match))}</div>
         <div class="fifa-detail-cta">View details</div>
@@ -281,8 +373,23 @@
 
   function signature(payload){
     const carousel = carouselMatches(payload || {});
-    const matches = carousel.matches.map(match=>[match && match.id, match && match.homeScore, match && match.awayScore, match && match.status, match && match.startTime].join(':'));
-    return [payload.generatedAt || '', payload.source || '', !!payload.stale, matches.join('|')].join('::');
+    const matches = carousel.matches.map(match=>[
+      match && match.id,
+      match && match.homeScore,
+      match && match.awayScore,
+      status(match).code,
+      match && (match.minute || match.clock || match.displayClock || match.time || ''),
+      match && match.startTime
+    ].join(':'));
+    return [payload.source || '', !!payload.stale, matches.join('|')].join('::');
+  }
+
+  function pickFeatured(live, upcoming, recent){
+    const running = live.find(match=>status(match).running);
+    if(running)return running;
+    const halftime = live.find(match=>status(match).halftime);
+    if(halftime)return halftime;
+    return live[0] || upcoming[0] || recent[0] || null;
   }
 
   function positionStrip(stripEl, startIndex){
@@ -306,7 +413,7 @@
     const standings = Array.isArray(payload.standings) ? payload.standings : [];
     const carousel = carouselMatches(payload);
     const matches = carousel.matches;
-    const featured = live[0] || upcoming[0] || recent[0] || null;
+    const featured = pickFeatured(live, upcoming, recent);
     const sig = signature(payload);
     updateLiveShortcut(payload);
     if(root.dataset.svFifaFastSignature === sig)return true;
@@ -324,9 +431,11 @@
 
     const featuredEl = document.getElementById('fifaFeaturedMatch');
     if(featuredEl){
-      const isLive = featured && status(featured).className === 'is-live';
-      featuredEl.classList.toggle('is-live-featured', !!isLive);
-      featuredEl.classList.toggle('is-live', !!isLive);
+      const featuredState = featured ? status(featured) : null;
+      featuredEl.classList.toggle('is-live-featured', !!featuredState && featuredState.active);
+      featuredEl.classList.toggle('is-live', !!featuredState && featuredState.running);
+      featuredEl.classList.toggle('is-halftime', !!featuredState && featuredState.halftime);
+      featuredEl.classList.toggle('is-final', !!featuredState && featuredState.finished);
       featuredEl.innerHTML = featured
         ? renderFeatured(featured, matchKey(featured))
         : '<div class="fifa-featured-empty"><div class="fifa-card-label">Real data</div><div class="fifa-empty-title">No live matches right now</div><div class="fifa-match-meta">Waiting for the next real fixture update</div></div>';

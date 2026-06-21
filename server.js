@@ -2014,7 +2014,7 @@ app.post('/api/channels/reload', (req, res) => {
 
 const FIFA_LIVE_COMPETITION = 'FIFA / Football Live';
 const FIFA_LIVE_REAL_UNAVAILABLE = 'Real live football data is unavailable right now';
-const FIFA_LIVE_FAST_CACHE_MS = Math.min(30000, Math.max(20000, Number(process.env.FIFA_LIVE_CACHE_MS || 25000)));
+const FIFA_LIVE_FAST_CACHE_MS = Math.min(15000, Math.max(5000, Number(process.env.FIFA_LIVE_CACHE_MS || 10000)));
 const FIFA_LIVE_SLOW_CACHE_MS = Math.min(15 * 60 * 1000, Math.max(5 * 60 * 1000, Number(process.env.FIFA_LIVE_SLOW_CACHE_MS || 5 * 60 * 1000)));
 const FIFA_LIVE_UPSTREAM_TIMEOUT_MS = Math.min(12000, Math.max(4000, Number(process.env.FIFA_LIVE_TIMEOUT_MS || 7000)));
 const FIFA_LIVE_API_FOOTBALL_BASE = 'https://v3.football.api-sports.io';
@@ -2047,6 +2047,43 @@ function svFifaFirst(...values) {
 
 function svFifaArray(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function svFifaNormalizeStatusName(value, elapsed = null) {
+  const raw = String(value || '').trim().toUpperCase().replace(/[\s.-]+/g, '_');
+  const compact = raw.replace(/_/g, '');
+  if (!raw && elapsed) return 'LIVE';
+  if (['HT', 'BT', 'HALFTIME', 'HALFTIMEBREAK', 'HALF_TIME', 'HALF_TIME_BREAK', 'BREAK_TIME'].includes(raw) || compact === 'HALFTIME') return 'HALFTIME';
+  if (['1H', 'FIRST_HALF', 'FIRSTHALF', 'STATUS_FIRST_HALF'].includes(raw) || compact === 'FIRSTHALF') return 'FIRST_HALF';
+  if (['2H', 'SECOND_HALF', 'SECONDHALF', 'STATUS_SECOND_HALF'].includes(raw) || compact === 'SECONDHALF') return 'SECOND_HALF';
+  if (['ET', 'EXTRA_TIME', 'EXTRATIME', 'P'].includes(raw) || compact === 'EXTRATIME') return 'EXTRA_TIME';
+  if (['LIVE', 'IN', 'IN_PROGRESS', 'INPROGRESS', 'STATUS_IN_PROGRESS', 'ONGOING', 'PLAYING', 'INT'].includes(raw) || compact === 'INPROGRESS') return 'LIVE';
+  if (['FT', 'FINAL', 'STATUS_FINAL', 'FULL_TIME', 'FULLTIME', 'FINISHED', 'COMPLETE', 'COMPLETED', 'AET', 'PEN', 'PENALTY_SHOOTOUT', 'PENALTYSHOOTOUT'].includes(raw) || compact === 'FULLTIME') return 'FULL_TIME';
+  if (['NS', 'TBD', 'UPCOMING', 'SCHEDULED', 'PRE', 'PRE_GAME', 'PREGAME', 'NOT_STARTED'].includes(raw) || compact === 'NOTSTARTED') return 'UPCOMING';
+  if (['POSTPONED', 'PPD', 'PST', 'CANCELED', 'CANCELLED', 'CANC', 'SUSP', 'SUSPENDED', 'ABD', 'ABANDONED'].includes(raw)) return 'POSTPONED';
+  return raw || 'UPCOMING';
+}
+
+function svFifaStatusIsRunning(status) {
+  return ['LIVE', 'FIRST_HALF', 'SECOND_HALF', 'EXTRA_TIME'].includes(svFifaNormalizeStatusName(status));
+}
+
+function svFifaStatusIsActive(status) {
+  const code = svFifaNormalizeStatusName(status);
+  return svFifaStatusIsRunning(code) || code === 'HALFTIME';
+}
+
+function svFifaStatusIsFinished(status) {
+  const code = svFifaNormalizeStatusName(status);
+  return code === 'FULL_TIME' || code === 'FINISHED';
+}
+
+function svFifaPayloadHasActiveMatch(payload) {
+  return [
+    payload?.liveMatches,
+    payload?.upcomingMatches,
+    payload?.recentResults
+  ].some(list => svFifaArray(list).some(match => svFifaStatusIsActive(match?.status)));
 }
 
 function svFifaNumber(value, fallback = null) {
@@ -2160,7 +2197,10 @@ function svFifaCachePayload(payload) {
     fifaLiveCache = null;
     return payload;
   }
-  const ttl = payload?.liveMatches?.length ? FIFA_LIVE_FAST_CACHE_MS : FIFA_LIVE_SLOW_CACHE_MS;
+  const active = svFifaPayloadHasActiveMatch(payload);
+  const ttl = active
+    ? (payload?.stale ? Math.min(5000, FIFA_LIVE_FAST_CACHE_MS) : FIFA_LIVE_FAST_CACHE_MS)
+    : FIFA_LIVE_SLOW_CACHE_MS;
   fifaLiveCache = { expiresAt: Date.now() + ttl, payload };
   if (payload && payload.ok && !payload.stale && payload.source !== 'none') fifaLiveLastGood = payload;
   return payload;
@@ -2603,33 +2643,15 @@ function svFifaNormalizeApiFootballFixture(item) {
   const teams = item?.teams || {};
   const goals = item?.goals || {};
   const statusInfo = fixture.status || {};
-  const short = String(statusInfo.short || '').toUpperCase();
-  const statusMap = {
-    NS: 'UPCOMING',
-    TBD: 'UPCOMING',
-    '1H': 'LIVE',
-    '2H': 'LIVE',
-    ET: 'LIVE',
-    BT: 'LIVE',
-    P: 'LIVE',
-    SUSP: 'POSTPONED',
-    INT: 'LIVE',
-    HT: 'HT',
-    FT: 'FT',
-    AET: 'FT',
-    PEN: 'FT',
-    PST: 'POSTPONED',
-    CANC: 'POSTPONED',
-    ABD: 'POSTPONED'
-  };
-  const status = statusMap[short] || (statusInfo.elapsed ? 'LIVE' : 'UPCOMING');
+  const short = String(statusInfo.short || statusInfo.long || '').toUpperCase();
+  const status = svFifaNormalizeStatusName(short, statusInfo.elapsed);
   const isUpcoming = status === 'UPCOMING';
-  const isLive = status === 'LIVE' || status === 'HT';
+  const isRunning = svFifaStatusIsRunning(status);
   const startTime = svFifaIsoDate(new Date(fixture.date || Date.now()));
   const match = {
     id: String(svFifaFirst(fixture.id, `${teams.home?.name || 'home'}-${teams.away?.name || 'away'}-${startTime}`)),
     status,
-    minute: isLive && statusInfo.elapsed ? `${statusInfo.elapsed}'` : (status === 'HT' ? 'HT' : null),
+    minute: isRunning && statusInfo.elapsed ? `${statusInfo.elapsed}'` : (status === 'HALFTIME' ? 'HT' : null),
     homeTeam: String(teams.home?.name || ''),
     awayTeam: String(teams.away?.name || ''),
     homeScore: isUpcoming ? null : svFifaNumber(goals.home),
@@ -2698,7 +2720,7 @@ async function svFifaFetchApiFootball() {
     .filter(match => match.homeTeam && match.awayTeam && match.status === 'UPCOMING');
   const recentResults = svFifaArray(recentRes.value?.response)
     .map(svFifaNormalizeApiFootballFixture)
-    .filter(match => match.homeTeam && match.awayTeam && match.status === 'FT');
+    .filter(match => match.homeTeam && match.awayTeam && svFifaStatusIsFinished(match.status));
   const standings = standingsRes.status === 'fulfilled' ? svFifaNormalizeApiFootballStandings(standingsRes.value) : [];
   return svFifaFinalizePayload({
     liveMatches: svFifaDedupeMatches(liveMatches),
@@ -2712,9 +2734,15 @@ async function svFifaFetchApiFootball() {
 function svFifaEspnEventStatus(event, competition) {
   const type = competition?.status?.type || event?.status?.type || {};
   const state = String(type.state || '').toLowerCase();
-  const detail = String(type.shortDetail || type.detail || type.description || '').toUpperCase();
-  if (state === 'in') return detail.includes('HT') ? 'HT' : 'LIVE';
-  if (type.completed || state === 'post') return 'FT';
+  const detail = String(svFifaFirst(type.shortDetail, type.detail, type.description, type.name)).toUpperCase();
+  if (state === 'in') {
+    if (/\b(?:HT|HALF\s*TIME|HALFTIME)\b/.test(detail)) return 'HALFTIME';
+    if (/1ST|FIRST/.test(detail)) return 'FIRST_HALF';
+    if (/2ND|SECOND/.test(detail)) return 'SECOND_HALF';
+    if (/EXTRA|ET\b/.test(detail)) return 'EXTRA_TIME';
+    return 'LIVE';
+  }
+  if (type.completed || state === 'post') return 'FULL_TIME';
   if (detail.includes('POSTPONED') || detail.includes('PPD')) return 'POSTPONED';
   return 'UPCOMING';
 }
@@ -2737,7 +2765,7 @@ function svFifaNormalizeEspnEvent(event, leagueSlug = 'fifa.world') {
   const match = {
     id: String(event?.id || competition?.id || `${home.team?.displayName || 'home'}-${away.team?.displayName || 'away'}-${startTime}`),
     status,
-    minute: status === 'LIVE' && displayClock ? displayClock : (status === 'HT' ? 'HT' : null),
+    minute: svFifaStatusIsRunning(status) && displayClock ? displayClock : (status === 'HALFTIME' ? 'HT' : null),
     homeTeam: String(home.team?.displayName || home.team?.shortDisplayName || ''),
     awayTeam: String(away.team?.displayName || away.team?.shortDisplayName || ''),
     homeScore: isUpcoming ? null : svFifaNumber(home.score),
@@ -2843,12 +2871,12 @@ async function svFifaFetchEspn() {
   }
   const events = svFifaDedupeMatches(scoreboards.flatMap(board => svFifaArray(board?.events).map(event => svFifaNormalizeEspnEvent(event, detailLeague))))
     .filter(match => match.homeTeam && match.awayTeam);
-  const liveMatches = events.filter(match => match.status === 'LIVE' || match.status === 'HT');
+  const liveMatches = events.filter(match => svFifaStatusIsActive(match.status));
   const upcomingMatches = events
     .filter(match => match.status === 'UPCOMING')
     .sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
   const recentResults = events
-    .filter(match => match.status === 'FT')
+    .filter(match => svFifaStatusIsFinished(match.status))
     .sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
   const headlines = svFifaNormalizeEspnHeadlines(
     scoreboards.flatMap(board => svFifaArray(board?.events).flatMap(event => svFifaArray(event?.competitions?.[0]?.headlines)))
@@ -2885,8 +2913,10 @@ async function svFifaFetchRealPayload() {
 
 async function svGetFifaLivePayload(options = {}) {
   const now = Date.now();
-  if (fifaLiveCache && fifaLiveCache.expiresAt > now) return fifaLiveCache.payload;
-  if (options.allowStale && fifaLiveLastGood) {
+  const cachedIsActive = svFifaPayloadHasActiveMatch(fifaLiveCache?.payload);
+  if (fifaLiveCache && fifaLiveCache.expiresAt > now && !(options.forceFresh && cachedIsActive)) return fifaLiveCache.payload;
+  const lastGoodIsActive = svFifaPayloadHasActiveMatch(fifaLiveLastGood);
+  if (options.allowStale && fifaLiveLastGood && !(options.forceFresh && lastGoodIsActive)) {
     svFifaRefreshLiveCache();
     return svFifaMarkStale(fifaLiveLastGood, 'cache');
   }
@@ -3571,7 +3601,8 @@ app.get('/api/fifa-live', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store, max-age=0, must-revalidate');
   res.setHeader('Pragma', 'no-cache');
   try {
-    const payload = await svGetFifaLivePayload({ allowStale: true });
+    const forceFresh = req.query?.live === '1' || req.query?.fresh === '1' || req.query?.priority === '1';
+    const payload = await svGetFifaLivePayload({ allowStale: true, forceFresh });
     res.setHeader('X-StreamVault-Fifa-Cache', payload?.stale ? 'stale-refreshing' : 'fresh');
     res.json(payload);
   } catch (e) {

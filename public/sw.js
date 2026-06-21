@@ -1,5 +1,5 @@
-const SV_CACHE_VERSION = '20260621-real-browser-track-loading1';
-const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_f24d652_REAL';
+const SV_CACHE_VERSION = '20260621-media-fallback-sub-dd1';
+const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_media_fallback_submenu';
 const SV_POSTER_CACHE = `streamvault-posters-${SV_CACHE_VERSION}`;
 const SV_ASSET_CACHE = `streamvault-assets-${SV_CACHE_VERSION}`;
 const SV_API_CACHE = `streamvault-api-${SV_CACHE_VERSION}`;

@@ -577,8 +577,9 @@ nav:not(.solid){background:linear-gradient(to bottom,rgba(0,0,0,.88),transparent
 .vol-slider::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:#fff;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.4)}
 .vol-slider::-moz-range-thumb{width:13px;height:13px;border:none;border-radius:50%;background:#fff;cursor:pointer}
 .time-display{font-size:.76rem;color:rgba(255,255,255,.65);font-variant-numeric:tabular-nums;white-space:nowrap}
-.player-dropdown{position:fixed;z-index:99999;background:#1a1a22;border:1px solid rgba(255,255,255,.1);border-radius:14px;min-width:190px;overflow:hidden;box-shadow:0 16px 56px rgba(0,0,0,.95),0 0 0 1px rgba(255,255,255,.04);display:none;}
+.player-dropdown{position:fixed;z-index:99999;background:#1a1a22;border:1px solid rgba(255,255,255,.1);border-radius:14px;min-width:190px;max-height:calc(100dvh - 16px);overflow-y:auto;overscroll-behavior:contain;box-shadow:0 16px 56px rgba(0,0,0,.95),0 0 0 1px rgba(255,255,255,.04);display:none;}
 .player-dropdown.open{display:block;animation:dropIn .16s ease}
+#subList,#audioList{max-height:min(280px,calc(100dvh - 96px));overflow-y:auto;overscroll-behavior:contain;}
 @keyframes dropIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 .pd-header{font-size:.6rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#444;padding:12px 16px 8px;border-bottom:1px solid rgba(255,255,255,.06);}
 .pd-item{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;font-size:.87rem;color:#aaa;cursor:pointer;transition:background .14s;gap:12px;min-height:46px;}

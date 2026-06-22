@@ -1,6 +1,6 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260621-stable-tracks-layout1';
+const SV_ASSET_VERSION = '20260622-audio-playable-loading1';
 function mediaFixLog(step, data={}){
   try{console.warn(`[${SV_MEDIA_FIX_MARKER}] ${step}`, data);}catch(_){}
 }
@@ -33,6 +33,44 @@ function toggleTheme(){
   applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
 }
 applyTheme(preferredTheme(), false);
+function svInstallHorizontalWheelGuard(){
+  if(window.__svHorizontalWheelGuardInstalled)return;
+  window.__svHorizontalWheelGuardInstalled = true;
+  const selector = [
+    '.cards-track',
+    '.featured-track',
+    '#heroCards',
+    '.sv-exclusive-hero-track',
+    '.live-home-track',
+    '.sm-related-track',
+    '.detail-related-track',
+    '.detail-scroll-track',
+    '.library-row',
+    '#mdSimilarTrack',
+    '#smSimilarTrack',
+    '#smRelatedSeriesTrack',
+    '#smRelatedMoviesTrack',
+    '#smMoreSeriesTrack',
+    '.fifa-match-strip',
+    '.fifa-match-strip-wrap',
+    '.fifa-headline-strip'
+  ].join(',');
+  document.addEventListener('wheel', event=>{
+    const track = event.target?.closest?.(selector);
+    if(!track || !track.isConnected)return;
+    if(track.scrollWidth <= track.clientWidth + 1)return;
+    const absX = Math.abs(event.deltaX || 0);
+    const absY = Math.abs(event.deltaY || 0);
+    if(absY > absX && !event.shiftKey)return;
+    if(!event.cancelable)return;
+    event.preventDefault();
+    const amount = event.shiftKey && absY >= absX
+      ? event.deltaY
+      : (absX ? event.deltaX : event.deltaY);
+    track.scrollLeft += amount;
+  }, {passive:false});
+}
+svInstallHorizontalWheelGuard();
 // ══════════════════ STATE ══════════════════
 let trendingMovies = [], trendingSeries = [];
 let _rowSeen = new Map();
@@ -73,8 +111,16 @@ let seekPreviewHideTimer=null;
 let playerDomCache=null;
 let playerProgressRaf=0;
 let playerProgressPending=null;
+let playerBufferedRaf=0;
+let playerBufferedPending=null;
+let playerSeekDragRaf=0;
+let playerSeekDragPending=null;
 let playerUiClock=null;
+let playerUiClockLast=0;
 let playerPointerRaf=0;
+let playerLastPausedState=null;
+let subtitleOverlayRaf=0;
+let subtitleOverlayLastText='';
 let currentLiveCat='All';
 let isLiveMode=false;
 let hlsInstance=null;
@@ -170,6 +216,12 @@ function trackView(id){}
 function updateWatchProgress(id, currentTime, duration){}
 let availableAudio = [];
 let currentAudioIdx = 0;
+const SV_AUDIO_SWITCH_LOCKED = true;
+const SV_STARTUP_AUDIO_TIMEOUT_MS = 3500;
+
+function audioSwitchingLocked(){
+  return SV_AUDIO_SWITCH_LOCKED;
+}
 
 function appliedAudioIndex(){
   return Number.isInteger(vid?._appliedAudioIdx) ? vid._appliedAudioIdx : currentAudioIdx;
@@ -309,6 +361,43 @@ function selectPreferredAudioTrack(context, options={}){
   return currentAudioIdx;
 }
 
+function logStartupAudio(context, fallbackReason=''){
+  const selected=selectedAudioTrack();
+  mediaFixLog('selected startup audio', {
+    context,
+    index:currentAudioIdx,
+    language:selected?.language || selected?.lang || '',
+    title:selected?.title || selected?.label || '',
+    streamIndex:selected?.streamIndex ?? selected?.sourceIndex ?? null,
+    english:audioTrackIsEnglish(selected),
+    fallbackReason:fallbackReason || '',
+    switchingLocked:audioSwitchingLocked()
+  });
+}
+
+function startupAudioNeedsMappedSource(){
+  const selected=selectedAudioTrack();
+  if(!selected || availableAudio.length < 2)return false;
+  if(!audioTrackIsEnglish(selected))return false;
+  return currentAudioIdx > 0 || Number.isFinite(selected.streamIndex ?? selected.sourceIndex);
+}
+
+function startupAudioPlaybackOptions(context){
+  const selected=selectedAudioTrack();
+  if(!availableAudio.length || !selected){
+    logStartupAudio(context, 'no audio metadata available before playback');
+    return {};
+  }
+  if(audioTrackIsEnglish(selected)){
+    const options=startupAudioNeedsMappedSource() ? {forceAudio:true} : {};
+    logStartupAudio(context, options.forceAudio ? 'forcing English with mapped startup audio source' : '');
+    return options;
+  }
+  const englishIdx=availableAudio.findIndex(audioTrackIsEnglish);
+  logStartupAudio(context, englishIdx >= 0 ? 'English detected but could not be selected safely' : 'English audio track not found');
+  return {};
+}
+
 function appendSelectedAudioParams(params){
   const selected=selectedAudioTrack();
   const streamIndex=selected?.streamIndex ?? selected?.sourceIndex;
@@ -369,6 +458,63 @@ function seedAudioTracksFromFilename(value, context='filename hint'){
   return true;
 }
 
+function applyStartupAudioData(data, context, hints=[]){
+  const tracks = Array.isArray(data?.audioTracks) ? data.audioTracks : [];
+  if(!tracks.length){
+    if(hints.length > 1){
+      availableAudio = hints.map((hint,index)=>({
+        index,
+        relativeIndex:index,
+        language:hint,
+        title:hint,
+        filenameHint:true
+      }));
+      selectPreferredAudioTrack(`${context} filename fallback`, {sourcePreserved:true, log:true});
+      logStartupAudio(context, 'metadata had no audio tracks; using filename hints');
+      return true;
+    }
+    logStartupAudio(context, 'metadata had no audio tracks');
+    return false;
+  }
+  const discovered = normalizeDiscoveredAudioTracks(tracks,hints);
+  availableAudio = discovered.length ? discovered : [{index:0,title:'Default Audio'}];
+  selectPreferredAudioTrack(context, {sourcePreserved:true, log:true});
+  return true;
+}
+
+async function prepareLocalStartupAudio(id, movie={}){
+  const hints=filenameAudioHints(localFileForStreamId(id,movie));
+  const seeded=hints.length > 1 && seedAudioTracksFromFilename(hints.join(' / '), 'local startup filename');
+  try{
+    const r=await fetchWithTimeout(`/api/media-info/${encodeURIComponent(id)}`, {}, SV_STARTUP_AUDIO_TIMEOUT_MS);
+    if(!r.ok)throw new Error(`metadata ${r.status}`);
+    const data=await r.json();
+    applyStartupAudioData(data, 'local startup metadata', hints);
+    return data;
+  }catch(e){
+    logStartupAudio('local startup metadata', seeded ? `metadata unavailable before playback: ${e.message}; using filename hints` : `metadata unavailable before playback: ${e.message}`);
+    return null;
+  }
+}
+
+async function prepareFtpStartupAudio(streamUrl){
+  const hints=filenameAudioHints(streamUrl);
+  const seeded=hints.length > 1 && seedAudioTracksFromFilename(streamUrl, 'FTP startup filename');
+  try{
+    const r=await fetchWithTimeout(`/api/ftp/media-info?url=${encodeURIComponent(streamUrl)}`, {
+      cache:'no-store',
+      headers:{'Cache-Control':'no-cache'}
+    }, SV_STARTUP_AUDIO_TIMEOUT_MS);
+    if(!r.ok)throw new Error(`metadata ${r.status}`);
+    const data=await r.json();
+    applyStartupAudioData(data, 'FTP startup metadata', hints);
+    return data;
+  }catch(e){
+    logStartupAudio('FTP startup metadata', seeded ? `metadata unavailable before playback: ${e.message}; using filename hints` : `metadata unavailable before playback: ${e.message}`);
+    return null;
+  }
+}
+
 function renderAudioTracks(){
   const list = document.getElementById('audioList');
   if(!list)return;
@@ -389,7 +535,14 @@ function renderAudioTracks(){
   if(!availableAudio.length){
     availableAudio = [{index:0,title:'Default Audio'}];
   }
-  list.innerHTML = availableAudio.map((t,i)=>`<div class="pd-item${i===currentAudioIdx?' active':''}" onclick="setAudio(${i})"><span>${esc(t.title||audioTrackTitle(t,i))}</span><span class="check">✓</span></div>`).join('');
+  list.innerHTML = availableAudio.map((t,i)=>{
+    const active=i===currentAudioIdx;
+    const locked=audioSwitchingLocked() && !active;
+    const label=esc(t.title||audioTrackTitle(t,i));
+    const suffix=locked?' <span class="pd-badge">Locked</span>':'';
+    const onclick=locked?'':` onclick="setAudio(${i})"`;
+    return `<div class="pd-item${active?' active':''}${locked?' disabled':''}"${onclick}><span>${label}${suffix}</span><span class="check">✓</span></div>`;
+  }).join('');
   const label = document.getElementById('audioLabel');
   if(label)label.textContent = availableAudio[currentAudioIdx]?.title || 'Audio';
   updateAudioBtn();
@@ -413,7 +566,13 @@ async function loadAudioTracks(id, options={}){
       const hints=filenameAudioHints(typeof localFileForStreamId==='function'?localFileForStreamId(id):'');
       const discovered = normalizeDiscoveredAudioTracks(tracks,hints);
       availableAudio = discovered.length ? discovered : [{index:0,title:'Default Audio'}];
-      if(options.preferStartup || !hadTrackMetadata || currentAudioIdx >= availableAudio.length){
+      if(vid._audioStartupFinalized && audioSwitchingLocked() && !options.preferStartup){
+        currentAudioIdx = Math.max(0, Math.min(availableAudio.length - 1, appliedAudioIndex()));
+        renderAudioTracks();
+        if(availableAudio.find(audioTrackIsEnglish) && !audioTrackIsEnglish(selectedAudioTrack())){
+          logStartupAudio('local metadata after startup', 'English found after startup; manual switching is locked to protect playback');
+        }
+      }else if(options.preferStartup || !hadTrackMetadata || currentAudioIdx >= availableAudio.length){
         selectPreferredAudioTrack('local metadata', {sourcePreserved:true});
       }else{
         currentAudioIdx = Math.max(0, Math.min(availableAudio.length - 1, previousIdx));
@@ -439,6 +598,7 @@ function resetLocalTrackOptions(){
   availableSubs = [];
   currentAudioIdx = 0;
   setAppliedAudioIndex(0);
+  vid._audioStartupFinalized = false;
   currentSubIdx = -1;
   renderAudioTracks();
   const subList = document.getElementById('subList');
@@ -1445,22 +1605,19 @@ function svLegacySCardHTMLUnused(s){
   return `<div class="card" onclick="openSeriesModal('${sname}')">${img}<div class="series-badge">SERIES</div><div class="card-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div><div class="card-overlay"><div class="card-title">${esc(s.name)}</div><div class="card-meta">${s.rating?`<span class="card-rating">★ ${s.rating}</span>`:''}<span>${sc}S · ${ep}Ep</span></div></div></div>`;
 }
 function svLegacyCardHTMLUnused(m, sp=false){
+  if(!isPlayableMovie(m))return '';
   const sn=esc(m.name).replace(/'/g,"\\'");
   const img=m.poster?`<img src="${m.poster}" alt="${esc(m.name)}" loading="lazy">`:`<div class="card-placeholder"><div class="icon"><svg viewBox="0 0 24 24" width="32" height="32" fill="rgba(255,255,255,.2)"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg></div><div class="pname">${esc(m.name)}</div></div>`;
   const prog=watchProgress[m.id];
   const bar=sp&&prog?`<div class="card-progress"><div class="card-progress-fill" style="width:${Math.round(prog.progress*100)}%"></div></div>`:'';
-  const isUnplayable = m.isTrending && !m.streamUrl && !m.isFtp && typeof m.id === 'string' && m.id.startsWith('tmdb_');
   let onclick;
-  if(isUnplayable){
-    onclick=`showToast('📺 "${sn}" — Not in your library')`;
-  } else if(m.streamUrl){
+  if(m.streamUrl){
     const streamUrl=esc(m.streamUrl).replace(/'/g,"\\'");
     onclick=`playFtpMedia('${streamUrl}','${sn}','${esc(m.year||'')}')`;
   }else{
     onclick=`playMedia(${m.id},'${sn}','${esc(m.year||'')}')`;
   }
-  const unavailableOverlay = isUnplayable ? `<div style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,.65);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:3px 7px;font-size:.5rem;font-weight:700;letter-spacing:1px;color:rgba(255,255,255,.45)">NOT IN LIBRARY</div>` : '';
-  return `<div class="card" onclick="${onclick}">${img}${unavailableOverlay}<div class="card-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div><div class="card-overlay"><div class="card-title">${esc(m.name)}</div><div class="card-meta">${m.rating?`<span class="card-rating">★ ${m.rating}</span>`:''} ${m.year?`<span>${m.year}</span>`:''}</div></div>${bar}</div>`;
+  return `<div class="card" onclick="${onclick}">${img}<div class="card-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div><div class="card-overlay"><div class="card-title">${esc(m.name)}</div><div class="card-meta">${m.rating?`<span class="card-rating">★ ${m.rating}</span>`:''} ${m.year?`<span>${m.year}</span>`:''}</div></div>${bar}</div>`;
 }
 
 function seriesEpisodes(show){
@@ -1914,13 +2071,21 @@ function selectedTextTrack(){
   return Array.from(vid.querySelectorAll('track')).find(el=>parseInt(el.getAttribute('data-idx'),10)===currentSubIdx)?.track || null;
 }
 
-function updateSubtitleOverlay(){
+function renderSubtitleOverlay(){
+  subtitleOverlayRaf=0;
   if(!subtitleOverlay)return;
   const textTrack = selectedTextTrack();
   const cues = textTrack?.activeCues ? Array.from(textTrack.activeCues) : [];
   const text = cues.map(plainCueText).filter(Boolean).join('\n');
+  if(text === subtitleOverlayLastText)return;
+  subtitleOverlayLastText = text;
   subtitleOverlay.innerHTML = text ? `<span>${esc(text)}</span>` : '';
   subtitleOverlay.classList.toggle('show', !!text);
+}
+
+function updateSubtitleOverlay(){
+  if(subtitleOverlayRaf)return;
+  subtitleOverlayRaf=requestAnimationFrame(renderSubtitleOverlay);
 }
 
 function bindSubtitleTrack(trackEl){
@@ -1953,6 +2118,11 @@ function clearSubtitleOverlay(){
     try{for(let i=0;i<vid.textTracks.length;i++)vid.textTracks[i].mode='disabled';}catch(_){}
   }
   if(subtitleOverlay){
+    if(subtitleOverlayRaf){
+      cancelAnimationFrame(subtitleOverlayRaf);
+      subtitleOverlayRaf=0;
+    }
+    subtitleOverlayLastText='';
     subtitleOverlay.innerHTML = '';
     subtitleOverlay.classList.remove('show');
   }
@@ -2246,8 +2416,18 @@ function playerEls(){
     timeNow:document.getElementById('timeNow'),
     timeSep:document.getElementById('timeSep'),
     timeDur:document.getElementById('timeDur'),
+    title:document.getElementById('playerTitle'),
+    subTitle:document.getElementById('playerSubTitle'),
     spinner:document.getElementById('playerSpinner'),
-    liveBadge:document.getElementById('playerLiveBadge')
+    liveBadge:document.getElementById('playerLiveBadge'),
+    ppIconPath:document.querySelector('#ppIcon path'),
+    ppCenterIconPath:document.querySelector('#ppCenterIcon path'),
+    volSlider:document.getElementById('volSlider'),
+    volIconPath:document.querySelector('#volIcon path'),
+    fsIconPath:document.querySelector('#fsIcon path'),
+    seekFlashLeft:document.getElementById('seekFlashLeft'),
+    seekFlashRight:document.getElementById('seekFlashRight'),
+    centerFlash:document.getElementById('centerFlash')
   };
   return playerDomCache;
 }
@@ -2258,6 +2438,15 @@ function setTextIfChanged(el,text){
 
 function setStyleIfChanged(el,prop,value){
   if(el && el.style[prop] !== value)el.style[prop]=value;
+}
+
+function setAttrIfChanged(el,name,value){
+  if(el && el.getAttribute(name) !== value)el.setAttribute(name,value);
+}
+
+function setPlayerSpinner(on){
+  const spinner=playerEls().spinner;
+  if(spinner && spinner.classList.contains('on') !== !!on)spinner.classList.toggle('on',!!on);
 }
 
 function savePlayerProgress(current,duration){
@@ -2300,18 +2489,63 @@ function schedulePlayerProgressRender(current=playbackTime(),duration=playerDura
   if(!playerProgressRaf)playerProgressRaf=requestAnimationFrame(flushPlayerProgress);
 }
 
+function flushPlayerBuffered(){
+  playerBufferedRaf=0;
+  const pctText=playerBufferedPending;
+  playerBufferedPending=null;
+  if(!pctText)return;
+  setStyleIfChanged(playerEls().progressBuffered,'width',pctText);
+}
+
+function schedulePlayerBufferedRender(pctText){
+  playerBufferedPending=pctText;
+  if(!playerBufferedRaf)playerBufferedRaf=requestAnimationFrame(flushPlayerBuffered);
+}
+
+function flushPlayerSeekDrag(){
+  playerSeekDragRaf=0;
+  const pending=playerSeekDragPending;
+  playerSeekDragPending=null;
+  if(!pending)return;
+  const pctText=(pending.p*100).toFixed(3)+'%';
+  const els=playerEls();
+  setStyleIfChanged(els.progressPlayed,'width',pctText);
+  setStyleIfChanged(els.progressThumb,'left',pctText);
+  setTextIfChanged(els.timeNow,fmtTime(progressDragTime));
+  updateSeekPreview(pending.p,pending.d);
+}
+
+function schedulePlayerSeekDragRender(p,d){
+  progressDragTime=Math.max(0,Math.min(d,p*d));
+  playerSeekDragPending={p,d};
+  if(!playerSeekDragRaf)playerSeekDragRaf=requestAnimationFrame(flushPlayerSeekDrag);
+}
+
+function playerUiClockTick(ts){
+  if(!playerUiClock)return;
+  if(vid.paused || progressDragging || isLiveMode){
+    playerUiClock=0;
+    playerUiClockLast=0;
+    return;
+  }
+  if(!playerUiClockLast || ts-playerUiClockLast >= 250){
+    playerUiClockLast=ts;
+    schedulePlayerProgressRender(playbackTime(),playerDuration());
+  }
+  playerUiClock=requestAnimationFrame(playerUiClockTick);
+}
+
 function startPlayerUiClock(){
   if(playerUiClock || isLiveMode)return;
-  playerUiClock=setInterval(()=>{
-    if(vid.paused || progressDragging || isLiveMode)return;
-    schedulePlayerProgressRender(playbackTime(),playerDuration());
-  },250);
+  playerUiClockLast=0;
+  playerUiClock=requestAnimationFrame(playerUiClockTick);
 }
 
 function stopPlayerUiClock(){
   if(!playerUiClock)return;
-  clearInterval(playerUiClock);
+  cancelAnimationFrame(playerUiClock);
   playerUiClock=null;
+  playerUiClockLast=0;
 }
 
 function notePlayerPointerActivity(wrap=document.getElementById('playerWrap')){
@@ -2945,7 +3179,15 @@ async function loadFtpTrackOptions(streamUrl){
       const hints=filenameAudioHints(requestedUrl);
       const discovered = normalizeDiscoveredAudioTracks(audioTracks,hints);
       availableAudio = discovered.length ? discovered : [{index:0,title:'Default Audio'}];
-      selectPreferredAudioTrack('FTP metadata', {sourcePreserved:true});
+      if(vid._audioStartupFinalized && audioSwitchingLocked()){
+        currentAudioIdx = Math.max(0, Math.min(availableAudio.length - 1, appliedAudioIndex()));
+        renderAudioTracks();
+        if(availableAudio.find(audioTrackIsEnglish) && !audioTrackIsEnglish(selectedAudioTrack())){
+          logStartupAudio('FTP metadata after startup', 'English found after startup; manual switching is locked to protect playback');
+        }
+      }else{
+        selectPreferredAudioTrack('FTP metadata', {sourcePreserved:true});
+      }
     }else{
       const hintedTracks=audioTracksFromFilenameHints(requestedUrl);
       if(hintedTracks.length > 1){
@@ -3361,7 +3603,10 @@ async function playMedia(id, name, year){
   refreshPlayerControlVisibility();
   showUI();
   document.getElementById('playerSpinner').classList.add('on');
-  const startupInfo = null;
+  const startupInfo = await prepareLocalStartupAudio(id, movie);
+  if(String(currentStreamId) !== String(id) || _ftpStreamUrl)return;
+  vid._vlcFallbackUrl = streamUrlFor(id);
+  const startupOptions = startupAudioPlaybackOptions('local startup');
   setTimeout(()=>{
     if(String(currentStreamId) === String(id) && !_ftpStreamUrl){
       ensureLocalTrackOptionsLoaded().then(()=>{
@@ -3386,7 +3631,6 @@ async function playMedia(id, name, year){
   try{
     // Desktop's direct route is deterministic. Attach it immediately so the
     // play() call remains inside the card/episode click's user activation.
-    const startupOptions = {};
     const needsServerStart = !!(startupOptions.forceAudio || startupOptions.forceHls || startupOptions.mode);
     const plan = (mobilePlayback || needsServerStart)
       ? await fetchLocalPlaybackPlan(id,0,startupOptions)
@@ -3418,6 +3662,8 @@ async function playMedia(id, name, year){
       await tryLocalAdaptiveFallback(id, playbackTime());
       return;
     }
+    setAppliedAudioIndex(currentAudioIdx,'local startup source');
+    vid._audioStartupFinalized = true;
     if(validDurationSeconds(playerDuration()))maybeResumeProgress(id, playerDuration());
     if(mobilePlayback){
       vid.play().catch(e=>{
@@ -3611,6 +3857,17 @@ async function switchAudioWithServer(idx){
 }
 
 function setAudio(idx){
+  if(audioSwitchingLocked() && idx!==currentAudioIdx){
+    closeAllDropdowns();
+    showToast('Audio is locked to the startup English track for stability');
+    mediaFixLog('manual audio switch blocked', {
+      requested:idx,
+      current:currentAudioIdx,
+      requestedTrack:audioDebugSummary(availableAudio[idx],idx),
+      activeTrack:audioDebugSummary(selectedAudioTrack(),currentAudioIdx)
+    });
+    return;
+  }
   if(vid._audioSwitchPending){
     vid._queuedAudioSwitchIdx=idx;
     closeAllDropdowns();
@@ -3658,10 +3915,20 @@ function updateProgress(){
   schedulePlayerProgressRender(current,duration,{save:true});
   updateWatchProgress(currentStreamId,current,duration);
 }
+const PLAYER_PLAY_PATH='M8 5v14l11-7z';
+const PLAYER_PAUSE_PATH='M6 19h4V5H6v14zm8-14v14h4V5h-4z';
+const PLAYER_VOL_PATH='M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z';
+const PLAYER_MUTED_PATH='M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z';
+const PLAYER_FS_PATH='M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z';
+const PLAYER_EXIT_FS_PATH='M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z';
 function updatePlayIcons(paused){
-  const play='M8 5v14l11-7z',pause='M6 19h4V5H6v14zm8-14v14h4V5h-4z';
-  document.getElementById('ppIcon').innerHTML=`<path d="${paused?play:pause}"/>`;
-  document.getElementById('ppCenterIcon').innerHTML=`<path d="${paused?play:pause}"/>`;
+  const nextPaused=!!paused;
+  if(playerLastPausedState===nextPaused)return;
+  playerLastPausedState=nextPaused;
+  const path=nextPaused?PLAYER_PLAY_PATH:PLAYER_PAUSE_PATH;
+  const els=playerEls();
+  setAttrIfChanged(els.ppIconPath,'d',path);
+  setAttrIfChanged(els.ppCenterIconPath,'d',path);
 }
 function hideUI(){
   if(vid.paused || playerMenusOpen() || progressDragging || playerControlsFocused())return;
@@ -3689,21 +3956,45 @@ function scheduleHideUI(){
   if(vid.paused || playerMenusOpen() || progressDragging || playerControlsFocused())return;
   uiHideTimer=setTimeout(hideUI,3500);
 }
-function togglePlay(){if(vid.paused){vid._svPlaybackShouldPlay=true;vid.play();popCenter('');}else{vid._svPlaybackShouldPlay=false;vid.pause();popCenter('');clearTimeout(uiHideTimer);}}
+function togglePlay(){
+  if(vid.paused){
+    vid._svPlaybackShouldPlay=true;
+    const playPromise=vid.play();
+    if(playPromise?.catch)playPromise.catch(()=>updatePlayIcons(true));
+  }else{
+    vid._svPlaybackShouldPlay=false;
+    vid.pause();
+    clearTimeout(uiHideTimer);
+  }
+  showUI();
+}
 function seekBy(s){
   if(isLiveMode)return;
   seekToTime(playbackTime()+s);
   flashSeek(s);showUI();
 }
-function flashSeek(s){const side=s<0?'Left':'Right';const el=document.getElementById('seekFlash'+side);el.classList.add('show');setTimeout(()=>el.classList.remove('show'),700);}
-function popCenter(icon){const el=document.getElementById('centerFlash');el.textContent=icon;el.classList.remove('pop');void el.offsetWidth;el.classList.add('pop');setTimeout(()=>el.classList.remove('pop'),400);}
-function toggleMute(){vid.muted=!vid.muted;document.getElementById('volSlider').value=vid.muted?0:vid.volume;updateVolIcon();}
+function flashSeek(s){
+  const els=playerEls();
+  const el=s<0?els.seekFlashLeft:els.seekFlashRight;
+  if(!el)return;
+  clearTimeout(el._svHideTimer);
+  if(!el.classList.contains('show'))el.classList.add('show');
+  el._svHideTimer=setTimeout(()=>el.classList.remove('show'),360);
+}
+function popCenter(icon){
+  if(!icon)return;
+  const el=playerEls().centerFlash;
+  if(!el)return;
+  el.textContent=icon;
+  clearTimeout(el._svHideTimer);
+  el.classList.add('pop');
+  el._svHideTimer=setTimeout(()=>el.classList.remove('pop'),300);
+}
+function toggleMute(){vid.muted=!vid.muted;const slider=playerEls().volSlider;if(slider)slider.value=vid.muted?0:vid.volume;updateVolIcon();}
 function setVolume(v){vid.volume=parseFloat(v);vid.muted=v==0;updateVolIcon();}
 function updateVolIcon(){
   const muted=vid.muted||vid.volume===0;
-  document.getElementById('volIcon').innerHTML=muted
-    ?'<svg viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>'
-    :'<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>';
+  setAttrIfChanged(playerEls().volIconPath,'d',muted?PLAYER_MUTED_PATH:PLAYER_VOL_PATH);
 }
 function isMobileLandscapeMode(){
   return document.getElementById('playerModal')?.classList.contains('mobile-landscape');
@@ -3767,9 +4058,7 @@ function toggleFullscreen(){
 }
 function updateFsIcon(){
   const isFs=isMobileLandscapeMode()||!!(document.fullscreenElement||document.webkitFullscreenElement||vid.webkitDisplayingFullscreen);
-  document.getElementById('fsIcon').innerHTML=isFs
-    ?'<path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>'
-    :'<path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>';
+  setAttrIfChanged(playerEls().fsIconPath,'d',isFs?PLAYER_EXIT_FS_PATH:PLAYER_FS_PATH);
 }
 let _ftpStreamUrl='';
 let _ftpDuration=0;
@@ -3869,36 +4158,19 @@ async function playFtpMedia(streamUrl, name, year){
     currentQuality = 'auto';
     currentAudioIdx = 0;
     setAppliedAudioIndex(0);
+    vid._audioStartupFinalized = false;
     clearSubtitleOverlay();
     availableAudio = [{index:0,title:'Default Audio'}];
     availableSubs = [];
-    seedAudioTracksFromFilename(requestedStreamUrl, 'FTP startup filename');
     renderAudioTracks();
     const subList = document.getElementById('subList');
     if(subList)subList.innerHTML = `<div class="pd-item" style="color:#444;pointer-events:none">Loading subtitles...</div>`;
     updateSubBtn();
-    const startupInfo = null;
-    const metadataPromise = ensureFtpTrackOptionsLoaded({force:true}).then(info=>{
-      if(_ftpStreamUrl !== requestedStreamUrl)return info;
-      if(applyPreferredNativeAudioIfSafe('FTP metadata'))return info;
-      if(audioTrackIsEnglish(selectedAudioTrack()) && appliedAudioIndex() !== currentAudioIdx){
-        mediaFixLog('English audio default deferred', {
-          url:requestedStreamUrl,
-          reason:'stable source already attached; waiting for safe/native switch or user-controlled restart',
-          selected:audioDebugSummary(selectedAudioTrack(),currentAudioIdx),
-          applied:appliedAudioIndex(),
-          subtitleCount:availableSubs.length
-        });
-      }
-      return info;
-    }).catch(e=>{
-      playbackDebug('ftp async track metadata failed',{message:e.message});
-      return null;
-    });
-    void metadataPromise;
+    const startupInfo = await prepareFtpStartupAudio(requestedStreamUrl);
+    if(playToken !== vid._durationToken || _ftpStreamUrl !== requestedStreamUrl)return;
 
     let playInfo;
-    const startupOptions = {};
+    const startupOptions = startupAudioPlaybackOptions('FTP startup');
     mediaFixLog('FTP startup playback options',{
       url:requestedStreamUrl,
       options:startupOptions,
@@ -3906,7 +4178,7 @@ async function playFtpMedia(streamUrl, name, year){
       metadataLoaded:!!startupInfo
     });
     const needsServerStart = !!(startupOptions.forceAudio || startupOptions.forceHls || startupOptions.mode);
-    if(!mobilePlayback){
+    if(!mobilePlayback && !needsServerStart){
       // Never redirect an HTTPS desktop page to the private/HTTP media origin.
       // The same-origin proxy preserves Range/206 responses and encoded names.
       playInfo = localFtpPlaybackPlan(requestedStreamUrl, {forceProxy:true});
@@ -3916,7 +4188,13 @@ async function playFtpMedia(streamUrl, name, year){
       }catch(e){
         if(playToken !== vid._durationToken)return;
         console.warn('[Playback] FTP plan failed, trying direct route:', e.message);
-        playInfo = localFtpPlaybackPlan(requestedStreamUrl);
+        logStartupAudio('FTP startup', `audio-mapped startup plan failed: ${e.message}`);
+        if(needsServerStart){
+          currentAudioIdx = 0;
+          setAppliedAudioIndex(0,'FTP startup audio map fallback');
+          renderAudioTracks();
+        }
+        playInfo = localFtpPlaybackPlan(requestedStreamUrl, {forceProxy:!mobilePlayback});
       }
     }
     if(playToken !== vid._durationToken)return;
@@ -3983,6 +4261,8 @@ async function playFtpMedia(streamUrl, name, year){
       await tryFtpAdaptiveFallback(resolvedStreamUrl, name, playbackTime());
       return;
     }
+    setAppliedAudioIndex(currentAudioIdx,'FTP startup source');
+    vid._audioStartupFinalized = true;
 
     setTimeout(()=>{
       if(_ftpStreamUrl !== resolvedStreamUrl)return;
@@ -4064,6 +4344,16 @@ function closePlayer(){
     playerProgressRaf=0;
   }
   playerProgressPending=null;
+  if(playerBufferedRaf){
+    cancelAnimationFrame(playerBufferedRaf);
+    playerBufferedRaf=0;
+  }
+  playerBufferedPending=null;
+  if(playerSeekDragRaf){
+    cancelAnimationFrame(playerSeekDragRaf);
+    playerSeekDragRaf=0;
+  }
+  playerSeekDragPending=null;
   if(playerPointerRaf){
     cancelAnimationFrame(playerPointerRaf);
     playerPointerRaf=0;
@@ -4489,7 +4779,8 @@ function filterMoviesPage(){
     paramount:['mission impossible','mission: impossible','top gun','transformers','indiana jones','star trek','terminator','titanic','the godfather','scarface','apocalypse now','chinatown','forrest gump','braveheart','saving private ryan','interstellar','arrival','annihilation','a quiet place','smile'],
   };
 
-  let list = movies.slice();
+  const playableMovies = filterPlayableCatalogItems(movies);
+  let list = playableMovies.slice();
 
   if(q) list = list.filter(m=>(m.name||'').toLowerCase().includes(q) || (m.overview||'').toLowerCase().includes(q));
   if(genre){
@@ -4532,9 +4823,9 @@ function filterMoviesPage(){
   _mpFiltered = list;
   _mpPage = 0;
   document.getElementById('moviesCount').textContent =
-    list.length === movies.length
-      ? `${movies.length.toLocaleString()} movies`
-      : `${list.length.toLocaleString()} of ${movies.length.toLocaleString()} movies`;
+    list.length === playableMovies.length
+      ? `${playableMovies.length.toLocaleString()} movies`
+      : `${list.length.toLocaleString()} of ${playableMovies.length.toLocaleString()} movies`;
   renderMoviesChips({q,genre,lang,yearRange,minRating,publisher,sort});
   const grid = document.getElementById('moviesGrid');
   if(!list.length){
@@ -4594,7 +4885,8 @@ function filterSeriesPage(){
   const minRating= document.getElementById('seriesRatingFilter')?.value||'';
   const sort     = document.getElementById('seriesSortFilter')?.value||'default';
 
-  let list = series.slice();
+  const playableSeries = filterPlayableCatalogItems(series);
+  let list = playableSeries.slice();
 
   if(q) list = list.filter(s=>(s.name||'').toLowerCase().includes(q)||(s.overview||'').toLowerCase().includes(q));
   if(genre){
@@ -4630,9 +4922,9 @@ function filterSeriesPage(){
   _spFiltered = list;
   _spPage = 0;
   document.getElementById('seriesCount').textContent =
-    list.length === series.length
-      ? `${series.length.toLocaleString()} shows`
-      : `${list.length.toLocaleString()} of ${series.length.toLocaleString()} shows`;
+    list.length === playableSeries.length
+      ? `${playableSeries.length.toLocaleString()} shows`
+      : `${list.length.toLocaleString()} of ${playableSeries.length.toLocaleString()} shows`;
   renderSeriesChips({q,genre,lang,yearRange,minRating,sort});
   const grid = document.getElementById('seriesGrid');
   if(!list.length){
@@ -4688,17 +4980,64 @@ function svIntermediateSCardHTMLUnused(s){
 }
 
 function svIntermediateCardHTMLUnused(m, sp=false){
+  if(!isPlayableMovie(m))return '';
   const img=m.poster?`<img src="${esc(m.poster)}" alt="${esc(m.name)}" loading="lazy">`:`<div class="card-placeholder"><div class="icon"><svg viewBox="0 0 24 24" width="32" height="32" fill="rgba(255,255,255,.2)"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg></div><div class="pname">${esc(m.name)}</div></div>`;
   const prog=watchProgress[m.id];
   const bar=sp&&prog?`<div class="card-progress"><div class="card-progress-fill" style="width:${Math.round(prog.progress*100)}%"></div></div>`:'';
-  const isUnplayable = isMovieUnavailable(m);
   const detailKey = registerMovieForDetail(m);
-  const unavailableOverlay = isUnplayable ? `<div style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.62);border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:4px 8px;font-size:.52rem;font-weight:800;color:rgba(255,255,255,.72)">LIBRARY ONLY</div>` : '';
-  return `<div class="card" role="button" tabindex="0" onclick="openMovieDetail('${detailKey}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMovieDetail('${detailKey}')}">${img}${unavailableOverlay}<div class="card-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div><div class="card-overlay"><div class="card-title">${esc(m.name)}</div><div class="card-meta">${m.rating?`<span class="card-rating">&#9733; ${esc(m.rating)}</span>`:''} ${m.year?`<span>${esc(m.year)}</span>`:''}</div></div>${bar}</div>`;
+  return `<div class="card" role="button" tabindex="0" onclick="openMovieDetail('${detailKey}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMovieDetail('${detailKey}')}">${img}<div class="card-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div><div class="card-overlay"><div class="card-title">${esc(m.name)}</div><div class="card-meta">${m.rating?`<span class="card-rating">&#9733; ${esc(m.rating)}</span>`:''} ${m.year?`<span>${esc(m.year)}</span>`:''}</div></div>${bar}</div>`;
 }
 
+function seriesHasPlayableEpisode(show){
+  const seasons = show?.seasons || {};
+  return Object.values(seasons).some(eps=>Array.isArray(eps) && eps.some(ep=>(
+    ep?.streamUrl ||
+    ep?.streamId !== undefined ||
+    ep?.id !== undefined ||
+    ep?.file ||
+    ep?.hasStream ||
+    ep?.streamAvailable === true
+  )));
+}
+
+function isPlayableMovie(movie){
+  if(!movie)return false;
+  if(movie.streamAvailable === false)return false;
+  if(movie.streamUrl)return true;
+  if(movie.isFtp)return false;
+  if(movie.hasStream || movie.streamAvailable === true)return true;
+  const id = String(movie.id ?? '');
+  if(!id)return false;
+  if(/^tmdb_/i.test(id))return false;
+  if(movie.isTrending && !movie.file && !movie.hasStream)return false;
+  return true;
+}
+
+function isPlayableSeries(show){
+  if(!show)return false;
+  if(show.streamAvailable === false)return false;
+  if(seriesHasPlayableEpisode(show))return true;
+  if((Number(show.episodeCount) || 0) > 0)return true;
+  if((Number(show.seasonCount) || 0) > 0 && !show.isOnlineRelease)return true;
+  const id = String(show.id ?? '');
+  if(!id || /^tmdb_/i.test(id))return false;
+  return !show.isTrending && !show.isOnlineRelease;
+}
+
+function isPlayableCatalogItem(item){
+  const isSeries = item?.type === 'tv' || item?.type === 'series' || item?._isSeries || item?.seasons || item?.episodeCount !== undefined || item?.seasonCount !== undefined;
+  return isSeries ? isPlayableSeries(item) : isPlayableMovie(item);
+}
+
+function filterPlayableCatalogItems(items){
+  return (Array.isArray(items) ? items : []).filter(isPlayableCatalogItem);
+}
+
+window.svIsPlayableCatalogItem = isPlayableCatalogItem;
+window.svFilterPlayableCatalogItems = filterPlayableCatalogItems;
+
 function isMovieUnavailable(movie){
-  return movie?.streamAvailable === false || (movie?.isTrending && !movie.streamUrl && !movie.isFtp && typeof movie.id === 'string' && movie.id.startsWith('tmdb_'));
+  return !isPlayableMovie(movie);
 }
 
 function movieIdentity(movie){
@@ -4870,7 +5209,7 @@ function splitDetailGenres(value){
 
 function localSimilarItems(item, type){
   const genres = splitDetailGenres(item?.genre);
-  const source = type === 'tv' ? series : movies;
+  const source = filterPlayableCatalogItems(type === 'tv' ? series : movies);
   const currentId = String(type === 'tv' ? (item?.id || item?.name || '') : movieIdentity(item || {}));
   const year = Number(String(item?.year || '').match(/(?:19|20)\d{2}/)?.[0] || 0);
   const category = String(item?.category || '').trim().toLowerCase();
@@ -4901,7 +5240,7 @@ function localDirectorItems(item, type){
   const director = String(item?.director || '').trim().toLowerCase();
   if(!director)return [];
   return movies
-    .filter(m=>m !== item && String(m.director || '').trim().toLowerCase() === director)
+    .filter(m=>m !== item && isPlayableMovie(m) && String(m.director || '').trim().toLowerCase() === director)
     .slice(0,18);
 }
 
@@ -5042,7 +5381,7 @@ function renderMediaCards(id, items){
   const el = document.getElementById(id);
   if(!el)return;
   const limit = window.innerWidth < 760 ? 8 : 16;
-  const visibleItems = Array.isArray(items) ? items.slice(0, limit) : [];
+  const visibleItems = filterPlayableCatalogItems(items).slice(0, limit);
   if(!visibleItems.length){
     el.innerHTML = noDataHTML();
     return;
@@ -5063,7 +5402,11 @@ function renderOnlineSections(prefix, details, type, item){
   const local = sourceItem ? localTitleDetails(sourceItem, type) : {};
   const finalDetails = details && details.ok ? details : local;
 
-  renderMediaCards(prefix + 'SimilarTrack', firstNonEmptyArray(finalDetails.similar, local.similar));
+  const onlineSimilar = filterPlayableCatalogItems(finalDetails.similar);
+  const localSimilar = filterPlayableCatalogItems(local.similar);
+  const localKeys = new Set(onlineSimilar.map(movieIdentity));
+  const mergedSimilar = onlineSimilar.concat(localSimilar.filter(candidate=>!localKeys.has(movieIdentity(candidate))));
+  renderMediaCards(prefix + 'SimilarTrack', firstNonEmptyArray(mergedSimilar, localSimilar));
 }
 
 function mergeTitleDetails(item, details){
@@ -5201,9 +5544,9 @@ function openMovieDetail(key){
   const unavailable = isMovieUnavailable(movie);
   watchBtn.disabled = unavailable;
   watchBtn.innerHTML = unavailable
-    ? '<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5v6h-2V7h2zm0 8v2h-2v-2h2z"/></svg>Not in Library'
+    ? '<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5v6h-2V7h2zm0 8v2h-2v-2h2z"/></svg>Unavailable'
     : '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>Watch';
-  watchBtn.onclick = unavailable ? ()=>showToast('This title is not in your library') : ()=>playMovieFromDetail();
+  watchBtn.onclick = unavailable ? ()=>showToast('No playable source is available for this title') : ()=>playMovieFromDetail();
   document.getElementById('mdSimilarTitle').textContent = movie.type === 'tv' ? 'Similar Shows' : 'Similar Movies';
   const token = ++_titleDetailsToken;
   setOnlinePlaceholders('md');
@@ -5294,15 +5637,15 @@ function findHistoryItem(entry){
 }
 
 function libraryCollection(kind){
-  if(kind==='movieWatchlist')return movieWatchlist.map(id=>movies.find(m=>movieIdentity(m)===id)).filter(Boolean);
-  if(kind==='movieWatched')return movies.filter(m=>watchProgress[m.id]?.progress>=0.95);
-  if(kind==='showWatchlist')return seriesWatchlist.map(id=>series.find(s=>String(s.id||s.name)===id)).filter(Boolean);
+  if(kind==='movieWatchlist')return filterPlayableCatalogItems(movieWatchlist.map(id=>movies.find(m=>movieIdentity(m)===id)).filter(Boolean));
+  if(kind==='movieWatched')return filterPlayableCatalogItems(movies.filter(m=>watchProgress[m.id]?.progress>=0.95));
+  if(kind==='showWatchlist')return filterPlayableCatalogItems(seriesWatchlist.map(id=>series.find(s=>String(s.id||s.name)===id)).filter(Boolean));
   if(kind==='subscribed'){
     let ids = [];
     try{ids = JSON.parse(localStorage.getItem('sv_subscribed_series')||'[]');}catch{}
-    return ids.map(id=>series.find(s=>String(s.id||s.name)===String(id)||s.name===id)).filter(Boolean);
+    return filterPlayableCatalogItems(ids.map(id=>series.find(s=>String(s.id||s.name)===String(id)||s.name===id)).filter(Boolean));
   }
-  if(kind==='recent')return watchHistory.map(findHistoryItem).filter(Boolean);
+  if(kind==='recent')return filterPlayableCatalogItems(watchHistory.map(findHistoryItem).filter(Boolean));
   return [];
 }
 
@@ -5394,8 +5737,8 @@ function svSearchIndex(){
   if(sig!==_svSearchSig){_svSearchIndex=null;_svSearchSig=sig;_svSearchCache.clear();}
   if(_svSearchIndex)return _svSearchIndex;
   _svSearchIndex=[
-    ...(series||[]).map(s=>({item:s,isSeries:true,text:`${s.name||''} ${s.overview||''} ${s.genre||''} ${s.language||''}`.toLowerCase()})),
-    ...(movies||[]).map(m=>({item:m,isSeries:false,text:`${m.name||''} ${m.overview||''} ${m.genre||''} ${m.language||''}`.toLowerCase()}))
+    ...filterPlayableCatalogItems(series||[]).map(s=>({item:s,isSeries:true,text:`${s.name||''} ${s.overview||''} ${s.genre||''} ${s.language||''}`.toLowerCase()})),
+    ...filterPlayableCatalogItems(movies||[]).map(m=>({item:m,isSeries:false,text:`${m.name||''} ${m.overview||''} ${m.genre||''} ${m.language||''}`.toLowerCase()}))
   ];
   return _svSearchIndex;
 }
@@ -5521,7 +5864,7 @@ function dur() {
   vid._prH=()=>{
     const d=dur(); if(!d)return;
     let mb=0;for(let i=0;i<vid.buffered.length;i++)mb=Math.max(mb,vid.buffered.end(i));
-    setStyleIfChanged(playerEls().progressBuffered,'width',(Math.min(((vid._sourceOffset||0)+mb)/d,1)*100).toFixed(3)+'%');
+    schedulePlayerBufferedRender((Math.min(((vid._sourceOffset||0)+mb)/d,1)*100).toFixed(3)+'%');
   };
   // Replace vid._mdH with:
 vid._mdH = () => {
@@ -5532,7 +5875,7 @@ vid._mdH = () => {
   }
   const newDur = vid.duration;
   if (newDur && isFinite(newDur) && newDur > 0) {
-    document.getElementById('playerSpinner').classList.remove('on');
+    setPlayerSpinner(false);
     if ((!_ftpStreamUrl || !_ftpNeedsTranscode) && !vid._durationPending && !validDurationSeconds(vid._apiDuration)) {
       const duration = setPlayerDuration(newDur);
       if(duration && currentStreamId)maybeResumeProgress(currentStreamId, duration);
@@ -5544,9 +5887,9 @@ vid._mdH = () => {
     updatePlayIcons(true);
     if(currentStreamId&&!_ftpStreamUrl){watchProgress[currentStreamId]={progress:0.99,updatedAt:Date.now()};try{localStorage.setItem('sv_progress',JSON.stringify(watchProgress));}catch(_){}}
   };
-  vid._waH=()=>document.getElementById('playerSpinner').classList.add('on');
-  vid._plH=()=>{document.getElementById('playerSpinner').classList.remove('on');startPlayerUiClock();schedulePlayerProgressRender(playbackTime(),dur());scheduleHideUI();};
-  vid._cpH=()=>{document.getElementById('playerSpinner').classList.remove('on');};
+  vid._waH=()=>setPlayerSpinner(true);
+  vid._plH=()=>{setPlayerSpinner(false);startPlayerUiClock();schedulePlayerProgressRender(playbackTime(),dur());scheduleHideUI();};
+  vid._cpH=()=>{setPlayerSpinner(false);};
   vid._paH=()=>{updatePlayIcons(false);startPlayerUiClock();scheduleHideUI();};
   vid._puH=()=>{stopPlayerUiClock();updatePlayIcons(true);schedulePlayerProgressRender(playbackTime(),dur(),{force:true});showUI();};
   vid._skH=()=>setTimeout(updateSubtitleOverlay,60);
@@ -5565,31 +5908,29 @@ vid._mdH = () => {
   const pw=document.getElementById('progressWrap');
   if(!pw._bound){
     pw._bound=true;
-    let dragT=0;
     let suppressProgressClickUntil=0;
     function getP(e){
       return progressRatioFromEvent(e, pw);
     }
     function visual(p,d){
-      dragT=p*d;
-      const pctText=(p*100).toFixed(3)+'%';
-      const els=playerEls();
-      setStyleIfChanged(els.progressPlayed,'width',pctText);
-      setStyleIfChanged(els.progressThumb,'left',pctText);
-      setTextIfChanged(els.timeNow,fmtTime(dragT));
-      updateSeekPreview(p,d);
-      showUI();
+      schedulePlayerSeekDragRender(p,d);
     }
     function commit(){
       progressDragging=false; pw.classList.remove('dragging');
       const d=dur(); if(!d){hideSeekPreview();return;}
-      const t=Math.max(0,Math.min(d,dragT));
+      const t=Math.max(0,Math.min(d,progressDragTime));
+      if(playerSeekDragRaf){
+        cancelAnimationFrame(playerSeekDragRaf);
+        playerSeekDragRaf=0;
+      }
+      playerSeekDragPending=null;
+      schedulePlayerProgressRender(t,d,{force:true});
       seekToTime(t);
       hideSeekPreview(160);
     }
     pw.addEventListener('mousedown',e=>{
       if(isLiveMode)return; const d=dur(); if(!d)return;
-      e.preventDefault(); seekPreviewMetrics=null; progressDragging=true; pw.classList.add('dragging'); visual(getP(e),d);
+      e.preventDefault(); seekPreviewMetrics=null; progressDragging=true; pw.classList.add('dragging'); showUI(); visual(getP(e),d);
     });
     pw.addEventListener('mouseenter',()=>{seekPreviewMetrics=null;});
     pw.addEventListener('mousemove',e=>{
@@ -5602,14 +5943,19 @@ vid._mdH = () => {
     document.addEventListener('mouseup',()=>{if(progressDragging)commit();});
     pw.addEventListener('touchstart',e=>{
       if(isLiveMode)return; const d=dur(); if(!d)return;
-      e.preventDefault(); seekPreviewMetrics=null; progressDragging=true; pw.classList.add('dragging'); visual(getP(e),d);
+      e.preventDefault(); seekPreviewMetrics=null; progressDragging=true; pw.classList.add('dragging'); showUI(); visual(getP(e),d);
     },{passive:false});
     pw.addEventListener('touchmove',e=>{
       if(!progressDragging)return; e.preventDefault();
       const d=dur(); if(!d)return; visual(getP(e),d);
     },{passive:false});
     pw.addEventListener('touchend',()=>{if(progressDragging){suppressProgressClickUntil=Date.now()+450;commit();}});
-    pw.addEventListener('touchcancel',()=>{progressDragging=false;pw.classList.remove('dragging');hideSeekPreview();});
+    pw.addEventListener('touchcancel',()=>{
+      progressDragging=false;pw.classList.remove('dragging');
+      if(playerSeekDragRaf){cancelAnimationFrame(playerSeekDragRaf);playerSeekDragRaf=0;}
+      playerSeekDragPending=null;
+      hideSeekPreview();
+    });
     pw.addEventListener('click',e=>{
       if(Date.now()<suppressProgressClickUntil)return;
       if(isLiveMode||progressDragging)return;
@@ -5941,16 +6287,15 @@ function svOptimizedCardFallbackSeriesHTML(s){
 }
 
 function svOptimizedCardFallbackMovieHTML(m, sp=false){
+  if(!isPlayableMovie(m))return '';
   const src=svMediaArt(m, false);
   const img=src
     ? `<img src="${esc(src)}" alt="${esc(m.name || '')}" ${svConsumeImageAttrs(!!m._priorityImage, !!m._immediateImage)} width="342" height="513">`
     : `<div class="card-placeholder"><div class="icon">${svPlaceholderIcon('movie')}</div><div class="pname">${esc(m.name || '')}</div></div>`;
   const prog=watchProgress[m.id];
   const bar=sp&&prog?`<div class="card-progress"><div class="card-progress-fill" style="width:${Math.round(prog.progress*100)}%"></div></div>`:'';
-  const isUnplayable = isMovieUnavailable(m);
   const detailKey = registerMovieForDetail(m);
-  const unavailableOverlay = isUnplayable ? `<div style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.62);border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:4px 8px;font-size:.52rem;font-weight:800;color:rgba(255,255,255,.72);z-index:8">LIBRARY ONLY</div>` : '';
-  return `<div class="card" role="button" tabindex="0" onclick="openMovieDetail('${detailKey}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMovieDetail('${detailKey}')}">${img}${unavailableOverlay}<div class="card-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div><div class="card-overlay"><div class="card-title">${esc(m.name || '')}</div><div class="card-meta">${m.rating?`<span class="card-rating">&#9733; ${esc(m.rating)}</span>`:''} ${m.year?`<span>${esc(m.year)}</span>`:''}</div></div>${bar}</div>`;
+  return `<div class="card" role="button" tabindex="0" onclick="openMovieDetail('${detailKey}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMovieDetail('${detailKey}')}">${img}<div class="card-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div><div class="card-overlay"><div class="card-title">${esc(m.name || '')}</div><div class="card-meta">${m.rating?`<span class="card-rating">&#9733; ${esc(m.rating)}</span>`:''} ${m.year?`<span>${esc(m.year)}</span>`:''}</div></div>${bar}</div>`;
 }
 
 function svInitialCardCount(rowId){
@@ -6009,7 +6354,7 @@ function svRenderLazyTrack(trackId, rowId, items, renderItem, opts={}){
   const track=document.getElementById(trackId);
   if(!track){hide(rowId);return;}
   const limit=opts.limit || 50;
-  const list=(items||[]).slice(0, limit);
+  const list=filterPlayableCatalogItems(items).slice(0, limit);
   if(!list.length){
     if(track.querySelector('.card,.live-ch-card')){
       show(rowId);

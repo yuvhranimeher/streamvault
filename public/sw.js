@@ -1,4 +1,4 @@
-const SV_CACHE_VERSION = '20260621-stable-tracks-layout1';
+const SV_CACHE_VERSION = '20260622-audio-playable-loading1';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
 const SV_POSTER_CACHE = `streamvault-posters-${SV_CACHE_VERSION}`;
 const SV_ASSET_CACHE = `streamvault-assets-${SV_CACHE_VERSION}`;

@@ -97,6 +97,10 @@
     return isSeries ? sCardHTML(item) : cardHTML(item);
   }
 
+  function svPlayableHomeItems(items){
+    return window.svFilterPlayableCatalogItems ? window.svFilterPlayableCatalogItems(items) : (Array.isArray(items) ? items : []);
+  }
+
   function svCleanHomeTitle(value){
     return String(value || '')
       .toLowerCase()
@@ -284,7 +288,7 @@
     return fetch(`/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=${limit}&summary=${summary}&v=20260620-player-tracks-sections-final1`)
       .then(r=>r.ok ? r.json() : Promise.reject(new Error(`section ${meta.sectionKey} failed`)))
       .then(data=>{
-        const items = Array.isArray(data?.items) ? data.items : [];
+        const items = svPlayableHomeItems(data?.items);
         const total = Number.isFinite(Number(data?.total)) ? Number(data.total) : items.length;
         return { rowId:meta.rowId, items, total, _svFresh:options.summary !== true };
       })
@@ -370,7 +374,7 @@
     const meta = SV_PERF_HOME_BY_ID[rowId];
     const row = svEnsureHomeRow(rowId);
     if(!row || !meta)return;
-    const items = Array.isArray(rowData?.items) ? rowData.items : [];
+    const items = svPlayableHomeItems(rowData?.items);
     const track = document.getElementById(meta.trackId);
     if(rowData && svShouldRefillHomeRow(rowId, items, rowData) && !row._svRefillStarted){
       row._svRefillStarted = true;
@@ -434,7 +438,7 @@
   }
 
   function svRenderPersonalRows(){
-    const cont = (movies || []).filter(m=>!m.isTrending && watchProgress[m.id]?.progress > 0.02 && watchProgress[m.id]?.progress < 0.95);
+    const cont = svPlayableHomeItems((movies || []).filter(m=>!m.isTrending && watchProgress[m.id]?.progress > 0.02 && watchProgress[m.id]?.progress < 0.95));
     if(cont.length){
       svRenderLazyTrack('continueTrack','continueRow',cont,m=>cardHTML(m,true),{limit:30,initial:svInitialCardCount('continueRow'),buffer:3});
     }else{
@@ -547,7 +551,8 @@
 
   window.svRenderVirtualTrackElement = function(track, items, renderItem, opts={}){
     if(!track)return;
-    const list = (items || []).slice(0, opts.limit || items.length || 0);
+    const playableItems = svPlayableHomeItems(items);
+    const list = playableItems.slice(0, opts.limit || playableItems.length || 0);
     const rowId = opts.rowId || track.closest('.row')?.id || '';
     const nextKeys = svRowItemKeys(list);
     const existingCards = svTrackCards(track);
@@ -2932,9 +2937,9 @@
   function svRenderHeroCards(items){
     const cardsEl = document.getElementById('heroCards');
     if(!cardsEl)return false;
-    heroMovies = svExclusiveHeroDedup(items).slice(0, SV_EXCLUSIVE_HERO_LIMIT);
+    heroMovies = svExclusiveHeroDedup(svPlayableHomeItems(items)).slice(0, SV_EXCLUSIVE_HERO_LIMIT);
     if(heroMovies.length < 50){
-      heroMovies = svExclusiveHeroDedup([...heroMovies, ...svFallbackHeroItems()]).slice(0, SV_EXCLUSIVE_HERO_LIMIT);
+      heroMovies = svExclusiveHeroDedup([...heroMovies, ...svPlayableHomeItems(svFallbackHeroItems())]).slice(0, SV_EXCLUSIVE_HERO_LIMIT);
     }
     if(!heroMovies.length)return false;
     cardsEl.innerHTML = '';
@@ -3003,7 +3008,7 @@
       const meta = SV_PERF_HOME_BY_ID[rowId];
       const row = document.getElementById(rowId);
       if(!meta || !row || !Array.isArray(list) || !list.length)return;
-      const normalized = svDedupItems(list.map(svNormalizeOnlineItem).filter(Boolean)).slice(0,SV_HOME_ROW_LIMIT);
+      const normalized = svPlayableHomeItems(svDedupItems(list.map(svNormalizeOnlineItem).filter(Boolean))).slice(0,SV_HOME_ROW_LIMIT);
       if(!normalized.length)return;
       const track = document.getElementById(meta.trackId);
       if(row._svLoaded && track?.querySelector('.card,.live-ch-card')){
@@ -3080,7 +3085,7 @@
       .then(data=>{
         svSectionState.page = data.page || 0;
         svSectionState.pages = data.pages || 1;
-        svSectionState.items = data.items || [];
+        svSectionState.items = svPlayableHomeItems(data.items || []);
         svRenderGridProgressive(grid, svSectionState.items, svHomeRenderer, SV_HOME_ROW_LIMIT);
         document.getElementById('sectionLoadWrap').style.display = svSectionState.page + 1 < svSectionState.pages ? 'flex' : 'none';
       })
@@ -3096,7 +3101,7 @@
       .then(data=>{
         svSectionState.page = data.page || nextPage;
         const grid = document.getElementById('sectionGrid');
-        const items = data.items || [];
+        const items = svPlayableHomeItems(data.items || []);
         grid.insertAdjacentHTML('beforeend', items.map(svHomeRenderer).join(''));
         if(typeof svQueuePosterImages === 'function')svQueuePosterImages(grid);
         document.getElementById('sectionLoadWrap').style.display = svSectionState.page + 1 < (data.pages || svSectionState.pages) ? 'flex' : 'none';

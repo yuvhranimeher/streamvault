@@ -42,7 +42,7 @@
     });
 })();
 </script>
-<link rel="stylesheet" href="/styles.css?v=20260621-mobile-fifa-nav-fonts1">
+<link rel="stylesheet" href="/styles.css?v=20260622-audio-playable-loading1">
 </head>
 <body>
 
@@ -171,7 +171,7 @@
     <div class="fifa-headline-strip" id="fifaHeadlineStrip" hidden></div>
 	</section>
 </div>
-<script src="/fifa-fast.js?v=20260620-hotfix-restore-live-tracks1"></script>
+<script src="/fifa-fast.js?v=20260620-fifa-light-mobile-live-pill1"></script>
 	
 <div class="content" id="mainSection">
   <div class="row" id="liveHomeRow" style="display:none">
@@ -729,8 +729,12 @@
       controlslist="nodownload nofullscreen noremoteplayback nopictureinpicture"></video>
     <div class="subtitle-overlay" id="subtitleOverlay"></div>
     <div class="player-spinner" id="playerSpinner"><div class="spinner-ring"></div></div>
-    <div class="seek-flash left" id="seekFlashLeft"><div class="seek-flash-ring"></div><div class="seek-flash-label">-10s</div></div>
-    <div class="seek-flash right" id="seekFlashRight"><div class="seek-flash-ring"></div><div class="seek-flash-label">+10s</div></div>
+    <div class="seek-flash left" id="seekFlashLeft" aria-hidden="true">
+      <div class="seek-flash-ring"><svg viewBox="0 0 24 24"><path d="M11 6.5 5 12l6 5.5v-4c3.1.2 5.7 1.9 7.2 4.7l1.7-.95C18.05 13.7 15.05 11.65 11 11.45V6.5z"/></svg></div>
+    </div>
+    <div class="seek-flash right" id="seekFlashRight" aria-hidden="true">
+      <div class="seek-flash-ring"><svg viewBox="0 0 24 24"><path d="M13 6.5 19 12l-6 5.5v-4c-3.1.2-5.7 1.9-7.2 4.7l-1.7-.95c1.85-3.55 4.85-5.6 8.9-5.8V6.5z"/></svg></div>
+    </div>
     <div class="center-flash" id="centerFlash"></div>
     <div class="player-notice" id="playerNotice"></div>
     <div class="player-ui" id="playerUI">
@@ -749,16 +753,14 @@
       <div class="player-middle">
         <div class="player-tap-zone" id="tapZone"></div>
         <div class="skip-center">
-          <button class="skip-btn" onclick="seekBy(-10)">
-            <svg viewBox="0 0 24 24" width="26" height="26" fill="white"><path d="M12.5 3a9 9 0 1 0 8.46 5.88L19.2 9.8A7 7 0 1 1 12.5 5V3z"/><path d="M12.5 3v5l-4-2.5 4-2.5z"/><text x="10" y="16" font-size="6" fill="white">10</text></svg>
-            <span>10s</span>
+          <button class="skip-btn" type="button" aria-label="Rewind" onclick="seekBy(-10)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 6.5 5 12l6 5.5v-4c3.1.2 5.7 1.9 7.2 4.7l1.7-.95C18.05 13.7 15.05 11.65 11 11.45V6.5z"/></svg>
           </button>
           <button class="play-pause-center" id="ppCenterBtn" onclick="togglePlay()">
             <svg id="ppCenterIcon" viewBox="0 0 24 24" width="34" height="34" fill="white"><path d="M8 5v14l11-7z"/></svg>
           </button>
-          <button class="skip-btn" onclick="seekBy(10)">
-            <svg viewBox="0 0 24 24" width="26" height="26" fill="white"><path d="M11.5 3a9 9 0 1 1-8.46 5.88L4.8 9.8A7 7 0 1 0 11.5 5V3z"/><path d="M11.5 3v5l4-2.5-4-2.5z"/><text x="10" y="16" font-size="6" fill="white">10</text></svg>
-            <span>10s</span>
+          <button class="skip-btn" type="button" aria-label="Forward" onclick="seekBy(10)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 6.5 19 12l-6 5.5v-4c-3.1.2-5.7 1.9-7.2 4.7l-1.7-.95c1.85-3.55 4.85-5.6 8.9-5.8V6.5z"/></svg>
           </button>
         </div>
       </div>
@@ -874,9 +876,9 @@
 
 <div class="toast" id="toast"></div>
 
-<script defer src="/app.js?v=20260621-stable-tracks-layout1"></script>
-<script defer src="/details.js?v=20260621-real-browser-track-loading1"></script>
-<script defer src="/home.js?v=20260621-real-browser-track-loading1"></script>
+<script defer src="/app.js?v=20260622-audio-playable-loading1"></script>
+<script defer src="/details.js?v=20260622-audio-playable-loading1"></script>
+<script defer src="/home.js?v=20260622-audio-playable-loading1"></script>
 <script defer src="/downloads.js?v=20260621-real-browser-track-loading1"></script>
 <script defer src="/search.js?v=20260621-real-browser-track-loading1"></script>
 <script defer src="/livetv.js?v=20260621-real-browser-track-loading1"></script>

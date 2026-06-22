@@ -73,6 +73,7 @@
   };
 
   cardHTML = function(m, sp=false){
+    if(window.svIsPlayableCatalogItem && !window.svIsPlayableCatalogItem(m))return '';
     const wide = !!m?._wideStudio;
     const src = svMediaArt(m, wide);
     const img = src
@@ -80,10 +81,8 @@
       : `<div class="card-placeholder"><div class="icon">${svPlaceholderIcon('movie')}</div><div class="pname">${esc(m?.name || '')}</div></div>`;
     const prog = watchProgress[m?.id];
     const bar = sp && prog ? `<div class="card-progress"><div class="card-progress-fill" style="width:${Math.round(prog.progress*100)}%"></div></div>` : '';
-    const isUnplayable = isMovieUnavailable(m);
     const detailKey = registerMovieForDetail(m);
-    const unavailableOverlay = isUnplayable ? `<div style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.62);border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:4px 8px;font-size:.52rem;font-weight:800;color:rgba(255,255,255,.72);z-index:8">LIBRARY ONLY</div>` : '';
-    return `<div class="card${wide?' studio-wide-card':''}" role="button" tabindex="0" onclick="openMovieDetail('${detailKey}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMovieDetail('${detailKey}')}">${img}${unavailableOverlay}<div class="card-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div><div class="card-overlay"><div class="card-title">${esc(m?.name || '')}</div><div class="card-meta">${m?.rating?`<span class="card-rating">&#9733; ${esc(m.rating)}</span>`:''} ${m?.year?`<span>${esc(m.year)}</span>`:''}</div></div>${bar}</div>`;
+    return `<div class="card${wide?' studio-wide-card':''}" role="button" tabindex="0" onclick="openMovieDetail('${detailKey}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMovieDetail('${detailKey}')}">${img}<div class="card-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div><div class="card-overlay"><div class="card-title">${esc(m?.name || '')}</div><div class="card-meta">${m?.rating?`<span class="card-rating">&#9733; ${esc(m.rating)}</span>`:''} ${m?.year?`<span>${esc(m.year)}</span>`:''}</div></div>${bar}</div>`;
   };
 
   const svOriginalOpenSeriesDetail = openSeriesDetail;
@@ -143,7 +142,8 @@
     const el = document.getElementById(id);
     if(!el)return;
     const limit = window.innerWidth < 760 ? 8 : 16;
-    const visibleItems = Array.isArray(items) ? items.slice(0, limit) : [];
+    const playable = window.svFilterPlayableCatalogItems ? window.svFilterPlayableCatalogItems(items) : (Array.isArray(items) ? items : []);
+    const visibleItems = playable.slice(0, limit);
     if(!visibleItems.length){
       el.innerHTML = noDataHTML();
       return;

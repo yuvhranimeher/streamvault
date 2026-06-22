@@ -148,7 +148,24 @@
   function formatClock(seconds){
     if(!Number.isFinite(seconds))return '';
     const total = Math.max(0, Math.floor(seconds));
-    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2,'0')}`;
+    return `${String(Math.floor(total / 60)).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`;
+  }
+
+  function formatCountdown(seconds){
+    if(!Number.isFinite(seconds))return '';
+    const total = Math.max(0, Math.floor(seconds));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const secs = total % 60;
+    return `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(secs).padStart(2,'0')}`;
+  }
+
+  function matchStartMs(match){
+    const value = match && (match.startTime || match.kickoff);
+    if(!value)return null;
+    const date = new Date(value);
+    const time = date.getTime();
+    return Number.isFinite(time) ? time : null;
   }
 
   function matchTime(match){
@@ -172,13 +189,17 @@
     if(!match)return '';
     const state = status(match);
     if(state.halftime)return 'Half Time';
-    if(state.finished)return 'FT';
+    if(state.finished)return 'No upcoming match';
     if(state.postponed)return 'Postponed';
     if(state.running){
       const base = window.__svFifaFastCountdownBaseSeconds;
       const startedAt = window.__svFifaFastCountdownStartedAt || Date.now();
       const seconds = Number.isFinite(base) ? base + Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) : clockBaseSeconds(match);
       return formatClock(seconds) || '--:--';
+    }
+    if(state.upcoming){
+      const startMs = matchStartMs(match);
+      return Number.isFinite(startMs) ? formatCountdown((startMs - Date.now()) / 1000) : 'No upcoming match';
     }
     return timeLabel(match && (match.startTime || match.kickoff));
   }
@@ -190,10 +211,13 @@
     }
     const el = document.querySelector('[data-fifa-feature-timer]');
     if(!el)return;
+    window.__svFifaFastCountdownBaseSeconds = null;
+    window.__svFifaFastCountdownStartedAt = 0;
     if(!match){
-      el.textContent = '';
-      el.hidden = true;
-      el.classList.remove('is-live','is-halftime','is-final','is-upcoming');
+      el.textContent = 'No upcoming match';
+      el.hidden = false;
+      el.classList.remove('is-live','is-halftime','is-final');
+      el.classList.add('is-upcoming');
       el.style.removeProperty('color');
       el.style.removeProperty('border-color');
       el.style.removeProperty('background');
@@ -207,8 +231,8 @@
       el.hidden = !el.textContent;
       el.classList.toggle('is-live', state.running);
       el.classList.toggle('is-halftime', state.halftime);
-      el.classList.toggle('is-final', state.finished);
-      el.classList.toggle('is-upcoming', state.upcoming || state.postponed);
+      el.classList.toggle('is-final', false);
+      el.classList.toggle('is-upcoming', state.upcoming || state.postponed || state.finished);
       if(state.halftime){
         el.style.setProperty('color', HALFTIME_COLOR);
         el.style.setProperty('border-color', 'rgba(239,68,68,.55)');
@@ -220,7 +244,7 @@
       }
     };
     update();
-    if(state.running){
+    if(state.running || state.upcoming){
       window.__svFifaFastCountdownTimer = setInterval(update, 1000);
     }
   }
@@ -392,6 +416,45 @@
     return live[0] || upcoming[0] || recent[0] || null;
   }
 
+  function countdownMatchKey(match){
+    const key = matchKey(match);
+    if(key)return key;
+    return [
+      teamName(match, 'home', ''),
+      teamName(match, 'away', ''),
+      match && (match.startTime || match.kickoff || '')
+    ].map(clean).filter(Boolean).join(':') || 'fifa-countdown-match';
+  }
+
+  function nextUpcoming(...lists){
+    const seen = new Set();
+    const candidates = [];
+    let index = 0;
+    lists.flat().forEach(match=>{
+      if(!match)return;
+      const current = status(match);
+      if(!current.upcoming)return;
+      const startMs = matchStartMs(match);
+      if(!Number.isFinite(startMs))return;
+      const key = countdownMatchKey(match);
+      if(seen.has(key))return;
+      seen.add(key);
+      candidates.push({ match, startMs, index:index++ });
+    });
+    candidates.sort((a,b)=>(a.startMs - b.startMs) || (a.index - b.index));
+    return candidates[0] && candidates[0].match || null;
+  }
+
+  function pickCountdown(live, upcoming, recent){
+    const lists = [live, upcoming, recent].map(list=>Array.isArray(list) ? list : []);
+    const all = lists.flat();
+    const running = all.find(match=>status(match).running);
+    if(running)return running;
+    const halftime = all.find(match=>status(match).halftime);
+    if(halftime)return halftime;
+    return nextUpcoming(...lists);
+  }
+
   function positionStrip(stripEl, startIndex){
     if(!stripEl)return;
     stripEl.dataset.svFifaCarouselStartIndex = String(startIndex || 0);
@@ -414,6 +477,7 @@
     const carousel = carouselMatches(payload);
     const matches = carousel.matches;
     const featured = pickFeatured(live, upcoming, recent);
+    const countdown = pickCountdown(live, upcoming, recent);
     const sig = signature(payload);
     updateLiveShortcut(payload);
     if(root.dataset.svFifaFastSignature === sig)return true;
@@ -464,7 +528,7 @@
 
     window.__svFifaFastPayload = payload;
     window.__svFifaFastRenderAt = (window.performance && performance.now) ? performance.now() : Date.now();
-    startCountdown(featured);
+    startCountdown(countdown);
     return true;
   }
 

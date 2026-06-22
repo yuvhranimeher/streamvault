@@ -2094,13 +2094,30 @@
     const total = Math.max(0, Math.floor(seconds));
     const minutes = Math.floor(total / 60);
     const secs = total % 60;
-    return `${minutes}:${String(secs).padStart(2,'0')}`;
+    return `${String(minutes).padStart(2,'0')}:${String(secs).padStart(2,'0')}`;
+  }
+
+  function svFifaFormatCountdownClock(seconds){
+    if(!Number.isFinite(seconds))return '';
+    const total = Math.max(0, Math.floor(seconds));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const secs = total % 60;
+    return `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(secs).padStart(2,'0')}`;
+  }
+
+  function svFifaMatchStartMs(match){
+    const value = match?.startTime || match?.kickoff;
+    if(!value)return null;
+    const date = new Date(value);
+    const time = date.getTime();
+    return Number.isFinite(time) ? time : null;
   }
 
   function svFifaFeaturedTimerText(match){
     const state = svFifaNormalizeMatchStatus(match);
     if(state.halftime)return 'Half Time';
-    if(state.finished)return 'FT';
+    if(state.finished)return 'No upcoming match';
     if(state.postponed)return 'Postponed';
     if(state.running){
       const isCurrent = svFifaLiveState.countdownMatch === match;
@@ -2113,7 +2130,27 @@
         : 0;
       return svFifaFormatMatchClock(baseSeconds + elapsed);
     }
+    if(state.upcoming){
+      const startMs = svFifaMatchStartMs(match);
+      return Number.isFinite(startMs) ? svFifaFormatCountdownClock((startMs - Date.now()) / 1000) : 'No upcoming match';
+    }
     return svFifaFormatTime(match?.startTime || match?.kickoff);
+  }
+
+  function svShowFifaNoUpcomingCountdown(){
+    const el = document.querySelector('[data-fifa-feature-timer]');
+    if(!el)return;
+    el.textContent = 'No upcoming match';
+    el.hidden = false;
+    el.classList.remove('is-live','is-halftime','is-final');
+    el.classList.add('is-upcoming');
+    el.style.removeProperty('color');
+    el.style.removeProperty('border-color');
+    el.style.removeProperty('background');
+    if(svFifaLiveState.lastTimerDebugSignature !== 'no-upcoming'){
+      svFifaLiveState.lastTimerDebugSignature = 'no-upcoming';
+      svFifaDebugLog('timer update', { key:'no-upcoming', status:'UPCOMING', text:el.textContent });
+    }
   }
 
   function svClearFifaCountdown(){
@@ -2148,8 +2185,8 @@
     el.hidden = false;
     el.classList.toggle('is-live', state.running);
     el.classList.toggle('is-halftime', state.halftime);
-    el.classList.toggle('is-final', state.finished);
-    el.classList.toggle('is-upcoming', state.upcoming || state.postponed);
+    el.classList.toggle('is-final', false);
+    el.classList.toggle('is-upcoming', state.upcoming || state.postponed || state.finished);
     if(state.halftime){
       el.style.setProperty('color', SV_FIFA_HALFTIME_COLOR);
       el.style.setProperty('border-color', 'rgba(239,68,68,.55)');
@@ -2168,14 +2205,18 @@
 
   function svStartFifaCountdown(match, key){
     svClearFifaCountdown();
-    if(!match || !key || document.hidden)return;
+    if(document.hidden)return;
+    if(!match){
+      svShowFifaNoUpcomingCountdown();
+      return;
+    }
     const state = svFifaNormalizeMatchStatus(match);
     svFifaLiveState.countdownMatch = match;
-    svFifaLiveState.countdownMatchKey = key;
+    svFifaLiveState.countdownMatchKey = key || svFifaCountdownMatchKey(match);
     svFifaLiveState.countdownBaseSeconds = state.running ? svFifaClockBaseSeconds(match) : null;
     svFifaLiveState.countdownStartedAt = Date.now();
     svUpdateFifaCountdown();
-    if(!state.running)return;
+    if(!state.running && !state.upcoming)return;
     svFifaLiveState.countdownTimer = setInterval(svUpdateFifaCountdown, 1000);
   }
 
@@ -2468,6 +2509,45 @@
     return liveMatches[0] || upcomingMatches[0] || recentResults[0] || null;
   }
 
+  function svFifaCountdownMatchKey(match){
+    const key = svFifaMatchKey(match);
+    if(key)return key;
+    return [
+      match?.homeTeam || match?.home?.name || '',
+      match?.awayTeam || match?.away?.name || '',
+      match?.startTime || match?.kickoff || ''
+    ].map(svFifaCleanText).filter(Boolean).join(':') || 'fifa-countdown-match';
+  }
+
+  function svFifaPickNextUpcomingMatch(...lists){
+    const seen = new Set();
+    const candidates = [];
+    let index = 0;
+    lists.flat().forEach(match=>{
+      if(!match)return;
+      const state = svFifaNormalizeMatchStatus(match);
+      if(!state.upcoming)return;
+      const startMs = svFifaMatchStartMs(match);
+      if(!Number.isFinite(startMs))return;
+      const key = svFifaCountdownMatchKey(match);
+      if(seen.has(key))return;
+      seen.add(key);
+      candidates.push({ match, startMs, index:index++ });
+    });
+    candidates.sort((a,b)=>(a.startMs - b.startMs) || (a.index - b.index));
+    return candidates[0]?.match || null;
+  }
+
+  function svFifaPickCountdownMatch(liveMatches, upcomingMatches, recentResults){
+    const lists = [liveMatches, upcomingMatches, recentResults].map(list=>Array.isArray(list) ? list : []);
+    const all = lists.flat();
+    const running = all.find(match=>svFifaNormalizeMatchStatus(match).running);
+    if(running)return running;
+    const halftime = all.find(match=>svFifaNormalizeMatchStatus(match).halftime);
+    if(halftime)return halftime;
+    return svFifaPickNextUpcomingMatch(...lists);
+  }
+
   function svFifaApplyStatusClasses(el, state){
     if(!el || !state)return;
     ['is-live','is-result','is-final','is-upcoming','is-halftime'].forEach(name=>el.classList.remove(name));
@@ -2641,6 +2721,8 @@
     const matchList = carousel.matches;
     const featuredMatch = svFifaPickFeaturedMatch(liveMatches, upcomingMatches, recentResults);
     const featuredKey = featuredMatch ? svFifaMatchKey(featuredMatch) : '';
+    const countdownMatch = svFifaPickCountdownMatch(liveMatches, upcomingMatches, recentResults);
+    const countdownKey = countdownMatch ? svFifaCountdownMatchKey(countdownMatch) : '';
     svFifaLiveState.featuredMatchKey = featuredKey;
     svSetMobileLiveMatchState(liveMatches.some(match=>svFifaIsLiveMatch(match)));
     svFifaLiveState.matchesByKey.clear();
@@ -2679,8 +2761,7 @@
     if(!errorMessage && (root.dataset.svFifaFastSignature === signature || svFifaLiveState.renderSignature === signature)){
       svFifaLiveState.renderSignature = signature;
       root.dataset.svFifaRenderedSignature = signature;
-      if(featuredMatch)svStartFifaCountdown(featuredMatch, featuredKey);
-      else svClearFifaCountdown();
+      svStartFifaCountdown(countdownMatch, countdownKey);
       if(stripEl)svFifaPositionMatchStrip(stripEl, carousel.startIndex);
       svScheduleFifaPostRenderWork(featuredMatch, headlines);
       return;
@@ -2695,8 +2776,7 @@
       featuredEl.classList.toggle('is-final', !!featuredState?.finished);
       featuredEl.innerHTML = featuredMatch ? svFifaRenderMatch(featuredMatch, true, featuredKey) : svFifaRenderEmpty(emptyTitle, emptyDetail, true);
     }
-    if(featuredMatch)svStartFifaCountdown(featuredMatch, featuredKey);
-    else svClearFifaCountdown();
+    svStartFifaCountdown(countdownMatch, countdownKey);
     if(standingsEl){
       standingsEl.innerHTML = svFifaRenderStandings(standings);
       standingsEl.hidden = !standings.length;
@@ -2772,10 +2852,10 @@
         const upcomingMatches = Array.isArray(data?.upcomingMatches) ? data.upcomingMatches : [];
         const recentResults = Array.isArray(data?.recentResults) ? data.recentResults : [];
         const featuredMatch = svFifaPickFeaturedMatch(liveMatches, upcomingMatches, recentResults);
-        const featuredKey = featuredMatch ? svFifaMatchKey(featuredMatch) : '';
+        const countdownMatch = svFifaPickCountdownMatch(liveMatches, upcomingMatches, recentResults);
+        const countdownKey = countdownMatch ? svFifaCountdownMatchKey(countdownMatch) : '';
         svFifaPatchVisibleScores(data, featuredMatch);
-        if(featuredMatch)svStartFifaCountdown(featuredMatch, featuredKey);
-        else svClearFifaCountdown();
+        svStartFifaCountdown(countdownMatch, countdownKey);
         svFifaLiveState.lastFetchFailed = false;
         svFifaLiveState.payload = data;
         svFifaWriteCachedPayload(data);

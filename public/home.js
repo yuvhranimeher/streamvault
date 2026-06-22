@@ -73,17 +73,20 @@
   var svHomeRowClaims = new Map();
   var svWeakDevice = ((navigator.deviceMemory || 4) <= 2) || ((navigator.hardwareConcurrency || 4) <= 2) || (innerWidth < 760 && ((navigator.deviceMemory || 4) <= 3));
   var SV_HOME_MIN_ROW_ITEMS = svWeakDevice ? 6 : 8;
+  var SV_HOME_MIN_SECTION_ITEMS = 100;
+  var SV_HOME_ROW_LIMIT = 120;
   var SV_DYNAMIC_BRAND_ROWS = new Set(['warnerRow','hboRow']);
+  var svLoggedShortRows = window.__svLoggedShortRows || (window.__svLoggedShortRows = new Set());
 
   function svInstallNormalStudioPosterSizing(){
     if(document.getElementById('svNormalStudioPosterSizing'))return;
     const style = document.createElement('style');
     style.id = 'svNormalStudioPosterSizing';
     style.textContent = `
-      #marvelTrack,#dcTrack{height:calc(var(--card-h) + 24px)!important;gap:16px!important}
+      #marvelTrack,#dcTrack{height:calc(var(--card-h) + var(--sv-section-track-extra,8px))!important;max-height:calc(var(--card-h) + var(--sv-section-track-extra,8px))!important;gap:16px!important;padding-top:2px!important;padding-bottom:4px!important}
       #marvelTrack .card,#dcTrack .card{flex:0 0 var(--card-w)!important;width:var(--card-w)!important;min-width:var(--card-w)!important;max-width:var(--card-w)!important;height:var(--card-h)!important;min-height:var(--card-h)!important;max-height:var(--card-h)!important;border-radius:var(--card-radius)!important}
       #marvelTrack .card img,#dcTrack .card img,#marvelTrack .card-placeholder,#dcTrack .card-placeholder{width:100%!important;height:100%!important;object-fit:cover!important;border-radius:var(--card-radius)!important}
-      #marvelTrack .card-overlay,#dcTrack .card-overlay{padding:12px 10px 10px!important;border-radius:var(--card-radius)!important}
+      #marvelTrack .card-overlay,#dcTrack .card-overlay{padding:14px 12px 12px!important;border-radius:var(--card-radius)!important}
     `;
     document.head.appendChild(style);
   }
@@ -140,38 +143,35 @@
   }
 
   function svClaimHomeItems(rowId, items, limit){
-    const activeClaims = new Set(svHomeHeroClaims);
-    svHomeRowClaims.forEach((claims, owner)=>{
-      if(owner !== rowId)claims.forEach(key=>activeClaims.add(key));
-    });
     const owned = new Set();
     const ownedTitles = new Set();
     const out = [];
-    const take = (item, allowPreviousClaims)=>{
+    const take = item=>{
       const keys = svHomeItemKeys(item);
       const title = svHomeTitleKey(item);
       if(!keys.length && !title)return false;
       if(title && ownedTitles.has(title))return false;
       if(keys.some(key=>owned.has(key)))return false;
-      if(!allowPreviousClaims && keys.some(key=>activeClaims.has(key)))return false;
       keys.forEach(key=>owned.add(key));
       if(title)ownedTitles.add(title);
       out.push(item);
       return true;
     };
     for(const item of items || []){
-      take(item, false);
+      take(item);
       if(out.length >= limit)break;
-    }
-    const minFill = Math.min(limit, svWeakDevice ? 6 : 10, (items || []).length);
-    if(out.length < minFill){
-      for(const item of items || []){
-        take(item, true);
-        if(out.length >= limit || out.length >= minFill)break;
-      }
     }
     svHomeRowClaims.set(rowId, owned);
     return out;
+  }
+
+  function svLogShortHomeRow(rowId, count, source='section'){
+    const meta = SV_PERF_HOME_BY_ID[rowId];
+    if(!meta || count >= SV_HOME_MIN_SECTION_ITEMS)return;
+    const key = `${rowId}:${count}:${source}`;
+    if(svLoggedShortRows.has(key))return;
+    svLoggedShortRows.add(key);
+    console.warn(`[Homepage] ${meta.title}: ${count} valid matches found (showing all; fewer than ${SV_HOME_MIN_SECTION_ITEMS}).`);
   }
 
   function svSkeletonTrack(track){
@@ -279,11 +279,15 @@
   const svHomeFeedPrime = svFetchHomeFeed(svWeakDevice ? 12 : 24).catch(()=>null);
 
   function svFetchHomeSection(meta, options={}){
-    const limit = options.limit || (svWeakDevice ? 12 : 24);
-    const summary = options.summary === false ? '0' : '1';
+    const limit = options.limit || SV_HOME_ROW_LIMIT;
+    const summary = options.summary === true ? '1' : '0';
     return fetch(`/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=${limit}&summary=${summary}&v=20260620-player-tracks-sections-final1`)
       .then(r=>r.ok ? r.json() : Promise.reject(new Error(`section ${meta.sectionKey} failed`)))
-      .then(data=>({ rowId:meta.rowId, items:Array.isArray(data?.items) ? data.items : [], _svFresh:options.summary === false }))
+      .then(data=>{
+        const items = Array.isArray(data?.items) ? data.items : [];
+        const total = Number.isFinite(Number(data?.total)) ? Number(data.total) : items.length;
+        return { rowId:meta.rowId, items, total, _svFresh:options.summary !== true };
+      })
       .catch(err=>{
         console.warn('[Homepage] section unavailable:', meta.sectionKey, err.message);
         return { rowId:meta.rowId, items:[] };
@@ -293,9 +297,8 @@
   function svShouldRefillHomeRow(rowId, items, rowData){
     if(rowData?._svFresh)return false;
     if(!SV_PERF_HOME_BY_ID[rowId])return false;
-    if(['trendingRow','seriesRow','newRow'].includes(rowId))return false;
     const count = Array.isArray(items) ? items.length : 0;
-    return count > 0 && (count < SV_HOME_MIN_ROW_ITEMS || SV_DYNAMIC_BRAND_ROWS.has(rowId));
+    return count < SV_HOME_MIN_SECTION_ITEMS || SV_DYNAMIC_BRAND_ROWS.has(rowId);
   }
 
   function svLoadHomeSections(){
@@ -371,8 +374,11 @@
     const track = document.getElementById(meta.trackId);
     if(rowData && svShouldRefillHomeRow(rowId, items, rowData) && !row._svRefillStarted){
       row._svRefillStarted = true;
-      svFetchHomeSection(meta, { summary:false, limit:svWeakDevice ? 24 : 50 }).then(fresh=>{
-        if(!fresh?.items?.length || fresh.items.length <= items.length)return;
+      svFetchHomeSection(meta, { summary:false, limit:SV_HOME_ROW_LIMIT }).then(fresh=>{
+        if(!fresh?.items?.length){
+          svLogShortHomeRow(rowId, items.length, 'section');
+          return;
+        }
         row._svLoaded = false;
         track && (track.innerHTML = '');
         svPrepareHomeRow(rowId, fresh, true);
@@ -395,18 +401,22 @@
         show(rowId);
         return;
       }
+      if(rowData?._svFresh)svLogShortHomeRow(rowId, 0, 'section');
       hide(rowId);
       return;
     }
+    row._svFresh = !!rowData?._svFresh;
+    row._svSectionTotal = rowData?.total || items.length;
     if(track?.querySelector('.card,.live-ch-card')){
       row._svItems = items;
       row._svLoaded = true;
       row.classList.remove('sv-row-pending');
       row.classList.add('sv-row-loaded');
       svRenderLazyTrack(meta.trackId, rowId, items, svHomeRenderer, {
-        limit:svWeakDevice ? 36 : 50,
+        limit:SV_HOME_ROW_LIMIT,
         initial:svInitialCardCount(rowId),
         buffer:svWeakDevice ? (window.innerWidth < 760 ? 1 : 2) : (window.innerWidth < 760 ? 3 : 4),
+        fresh:!!rowData?._svFresh,
         virtual:true
       });
       show(rowId);
@@ -440,9 +450,10 @@
     const items = row._svItems || [];
     if(!items.length){ hide(rowId); return; }
     svRenderLazyTrack(meta.trackId, rowId, items, svHomeRenderer, {
-      limit:svWeakDevice ? 36 : 50,
+      limit:SV_HOME_ROW_LIMIT,
       initial:svInitialCardCount(rowId),
       buffer:svWeakDevice ? (window.innerWidth < 760 ? 1 : 2) : (window.innerWidth < 760 ? 3 : 4),
+      fresh:!!row._svFresh,
       virtual:true
     });
     row._svLoaded = true;
@@ -615,9 +626,10 @@
   svRenderLazyTrack = function(trackId, rowId, items, renderItem, opts={}){
     const track = document.getElementById(trackId);
     if(!track){ hide(rowId); return; }
-    const limit = opts.limit || 50;
+    const limit = opts.limit || (SV_PERF_HOME_BY_ID[rowId] ? SV_HOME_ROW_LIMIT : 50);
     const shouldClaim = !!(rowId && (SV_PERF_HOME_BY_ID[rowId] || ['continueRow','becauseRow'].includes(rowId)));
     const list = shouldClaim ? svClaimHomeItems(rowId, items || [], limit) : (items || []).slice(0, limit);
+    if(opts.fresh && SV_PERF_HOME_BY_ID[rowId])svLogShortHomeRow(rowId, list.length, 'section');
     if(!list.length){
       if(track.querySelector('.card,.live-ch-card')){
         show(rowId);
@@ -2991,18 +3003,18 @@
       const meta = SV_PERF_HOME_BY_ID[rowId];
       const row = document.getElementById(rowId);
       if(!meta || !row || !Array.isArray(list) || !list.length)return;
-      const normalized = svDedupItems(list.map(svNormalizeOnlineItem).filter(Boolean)).slice(0,50);
+      const normalized = svDedupItems(list.map(svNormalizeOnlineItem).filter(Boolean)).slice(0,SV_HOME_ROW_LIMIT);
       if(!normalized.length)return;
       const track = document.getElementById(meta.trackId);
       if(row._svLoaded && track?.querySelector('.card,.live-ch-card')){
-        svRenderLazyTrack(meta.trackId,rowId,normalized,item=>item._isSeries?sCardHTML(item):cardHTML(item),{limit:50});
+        svRenderLazyTrack(meta.trackId,rowId,normalized,item=>item._isSeries?sCardHTML(item):cardHTML(item),{limit:SV_HOME_ROW_LIMIT});
         row._svItems = track._svItems || row._svItems || normalized;
         row.classList.remove('sv-row-pending');
         row.classList.add('sv-row-loaded');
         return;
       }
       row._svItems = normalized;
-      svRenderLazyTrack(meta.trackId,rowId,normalized,item=>item._isSeries?sCardHTML(item):cardHTML(item),{limit:50});
+      svRenderLazyTrack(meta.trackId,rowId,normalized,item=>item._isSeries?sCardHTML(item):cardHTML(item),{limit:SV_HOME_ROW_LIMIT});
       row._svLoaded = !!track?.querySelector('.card,.live-ch-card');
       row.classList.remove('sv-row-pending');
       row.classList.add('sv-row-loaded');
@@ -3063,13 +3075,13 @@
     const grid = document.getElementById('sectionGrid');
     grid.innerHTML = '<div class="sv-skeleton-card"></div><div class="sv-skeleton-card"></div><div class="sv-skeleton-card"></div>';
     svSectionState = { key:meta.sectionKey, page:0, pages:1, items:[], rowId };
-    fetch(`/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=60&summary=1`)
+    fetch(`/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=${SV_HOME_ROW_LIMIT}&summary=0`)
       .then(r=>r.json())
       .then(data=>{
         svSectionState.page = data.page || 0;
         svSectionState.pages = data.pages || 1;
         svSectionState.items = data.items || [];
-        svRenderGridProgressive(grid, svSectionState.items, svHomeRenderer, 60);
+        svRenderGridProgressive(grid, svSectionState.items, svHomeRenderer, SV_HOME_ROW_LIMIT);
         document.getElementById('sectionLoadWrap').style.display = svSectionState.page + 1 < svSectionState.pages ? 'flex' : 'none';
       })
       .catch(()=>{ grid.innerHTML = '<div class="empty"><h2>Could not load this section</h2></div>'; });
@@ -3079,7 +3091,7 @@
   window.svLoadMoreSection = function(){
     const nextPage = (svSectionState.page || 0) + 1;
     if(nextPage >= svSectionState.pages)return;
-    fetch(`/api/section/${encodeURIComponent(svSectionState.key)}?page=${nextPage}&limit=60&summary=1`)
+    fetch(`/api/section/${encodeURIComponent(svSectionState.key)}?page=${nextPage}&limit=${SV_HOME_ROW_LIMIT}&summary=0`)
       .then(r=>r.json())
       .then(data=>{
         svSectionState.page = data.page || nextPage;

@@ -655,10 +655,10 @@ function renderSortedTrack(trackId, list, sp=false) {
   const sorted = [...list].sort((a,b) => movieScore(b) - movieScore(a));
   const rowId = document.getElementById(trackId)?.closest('.row')?.id || trackId.replace(/Track$/,'Row');
   if(typeof svRenderLazyTrack === 'function'){
-    svRenderLazyTrack(trackId,rowId,sorted,m=>cardHTML(m,sp),{limit:50});
+    svRenderLazyTrack(trackId,rowId,sorted,m=>cardHTML(m,sp),{limit:120});
     return;
   }
-  document.getElementById(trackId).innerHTML = sorted.slice(0,18).map(m=>cardHTML(m,sp)).join('');
+  document.getElementById(trackId).innerHTML = sorted.slice(0,120).map(m=>cardHTML(m,sp)).join('');
 }
 
 // ══════════════════ INIT ══════════════════
@@ -1154,7 +1154,7 @@ function bgrPublisher(trackId, rowId, publisher) {
   }).map(s => ({...s, _isSeries: true}));
   const list = _dedupSort([...sList, ...mList]);
   if (list.length >= 1) {
-    document.getElementById(trackId).innerHTML = list.slice(0, 50).map(item => item._isSeries ? sCardHTML(item) : cardHTML(item)).join('');
+    document.getElementById(trackId).innerHTML = list.slice(0, 120).map(item => item._isSeries ? sCardHTML(item) : cardHTML(item)).join('');
     show(rowId);
   } else {
     hide(rowId);
@@ -1201,7 +1201,7 @@ const bPriorityIdx = priorityList.findIndex(p => normalize(bName).includes(norma
     return (parseFloat(b.rating) || 0) - (parseFloat(a.rating) || 0);
   });
   
-  document.getElementById(trackId).innerHTML = list.slice(0, 50).map(item =>
+  document.getElementById(trackId).innerHTML = list.slice(0, 120).map(item =>
     item._isSeries ? sCardHTML(item) : cardHTML(item)
   ).join('');
   show(rowId);
@@ -1249,7 +1249,7 @@ async function buildStudioRow(trackId, rowId, publisher, keywords, priorityPatte
   });
 
   if (!list.length) { hide(rowId); return; }
-  document.getElementById(trackId).innerHTML = list.slice(0, 50).map(m => cardHTML(m)).join('');
+  document.getElementById(trackId).innerHTML = list.slice(0, 120).map(m => cardHTML(m)).join('');
   show(rowId);
 }
 
@@ -1343,7 +1343,7 @@ function svLegacyBuildRowsUnused(){
       return (parseFloat(b.rating) || 0) - (parseFloat(a.rating) || 0);
     });
     
-    document.getElementById(trackId).innerHTML = list.slice(0, 50).map(item =>
+    document.getElementById(trackId).innerHTML = list.slice(0, 120).map(item =>
       item._isSeries ? sCardHTML(item) : cardHTML(item)
     ).join('');
     show(rowId);
@@ -1409,21 +1409,21 @@ function bgr(tid, rid, genres){
   const mList = movies.filter(m => genreMatch(m, genres));
   const sList = series.filter(s => genreMatch(s, genres)).map(s=>({...s,_isSeries:true}));
   const list = _dedupSort([...sList, ...mList]);
-  if(list.length >= 1){document.getElementById(tid).innerHTML=list.slice(0,50).map(item=>item._isSeries?sCardHTML(item):cardHTML(item)).join('');show(rid);}else hide(rid);
+  if(list.length >= 1){document.getElementById(tid).innerHTML=list.slice(0,120).map(item=>item._isSeries?sCardHTML(item):cardHTML(item)).join('');show(rid);}else hide(rid);
 }
 function bgrLang(tid, rid, langs){
   const mList = movies.filter(m => langMatch(m, langs));
   const sList = series.filter(s => langMatch(s, langs)).map(s=>({...s,_isSeries:true}));
   const list = _dedupSort([...sList, ...mList]);
-  if(list.length >= 1){document.getElementById(tid).innerHTML=list.slice(0,50).map(item=>item._isSeries?sCardHTML(item):cardHTML(item)).join('');show(rid);}else hide(rid);
+  if(list.length >= 1){document.getElementById(tid).innerHTML=list.slice(0,120).map(item=>item._isSeries?sCardHTML(item):cardHTML(item)).join('');show(rid);}else hide(rid);
 }
 function bgrCustom(tid, rid, predFn){
   const mList = movies.filter(predFn);
   const sList = series.filter(predFn).map(s=>({...s,_isSeries:true}));
   const list = _dedupSort([...sList, ...mList]);
-  if(list.length >= 1){document.getElementById(tid).innerHTML=list.slice(0,50).map(item=>item._isSeries?sCardHTML(item):cardHTML(item)).join('');show(rid);}else hide(rid);
+  if(list.length >= 1){document.getElementById(tid).innerHTML=list.slice(0,120).map(item=>item._isSeries?sCardHTML(item):cardHTML(item)).join('');show(rid);}else hide(rid);
 }
-function bsr(tid,rid){if(!series.length){hide(rid);return;}document.getElementById(tid).innerHTML=series.slice(0,50).map(sCardHTML).join('');show(rid);}
+function bsr(tid,rid){if(!series.length){hide(rid);return;}document.getElementById(tid).innerHTML=series.slice(0,120).map(sCardHTML).join('');show(rid);}
 function buildSeriesGrid(){ filterSeriesPage(); }
 
 function registerMovieForDetail(movie){
@@ -5667,7 +5667,7 @@ vid._mdH = () => {
 
 /* ─────────────────────────────────────────────────────────────────────────────
    StreamVault runtime patch: faster first-paint images, channel card colors,
-   Marvel/DC wide-card rendering. Kept separate so existing playback/API logic
+   Marvel/DC poster-card rendering. Kept separate so existing playback/API logic
    remains intact.
 ───────────────────────────────────────────────────────────────────────────── */
 const _svWeakDevice = ((navigator.deviceMemory || 4) <= 2) || ((navigator.hardwareConcurrency || 4) <= 2) || (innerWidth < 760 && ((navigator.deviceMemory || 4) <= 3));
@@ -6133,7 +6133,7 @@ async function buildStudioRow(trackId, rowId, publisher, keywords, priorityPatte
   });
 
   if (!list.length) { hide(rowId); return; }
-  svRenderLazyTrack(trackId,rowId,list,(m,i)=>cardHTML({...m,_priorityImage:i<2}),{limit:50,initial:svInitialCardCount(rowId),batch:4});
+  svRenderLazyTrack(trackId,rowId,list,(m,i)=>cardHTML({...m,_priorityImage:i<2}),{limit:120,initial:svInitialCardCount(rowId),batch:8});
 }
 
 function bgrStudioWithPriority(trackId, rowId, predicate, publisher) {
@@ -6160,7 +6160,7 @@ function bgrStudioWithPriority(trackId, rowId, predicate, publisher) {
     rowId,
     list,
     (item,i)=>item._isSeries?sCardHTML({...item,_priorityImage:i<2}):cardHTML({...item,_priorityImage:i<2}),
-    {limit:50,initial:svInitialCardCount(rowId),batch:4}
+    {limit:120,initial:svInitialCardCount(rowId),batch:8}
   );
 }
 
@@ -6383,16 +6383,16 @@ function svFallbackHomeItems(rowId){
     universalRow:8,disneyRow:16,warnerRow:24,hboRow:32,appleTvRow:40,
     indianRow:48,dramaRow:56,spanishRow:64,highRatedRow:0
   };
-  if(rowId==='seriesRow')return (series||[]).slice(0,50).map(s=>({...s,_isSeries:true}));
-  if(rowId==='allRow')return svSortItems(movies||[]).slice(0,50);
+  if(rowId==='seriesRow')return (series||[]).slice(0,120).map(s=>({...s,_isSeries:true}));
+  if(rowId==='allRow')return svSortItems(movies||[]).slice(0,120);
   if(rowId==='highRatedRow'){
     const rated=all.filter(i=>parseFloat(i.rating)||0).sort((a,b)=>(parseFloat(b.rating)||0)-(parseFloat(a.rating)||0));
-    if(rated.length)return rated.slice(0,50);
+    if(rated.length)return rated.slice(0,120);
   }
   const off=offsets[rowId]||0;
-  return all.slice(off,off+50);
+  return all.slice(off,off+120);
 }
-function svRenderMixedTrack(trackId,rowId,list,limit=50){
+function svRenderMixedTrack(trackId,rowId,list,limit=120){
   const track=document.getElementById(trackId);
   if(!track){hide(rowId);return;}
   let items=svSortItems(list).slice(0,limit);
@@ -6400,30 +6400,30 @@ function svRenderMixedTrack(trackId,rowId,list,limit=50){
   if(!items.length){hide(rowId);return;}
   svRenderLazyTrack(trackId,rowId,items,item=>item._isSeries?sCardHTML(item):cardHTML(item),{limit});
 }
-function svBuildKeywordRow(trackId,rowId,keywords,{includeSeries=true,limit=50}={}){
+function svBuildKeywordRow(trackId,rowId,keywords,{includeSeries=true,limit=120}={}){
   const mList=(movies||[]).filter(m=>svAnyKeyword(m,keywords));
   const sList=includeSeries?(series||[]).filter(s=>svAnyKeyword(s,keywords)).map(s=>({...s,_isSeries:true})):[];
   svRenderMixedTrack(trackId,rowId,[...sList,...mList],limit);
 }
-function svBuildPredicateRow(trackId,rowId,pred,{includeSeries=true,limit=50}={}){
+function svBuildPredicateRow(trackId,rowId,pred,{includeSeries=true,limit=120}={}){
   const mList=(movies||[]).filter(pred);
   const sList=includeSeries?(series||[]).filter(pred).map(s=>({...s,_isSeries:true})):[];
   svRenderMixedTrack(trackId,rowId,[...sList,...mList],limit);
 }
 function svBuildIndianRow(){
   const keys=['hindi','bengali','bangla','tamil','telugu','malayalam','kannada','bollywood','india','indian','kollywood','tollywood','dhallywood'];
-  svBuildPredicateRow('indianTrack','indianRow',item=>svAnyKeyword(item,keys),{includeSeries:true,limit:50});
+  svBuildPredicateRow('indianTrack','indianRow',item=>svAnyKeyword(item,keys),{includeSeries:true,limit:120});
 }
 function svFallbackTrending(){
   const direct=[...(trendingSeries||[]).map(s=>({...s,_isSeries:true})),...(trendingMovies||[])].filter(i=>i&&i.poster);
   if(direct.length)return direct;
-  return svSortItems([...(series||[]).map(s=>({...s,_isSeries:true})),...(movies||[])]).filter(i=>i.poster).slice(0,50);
+  return svSortItems([...(series||[]).map(s=>({...s,_isSeries:true})),...(movies||[])]).filter(i=>i.poster).slice(0,120);
 }
 function svNewItems(){
-  const s=[...(series||[])].slice(-18).reverse().map(x=>({...x,_isSeries:true}));
-  const m=[...(movies||[])].slice(-40).reverse();
+  const s=[...(series||[])].slice(-60).reverse().map(x=>({...x,_isSeries:true}));
+  const m=[...(movies||[])].slice(-120).reverse();
   const mixed=[...s,...m].filter(i=>i.poster||i.backdrop);
-  return mixed.length?mixed:svSortItems([...(series||[]).map(x=>({...x,_isSeries:true})),...(movies||[])]).slice(0,30);
+  return mixed.length?mixed:svSortItems([...(series||[]).map(x=>({...x,_isSeries:true})),...(movies||[])]).slice(0,120);
 }
 function svTrackIdForRow(rowId){
   const meta=SV_HOME_ROW_META[rowId];
@@ -6451,13 +6451,13 @@ function svRenderOnlineSections(rows){
     const trackId=svTrackIdForRow(rowId);
     const track=trackId&&document.getElementById(trackId);
     if(!track||!Array.isArray(list)||!list.length)return;
-    const items=svDedupItems(list.map(svNormalizeOnlineItem).filter(Boolean)).slice(0,50);
+    const items=svDedupItems(list.map(svNormalizeOnlineItem).filter(Boolean)).slice(0,120);
     if(!items.length)return;
     if(track.querySelector('.card,.live-ch-card')){
-      svRenderLazyTrack(trackId,rowId,items,item=>item._isSeries?sCardHTML(item):cardHTML(item),{limit:50});
+      svRenderLazyTrack(trackId,rowId,items,item=>item._isSeries?sCardHTML(item):cardHTML(item),{limit:120});
       return;
     }
-    svRenderLazyTrack(trackId,rowId,items,item=>item._isSeries?sCardHTML(item):cardHTML(item),{limit:50});
+    svRenderLazyTrack(trackId,rowId,items,item=>item._isSeries?sCardHTML(item):cardHTML(item),{limit:120});
   };
   Object.entries(rows).forEach(renderEntry);
   svApplyHomeOrder();
@@ -6488,11 +6488,11 @@ function buildRows(){
   svApplyHomeOrder();
   if(typeof _svEagerImageBudget!=='undefined')_svEagerImageBudget=14;
 
-  svRenderMixedTrack('newTrack','newRow',svNewItems(),50);
+  svRenderMixedTrack('newTrack','newRow',svNewItems(),120);
   buildLiveHomeRow();
   svBuildKeywordRow('netflixTrack','netflixRow',[
     'netflix','stranger things','witcher','bridgerton','squid game','money heist','dark','narcos','extraction','red notice','bird box','the old guard','enola holmes','wednesday','lucifer'
-  ],{includeSeries:true,limit:36});
+  ],{includeSeries:true,limit:120});
 
   svRunRowQueue([
     ()=>buildStudioRow('marvelTrack','marvelRow','marvel',
@@ -6503,8 +6503,8 @@ function buildRows(){
       ['batman','superman','wonder woman','aquaman','the flash 2023','joker 2019','joker folie','shazam','suicide squad','justice league','man of steel','dark knight','black adam','blue beetle','batman begins','the batman 2022','zack snyder'],
       ['the dark knight','man of steel','wonder woman','justice league','aquaman','joker','the batman','batman begins','batman v superman']
     ),
-    ()=>svRenderMixedTrack('trendingTrack','trendingRow',svFallbackTrending(),50),
-    ()=>series&&series.length?svRenderLazyTrack('seriesTrack','seriesRow',series,sCardHTML,{limit:50}):hide('seriesRow'),
+    ()=>svRenderMixedTrack('trendingTrack','trendingRow',svFallbackTrending(),120),
+    ()=>series&&series.length?svRenderLazyTrack('seriesTrack','seriesRow',series,sCardHTML,{limit:120}):hide('seriesRow'),
     ()=>svBuildKeywordRow('universalTrack','universalRow',['universal','jurassic','fast and furious','fast & furious','minions','despicable me','the mummy','halloween','purge','jason bourne','bourne','king kong','jaws','back to the future','scarface','get out','nope','m3gan'],{includeSeries:false}),
     ()=>svBuildKeywordRow('disneyTrack','disneyRow',['disney','pixar','aladdin','mulan','moana','encanto','coco','frozen','tangled','brave','ratatouille','wall-e','inside out','soul','luca','lion king'],{includeSeries:true}),
     ()=>svBuildKeywordRow('warnerTrack','warnerRow',['warner','warner bros','harry potter','lord of the rings','hobbit','matrix','conjuring','dune','mad max','godzilla','king kong','ocean','sherlock holmes','lethal weapon','creed','superman','batman','wonder woman'],{includeSeries:true}),
@@ -6514,7 +6514,7 @@ function buildRows(){
     ()=>svBuildPredicateRow('dramaTrack','dramaRow',item=>svAnyKeyword(item,['drama','emotion','romance','family']),{includeSeries:true}),
     ()=>svBuildPredicateRow('spanishTrack','spanishRow',item=>svAnyKeyword(item,['spanish','latino','latin','mexico','mexican','argentina','colombia','spain','casa de papel','money heist','narcos']),{includeSeries:true}),
     ()=>svBuildPredicateRow('highRatedTrack','highRatedRow',item=>item.rating&&parseFloat(item.rating)>=8.0,{includeSeries:true}),
-    ()=>movies&&movies.length?renderSortedTrack('allTrack',movies):hide('allRow'),
+    ()=>movies&&movies.length?svRenderMixedTrack('allTrack','allRow',movies,120):hide('allRow'),
     ()=>svOnlineRowsCache&&svRenderOnlineSections(svOnlineRowsCache),
   ]);
 

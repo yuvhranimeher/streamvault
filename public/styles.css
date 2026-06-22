@@ -2167,13 +2167,11 @@ nav.solid{background:var(--nav-bg) !important;border-color:var(--border)}
    - fixes left/right spacing
    - fixes floating bottom nav clipping
    - adds square Live TV logo cards
-   - adds wide Marvel/DC landscape cards
+   - keeps normal content rows on poster cards
    - reduces mobile image/layout jank
 ───────────────────────────────────────────────────────────────────────────── */
 :root{
   --sv-mobile-pad:24px;
-  --sv-studio-card-w:clamp(260px,76vw,430px);
-  --sv-studio-card-h:clamp(146px,43vw,242px);
 }
 html,body{
   width:100%;
@@ -2261,19 +2259,23 @@ img{content-visibility:auto}
   .live-ch-card:hover,.channel-card:hover{transform:translateY(-3px) scale(1.035)!important}
 }
 
-/* Marvel/DC wide Apple-TV-style landscape cards */
+/* Marvel/DC rows use the same poster cards as normal sections */
 #marvelTrack,
 #dcTrack{
-  height:calc(var(--sv-studio-card-h) + 16px)!important;
-  gap:22px!important;
+  height:calc(var(--card-h) + 20px)!important;
+  gap:16px!important;
 }
 #marvelTrack .card,
 #dcTrack .card{
-  flex:0 0 var(--sv-studio-card-w)!important;
-  width:var(--sv-studio-card-w)!important;
-  height:var(--sv-studio-card-h)!important;
-  border-radius:24px!important;
-  background:#111!important;
+  flex:0 0 var(--card-w)!important;
+  width:var(--card-w)!important;
+  min-width:var(--card-w)!important;
+  max-width:var(--card-w)!important;
+  height:var(--card-h)!important;
+  min-height:var(--card-h)!important;
+  max-height:var(--card-h)!important;
+  border-radius:var(--card-radius)!important;
+  background:var(--card-bg)!important;
 }
 #marvelTrack .card img,
 #dcTrack .card img,
@@ -2283,30 +2285,30 @@ img{content-visibility:auto}
   height:100%!important;
   object-fit:cover!important;
   object-position:center!important;
-  border-radius:22px!important;
+  border-radius:var(--card-radius)!important;
 }
 #marvelTrack .card-overlay,
 #dcTrack .card-overlay{
-  padding:18px 18px 16px!important;
-  background:linear-gradient(to top,rgba(0,0,0,.92) 0%,rgba(0,0,0,.58) 38%,rgba(0,0,0,.10) 72%,transparent 100%)!important;
+  padding:14px 12px 12px!important;
+  background:linear-gradient(to top,rgba(0,0,0,.84) 0%,rgba(0,0,0,.34) 45%,transparent 78%)!important;
 }
 #marvelTrack .card-title,
 #dcTrack .card-title{
-  font-size:1rem!important;
-  line-height:1.18!important;
+  font-size:.78rem!important;
+  line-height:1.35!important;
   -webkit-line-clamp:2;
 }
 #marvelTrack .card-meta,
 #dcTrack .card-meta{
-  font-size:.78rem!important;
-  margin-top:7px!important;
+  font-size:.6rem!important;
+  margin-top:4px!important;
 }
 #marvelTrack .card::before,
 #dcTrack .card::before{
   opacity:.58;
 }
 @media(max-width:420px){
-  :root{--sv-studio-card-w:clamp(248px,78vw,330px);--sv-studio-card-h:clamp(140px,44vw,190px)}
+  :root{--card-w:clamp(142px,39vw,162px);--card-h:calc(var(--card-w) * 1.5)}
 }
 
 /* Mobile alignment and bottom nav fix */
@@ -2430,7 +2432,7 @@ img{content-visibility:auto}
   flex-wrap:nowrap!important;
   align-items:flex-start!important;
   justify-content:flex-start!important;
-  height:calc(var(--sv-studio-card-h) + 18px)!important;
+  height:calc(var(--card-h) + 20px)!important;
   overflow-x:auto!important;
   overflow-y:hidden!important;
   touch-action:pan-x!important;
@@ -2441,13 +2443,13 @@ img{content-visibility:auto}
   transform:none!important;
 }
 #marvelTrack .card,#dcTrack .card{
-  flex:0 0 var(--sv-studio-card-w)!important;
-  width:var(--sv-studio-card-w)!important;
-  min-width:var(--sv-studio-card-w)!important;
-  max-width:var(--sv-studio-card-w)!important;
-  height:var(--sv-studio-card-h)!important;
-  min-height:var(--sv-studio-card-h)!important;
-  max-height:var(--sv-studio-card-h)!important;
+  flex:0 0 var(--card-w)!important;
+  width:var(--card-w)!important;
+  min-width:var(--card-w)!important;
+  max-width:var(--card-w)!important;
+  height:var(--card-h)!important;
+  min-height:var(--card-h)!important;
+  max-height:var(--card-h)!important;
   scroll-snap-align:start!important;
   transform:none!important;
   translate:none!important;
@@ -2504,7 +2506,7 @@ img{content-visibility:auto}
     scroll-padding-right:24px!important;
   }
   #marvelTrack,#dcTrack{
-    height:calc(var(--sv-studio-card-h) + 8px)!important;
+    height:calc(var(--card-h) + 6px)!important;
     padding-bottom:5px!important;
   }
   #liveHomeRow{
@@ -2756,7 +2758,7 @@ nav,
 /* Mobile section cleanup: full-width rows, compact studio cards, quieter nav */
 @media(max-width:759px){
   :root{
-    --card-h:clamp(150px,38vw,204px);
+    --card-h:calc(var(--card-w) * 1.5);
   }
   .featured-showcase > .row-header{
     display:none!important;
@@ -2808,22 +2810,20 @@ nav,
   }
   #marvelTrack,
   #dcTrack{
-    --sv-studio-card-w:clamp(238px,74vw,320px);
-    --sv-studio-card-h:clamp(112px,34vw,150px);
-    height:calc(var(--sv-studio-card-h) + 8px)!important;
+    height:calc(var(--card-h) + 6px)!important;
   }
   #marvelTrack .card-overlay,
   #dcTrack .card-overlay{
-    padding:12px 14px 11px!important;
+    padding:14px 12px 12px!important;
   }
   #marvelTrack .card-title,
   #dcTrack .card-title{
-    font-size:.88rem!important;
-    line-height:1.12!important;
+    font-size:.78rem!important;
+    line-height:1.35!important;
   }
   #marvelTrack .card-meta,
   #dcTrack .card-meta{
-    font-size:.68rem!important;
+    font-size:.6rem!important;
     margin-top:4px!important;
   }
   .bottom-nav{
@@ -2878,29 +2878,31 @@ nav.solid{
   }
   #marvelTrack,
   #dcTrack{
-    --sv-studio-card-w:clamp(224px,72vw,304px);
-    --sv-studio-card-h:clamp(86px,27vw,118px);
     flex:0 0 auto!important;
-    height:var(--sv-studio-card-h)!important;
+    height:calc(var(--card-h) + 6px)!important;
     min-height:0!important;
-    max-height:var(--sv-studio-card-h)!important;
+    max-height:calc(var(--card-h) + 6px)!important;
     padding-top:0!important;
-    padding-bottom:0!important;
+    padding-bottom:4px!important;
     margin-bottom:0!important;
-    align-items:stretch!important;
+    align-items:flex-start!important;
   }
   #marvelTrack .card,
   #dcTrack .card{
-    border-radius:18px!important;
-    height:var(--sv-studio-card-h)!important;
-    min-height:var(--sv-studio-card-h)!important;
-    max-height:var(--sv-studio-card-h)!important;
+    border-radius:var(--card-radius)!important;
+    flex:0 0 var(--card-w)!important;
+    width:var(--card-w)!important;
+    min-width:var(--card-w)!important;
+    max-width:var(--card-w)!important;
+    height:var(--card-h)!important;
+    min-height:var(--card-h)!important;
+    max-height:var(--card-h)!important;
   }
   #marvelTrack .card img,
   #dcTrack .card img,
   #marvelTrack .card-placeholder,
   #dcTrack .card-placeholder{
-    border-radius:17px!important;
+    border-radius:var(--card-radius)!important;
   }
 }
 
@@ -7961,8 +7963,8 @@ html[data-theme="light"] .fifa-live-section{
 .downloads-header{
   margin-bottom:var(--sv-section-header-gap)!important;
 }
-#mainSection > .row:not(#marvelRow):not(#dcRow) > .cards-track,
-.content > .row:not(#marvelRow):not(#dcRow) > .cards-track{
+#mainSection > .row > .cards-track,
+.content > .row > .cards-track{
   height:calc(var(--card-h) + var(--sv-section-track-extra))!important;
   padding-top:2px!important;
   padding-bottom:4px!important;
@@ -7971,20 +7973,20 @@ html[data-theme="light"] .fifa-live-section{
 #dcTrack,
 #mainSection #marvelRow #marvelTrack,
 #mainSection #dcRow #dcTrack{
-  height:calc(var(--sv-studio-card-h) + var(--sv-section-track-extra))!important;
-  max-height:calc(var(--sv-studio-card-h) + var(--sv-section-track-extra))!important;
+  height:calc(var(--card-h) + var(--sv-section-track-extra))!important;
+  max-height:calc(var(--card-h) + var(--sv-section-track-extra))!important;
   padding-top:2px!important;
   padding-bottom:4px!important;
 }
 #mainSection #marvelRow #marvelTrack .card,
 #mainSection #dcRow #dcTrack .card{
-  flex:0 0 var(--sv-studio-card-w)!important;
-  width:var(--sv-studio-card-w)!important;
-  min-width:var(--sv-studio-card-w)!important;
-  max-width:var(--sv-studio-card-w)!important;
-  height:var(--sv-studio-card-h)!important;
-  min-height:var(--sv-studio-card-h)!important;
-  max-height:var(--sv-studio-card-h)!important;
+  flex:0 0 var(--card-w)!important;
+  width:var(--card-w)!important;
+  min-width:var(--card-w)!important;
+  max-width:var(--card-w)!important;
+  height:var(--card-h)!important;
+  min-height:var(--card-h)!important;
+  max-height:var(--card-h)!important;
 }
 .live-home-track{
   padding-top:2px!important;

@@ -123,6 +123,74 @@ function getMediaInfo(filePath) {
 }
 
 const mediaInfoCache = new Map();
+const mediaAudioInfoCache = new Map();
+
+function getAudioOnlyMediaInfo(filePath) {
+  return new Promise((resolve, reject) => {
+    const ffprobe = spawn(FFPROBE_BIN, [
+      '-v', 'quiet',
+      '-print_format', 'json',
+      '-select_streams', 'a',
+      '-show_entries', 'stream=index,codec_type,codec_name,channels,channel_layout:stream_tags=language,title:stream_disposition=default,forced',
+      filePath
+    ]);
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try { ffprobe.kill('SIGKILL'); } catch {}
+      reject(new Error('audio ffprobe timed out'));
+    }, 15000);
+
+    ffprobe.stdout.on('data', data => stdout += data);
+    ffprobe.stderr.on('data', data => stderr += data);
+
+    ffprobe.on('close', code => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (code !== 0) return reject(new Error(`audio ffprobe failed: ${stderr}`));
+      try {
+        const info = JSON.parse(stdout);
+        const streams = Array.isArray(info.streams) ? info.streams : [];
+        const audioTracks = streams
+          .filter(s => s.codec_type === 'audio')
+          .map((s, i) => ({
+            index: s.index,
+            streamIndex: s.index,
+            relativeIndex: i,
+            codec: s.codec_name,
+            language: s.tags?.language || 'und',
+            title: s.tags?.title || `Audio ${i + 1}`,
+            channels: s.channels || 0,
+            channelLayout: s.channel_layout || '',
+            default: s.disposition?.default === 1,
+            forced: s.disposition?.forced === 1,
+          }));
+        resolve({
+          audioTracks,
+          subtitleTracks: [],
+          videoCodec: 'unknown',
+          videoIndex: 0,
+          duration: 0,
+          container: 'unknown'
+        });
+      } catch (e) {
+        reject(e);
+      }
+    });
+
+    ffprobe.on('error', err => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      reject(err);
+    });
+  });
+}
 
 function getCachedMediaInfo(filePath) {
   let stat;
@@ -153,6 +221,34 @@ function getCachedMediaInfo(filePath) {
   if (mediaInfoCache.size > 200) {
     const oldestKey = mediaInfoCache.keys().next().value;
     mediaInfoCache.delete(oldestKey);
+  }
+
+  return promise;
+}
+
+function getCachedAudioOnlyMediaInfo(filePath) {
+  let cacheKey;
+  let mapKey = filePath;
+  try {
+    const stat = fs.statSync(filePath);
+    cacheKey = `${stat.size}:${stat.mtimeMs}`;
+  } catch {
+    mapKey = `remote:${filePath}`;
+    cacheKey = mapKey;
+  }
+
+  const cached = mediaAudioInfoCache.get(mapKey);
+  if (cached && cached.cacheKey === cacheKey) return cached.promise;
+
+  const promise = getAudioOnlyMediaInfo(filePath).catch(err => {
+    mediaAudioInfoCache.delete(mapKey);
+    throw err;
+  });
+  mediaAudioInfoCache.set(mapKey, { cacheKey, promise });
+
+  if (mediaAudioInfoCache.size > 200) {
+    const oldestKey = mediaAudioInfoCache.keys().next().value;
+    mediaAudioInfoCache.delete(oldestKey);
   }
 
   return promise;
@@ -5151,7 +5247,7 @@ function ffmpegMp4Args({ input, mode = 'remux', startSec = 0, audioMap = '0:a:0?
   }
   args.push('-i', input, '-map', '0:v:0', '-map', audioMap, '-sn', '-dn');
   if (mode === 'audio') {
-    args.push('-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2');
+    args.push('-c:v', 'copy', '-c:a', 'aac', '-b:a', '384k', '-ar', '48000');
   } else {
     args.push('-c', 'copy');
   }
@@ -6666,8 +6762,9 @@ app.get('/api/media-info/:id', async (req, res) => {
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing' });
 
   try {
-    const info = await getCachedMediaInfo(filePath);
-    const sidecarSubtitleTracks = findSubtitleTracks(entry.dir, entry.file).map((t, i) => ({
+    const audioOnly = req.query.audioOnly === '1';
+    const info = audioOnly ? await getCachedAudioOnlyMediaInfo(filePath) : await getCachedMediaInfo(filePath);
+    const sidecarSubtitleTracks = req.query.audioOnly === '1' ? [] : findSubtitleTracks(entry.dir, entry.file).map((t, i) => ({
       index: i,
       label: t.label,
       lang: t.lang,
@@ -6678,7 +6775,7 @@ app.get('/api/media-info/:id', async (req, res) => {
     res.json({ ...info, sidecarSubtitleTracks });
   } catch (e) {
     console.error(`[Media Info] Error for ${entry.file}:`, e.message);
-    const sidecarSubtitleTracks = findSubtitleTracks(entry.dir, entry.file).map((t, i) => ({
+    const sidecarSubtitleTracks = req.query.audioOnly === '1' ? [] : findSubtitleTracks(entry.dir, entry.file).map((t, i) => ({
       index: i,
       label: t.label,
       lang: t.lang,
@@ -7596,9 +7693,10 @@ app.get(['/api/ftp/media-info', '/api/ftp/info'], async (req, res) => {
   console.log(`[FTP Media Info] final play URL: ${urls.finalPlayUrl}`);
 
   try {
+    const audioOnly = req.query.audioOnly === '1';
     const [info, sidecarSubtitleTracks] = await Promise.all([
-      getCachedMediaInfo(media.decodedUrl),
-      discoverRemoteSubtitleTracks(media.decodedUrl, req).catch(() => [])
+      audioOnly ? getCachedAudioOnlyMediaInfo(media.decodedUrl) : getCachedMediaInfo(media.decodedUrl),
+      audioOnly ? Promise.resolve([]) : discoverRemoteSubtitleTracks(media.decodedUrl, req).catch(() => [])
     ]);
     res.json({
       ok: true,

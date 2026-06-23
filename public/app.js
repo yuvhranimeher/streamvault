@@ -1,6 +1,6 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260623-single-detail-english-audio1';
+const SV_ASSET_VERSION = '20260623-audio-mapped-fallback1';
 function mediaFixLog(step, data={}){
   try{console.warn(`[${SV_MEDIA_FIX_MARKER}] ${step}`, data);}catch(_){}
 }
@@ -3261,15 +3261,22 @@ function fallbackOrderForRemote(url, plan={}){
   const unsupported = plan?.unsupportedVideoHint || urlHasUnsupportedVideoHint(url);
   const selected=selectedAudioTrack();
   const explicitAudio=availableAudio.length > 1 || currentAudioIdx > 0 || Number.isFinite(selected?.streamIndex ?? selected?.sourceIndex);
-  if(englishStartupRequiresMappedSource() || explicitAudio)return ['audio','remux'];
+  if(englishStartupRequiresMappedSource() || explicitAudio)return ['audio','remux','proxy'];
   if(!isMobilePlaybackClient())return ['proxy','remux','audio'];
   if(unsupported || explicitAudio)return ['audio','remux','proxy'];
   return ['proxy','remux','audio'];
 }
 
 function fallbackOrderForLocal(plan={}){
-  if(englishStartupRequiresMappedSource())return ['audio','remux'];
-  return ['remux','audio'];
+  if(englishStartupRequiresMappedSource())return ['audio','remux','direct'];
+  return ['remux','audio','direct'];
+}
+
+function resetToOriginalAudioFallback(context='original source fallback'){
+  clearAudioLock();
+  currentAudioIdx=0;
+  setAppliedAudioIndex(0, context);
+  renderAudioTracks();
 }
 
 function applyStartupAudioInfo(info, sourceUrl='', context='startup audio'){
@@ -3391,6 +3398,7 @@ async function attachFtpFallbackStep(resolvedStreamUrl, name, step, failedAt){
   vid._sourceSeekRequired = _ftpNeedsTranscode;
   vid._mediaSourceSeekRequired = _ftpNeedsTranscode;
   vid._sourceOffset = _ftpNeedsTranscode ? failedAt : 0;
+  if(step === 'proxy')resetToOriginalAudioFallback('FTP original proxy fallback');
   if(validDurationSeconds(Number(fallback.duration))){
     _ftpDuration = Number(fallback.duration);
     setPlayerDuration(_ftpDuration, 'api');
@@ -3451,6 +3459,7 @@ async function attachLocalFallbackStep(id, step, failedAt){
   vid._sourceSeekRequired = planNeedsSourceSeek({mode:fallbackMode});
   vid._mediaSourceSeekRequired = vid._sourceSeekRequired;
   vid._sourceOffset = vid._sourceSeekRequired ? failedAt : 0;
+  if(step === 'direct')resetToOriginalAudioFallback('local original source fallback');
   if(validDurationSeconds(Number(fallback.duration)))setPlayerDuration(Number(fallback.duration),'api');
   vid.addEventListener('canplay', function onLocalFallbackCanPlay(){
     if(String(currentStreamId) !== String(id) || _ftpStreamUrl)return;
@@ -3606,12 +3615,25 @@ async function playMedia(id, name, year){
     // Desktop's direct route is deterministic. Attach it immediately so the
     // play() call remains inside the card/episode click's user activation.
     const needsServerStart = !!(startupOptions.forceAudio || startupOptions.forceRemux || startupOptions.forceHls || startupOptions.mode);
-    const plan = (mobilePlayback || needsServerStart)
-      ? await fetchLocalPlaybackPlan(id,0,startupOptions)
-      : {ok:true, id:String(id), mode:'direct', transport:'direct', src:streamUrlFor(id), duration:0};
+    let plan;
+    if(mobilePlayback || needsServerStart){
+      try{
+        plan = await fetchLocalPlaybackPlan(id,0,startupOptions);
+      }catch(e){
+        if(!needsServerStart)throw e;
+        resetToOriginalAudioFallback('local mapped startup fallback');
+        mediaFixLog('local mapped startup plan failed; using original source', {id,message:e.message});
+        plan = {ok:true, id:String(id), mode:'direct', transport:'direct', src:streamUrlFor(id), duration:0};
+        vid._localFallbackStepsTried.add('audio');
+        vid._localFallbackStepsTried.add('remux');
+      }
+    }else{
+      plan = {ok:true, id:String(id), mode:'direct', transport:'direct', src:streamUrlFor(id), duration:0};
+    }
     if(String(currentStreamId) !== String(id) || _ftpStreamUrl)return;
     _currentPlaybackPlan = plan;
     _currentPlaybackPlan.unsupportedVideoCodec = mediaInfoHasUnsupportedVideo(startupInfo);
+    if(['audio','remux','direct'].includes(String(plan.mode || '')))vid._localFallbackStepsTried.add(plan.mode);
     vid._sourceSeekRequired = planNeedsSourceSeek(plan);
     vid._mediaSourceSeekRequired = vid._sourceSeekRequired;
     if(validDurationSeconds(Number(plan.duration))){
@@ -4061,9 +4083,10 @@ function ensureFtpTrackOptionsLoaded(options={}){
 }
 
 async function playFtpMedia(streamUrl, name, year){
+  let requestedStreamUrl = String(streamUrl || '').trim();
+  let startupOptions = {};
   try {
     console.log('[Playback] play button clicked');
-    const requestedStreamUrl = String(streamUrl || '').trim();
     if(!requestedStreamUrl){
       showToast('Playback error: missing source URL');
       return;
@@ -4137,7 +4160,7 @@ async function playFtpMedia(streamUrl, name, year){
     updateSubBtn();
     const startupAudio = await prepareFtpStartupAudio(requestedStreamUrl);
     const startupInfo = startupAudio.info;
-    const startupOptions = startupAudio.options || {};
+    startupOptions = startupAudio.options || {};
     if(startupOptions.blockPlayback){
       delete startupOptions.blockPlayback;
       startupOptions.forceAudio = true;
@@ -4161,9 +4184,20 @@ async function playFtpMedia(streamUrl, name, year){
       try{
         playInfo = await fetchFtpPlaybackPlan(requestedStreamUrl,0,startupOptions);
       }catch(e){
-        if(needsServerStart)throw e;
+        if(needsServerStart){
+          resetToOriginalAudioFallback('FTP mapped startup fallback');
+          mediaFixLog('FTP mapped startup plan failed; using original proxy', {url:requestedStreamUrl,message:e.message});
+          playInfo = localFtpPlaybackPlan(requestedStreamUrl, {forceProxy:true});
+          vid._ftpFallbackStepsTried.add('audio');
+          vid._ftpFallbackStepsTried.add('remux');
+        }else{
+          if(playToken !== vid._durationToken)return;
+          console.warn('[Playback] FTP plan failed, trying direct route:', e.message);
+          playInfo = localFtpPlaybackPlan(requestedStreamUrl);
+        }
+      }
+      if(!playInfo){
         if(playToken !== vid._durationToken)return;
-        console.warn('[Playback] FTP plan failed, trying direct route:', e.message);
         playInfo = localFtpPlaybackPlan(requestedStreamUrl);
       }
     }
@@ -4184,7 +4218,7 @@ async function playFtpMedia(streamUrl, name, year){
     _currentFtpPlaybackPlan = playInfo;
     _currentFtpPlaybackPlan.unsupportedVideoCodec = mediaInfoHasUnsupportedVideo(startupInfo);
     _ftpNeedsTranscode = planNeedsSourceSeek({mode: playbackMode});
-    if(playbackMode === 'proxy')vid._ftpFallbackStepsTried.add('proxy');
+    if(['proxy','audio','remux','direct'].includes(String(playbackMode || '')))vid._ftpFallbackStepsTried.add(playbackMode);
     vid._sourceSeekRequired = _ftpNeedsTranscode;
     vid._mediaSourceSeekRequired = _ftpNeedsTranscode;
     vid._vlcFallbackUrl = resolvedStreamUrl;
@@ -4258,6 +4292,35 @@ async function playFtpMedia(streamUrl, name, year){
       options:startupOptions,
       message:e.message
     });
+    if(requestedStreamUrl){
+      try{
+        resetToOriginalAudioFallback('FTP startup error proxy fallback');
+        const fallback = localFtpPlaybackPlan(requestedStreamUrl, {forceProxy:true});
+        const fallbackUrl = fallback.src || fallback.finalPlayUrl || fallback.playUrl;
+        validateFallbackPlaybackSource(fallbackUrl, 'proxy');
+        _ftpStreamUrl = fallback.decodedUrl || requestedStreamUrl;
+        _currentFtpPlaybackPlan = fallback;
+        _ftpNeedsTranscode = false;
+        vid._sourceSeekRequired = false;
+        vid._mediaSourceSeekRequired = false;
+        vid._sourceOffset = 0;
+        vid.addEventListener('canplay', function onStartupProxyFallback(){
+          if(_ftpStreamUrl !== (fallback.decodedUrl || requestedStreamUrl))return;
+          document.getElementById('playerSpinner').classList.remove('on');
+        }, {once:true});
+        vid.addEventListener('error', function onStartupProxyFallbackError(){
+          if(_ftpStreamUrl !== (fallback.decodedUrl || requestedStreamUrl))return;
+          showVlcPlaybackNotice(requestedStreamUrl, name);
+        }, {once:true});
+        document.getElementById('playerSpinner').classList.add('on');
+        if(await attachPlayerSource(fallbackUrl, fallback.mode || 'proxy')){
+          vid.play().catch(err=>handleInitialPlayRejection(err,()=>showVlcPlaybackNotice(requestedStreamUrl,name)));
+          return;
+        }
+      }catch(fallbackError){
+        console.warn('[Playback] FTP original proxy fallback failed:', fallbackError.message);
+      }
+    }
     try{
       vid.pause();
       vid.removeAttribute('src');

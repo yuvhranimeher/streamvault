@@ -1454,6 +1454,16 @@ function playbackStartFromReq(req) {
   return Math.max(0, parseFloat(req.query.start) || 0);
 }
 
+async function playbackDurationSeconds(input, label = 'media') {
+  try {
+    const info = await getCachedDurationOnlyMediaInfo(input);
+    return Number(info.duration) || 0;
+  } catch (e) {
+    console.warn(`[Playback Duration] Could not read duration for ${label}:`, e.message);
+    return 0;
+  }
+}
+
 function normalizePlaybackMode(value, fallback = 'direct') {
   const mode = String(value || fallback).toLowerCase();
   if (mode === 'proxy' || mode === 'stream') return 'proxy';
@@ -5387,19 +5397,23 @@ function ffmpegMp4Args({ input, mode = 'remux', startSec = 0, audioMap = '0:a:0?
   if (remote) {
     args.push(
       '-fflags', '+genpts',
-      '-probesize', '1048576',
-      '-analyzeduration', '1000000',
+      '-probesize', '10485760',
+      '-analyzeduration', '10000000',
       '-rw_timeout', '15000000'
     );
   }
   args.push('-i', input, '-map', '0:v:0', '-map', audioMap, '-sn', '-dn');
   if (mode === 'audio') {
-    args.push('-c:v', 'copy', '-c:a', 'aac', '-b:a', '384k', '-ar', '48000');
+    args.push('-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2');
   } else {
     args.push('-c', 'copy');
   }
   args.push(
     '-avoid_negative_ts', 'make_zero',
+    '-max_interleave_delta', '0',
+    '-muxdelay', '0',
+    '-muxpreload', '0',
+    '-flush_packets', '1',
     '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
     '-f', 'mp4',
     'pipe:1'
@@ -5431,6 +5445,18 @@ function streamFfmpegMp4(req, res, options) {
     activeMediaFfmpegStreams = Math.max(0, activeMediaFfmpegStreams - 1);
     if (reason) console.log(`[Media FFmpeg] ${mode} released ${label}: ${reason}`);
   };
+  const fallbackToOriginal = reason => {
+    if (started || res.headersSent || res.writableEnded || typeof options.fallbackOriginal !== 'function') return false;
+    releaseActive(`fallback original: ${reason}`);
+    console.warn(`[Media FFmpeg] ${mode} falling back to original source for ${label}: ${reason}`);
+    try {
+      options.fallbackOriginal({ reason, stderr: stderr.slice(-1000) });
+      return true;
+    } catch (fallbackErr) {
+      console.error(`[Media FFmpeg] original fallback failed ${label}:`, fallbackErr.message);
+      return false;
+    }
+  };
   const headers = {
     'Content-Type': 'video/mp4',
     'Accept-Ranges': 'none',
@@ -5442,6 +5468,7 @@ function streamFfmpegMp4(req, res, options) {
     if (started || closed) return;
     console.error(`[Media FFmpeg] ${mode} startup timeout ${label}`);
     try { ffmpeg.kill('SIGKILL'); } catch {}
+    if (fallbackToOriginal('startup timeout')) return;
     if (!res.headersSent) {
       jsonError(res, 504, 'MEDIA_FFMPEG_STARTUP_TIMEOUT', 'Media fallback did not start in time', {
         mode,
@@ -5478,6 +5505,7 @@ function streamFfmpegMp4(req, res, options) {
     console.error(`[Media FFmpeg] ${mode} spawn error ${label}:`, err.message);
     clearTimeout(startupTimer);
     releaseActive('spawn error');
+    if (fallbackToOriginal(`spawn error: ${err.message}`)) return;
     if (!started && !res.headersSent) {
       jsonError(res, 500, 'MEDIA_FFMPEG_SPAWN_FAILED', 'Could not start media fallback', {
         mode,
@@ -5492,6 +5520,7 @@ function streamFfmpegMp4(req, res, options) {
     releaseActive(`process close code=${code}`);
     if (code !== 0 && !started && !res.headersSent) {
       console.error(`[Media FFmpeg] ${mode} failed ${label}:`, stderr.trim());
+      if (fallbackToOriginal(`process close code=${code}`)) return;
       jsonError(res, 502, 'MEDIA_FFMPEG_FAILED', 'Media fallback failed before playback started', {
         mode,
         details: stderr.slice(-1000),
@@ -7021,7 +7050,7 @@ app.get('/api/refresh-poster/:id', async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // DIRECT STREAM ENDPOINT (NO HLS FOR NOW - FASTEST)
 // ═══════════════════════════════════════════════════════════════════════════════
-function localPlaybackPlan(id, req, entry, filePath) {
+function localPlaybackPlan(id, req, entry, filePath, duration = 0) {
   const requestedMode = req.query.forceHls === '1' ? 'hls' : normalizePlaybackMode(req.query.mode, 'direct');
   const startSec = playbackStartFromReq(req);
   const query = playbackQueryFromReq(req);
@@ -7051,7 +7080,7 @@ function localPlaybackPlan(id, req, entry, filePath) {
     remuxUrl: `/api/playback/local/${encodeURIComponent(id)}/stream${playbackQueryFromReq(req, { mode: 'remux' })}`,
     audioTranscodeUrl: `/api/playback/local/${encodeURIComponent(id)}/stream${playbackQueryFromReq(req, { mode: 'audio' })}`,
     hlsUrl: localPlaybackHlsUrl(id, req),
-    duration: 0,
+    duration: Number(duration) || 0,
     start: startSec,
   };
 }
@@ -7076,7 +7105,10 @@ app.get('/api/playback/local/:id', async (req, res) => {
       req.query.audioStream = String(audioSelection.audioStreamIdx);
     }
   }
-  return res.json(localPlaybackPlan(String(idx), req, entry, filePath));
+  const duration = (requestedMode === 'remux' || requestedMode === 'audio' || requestedMode === 'hls')
+    ? await playbackDurationSeconds(filePath, entry.file)
+    : 0;
+  return res.json(localPlaybackPlan(String(idx), req, entry, filePath, duration));
 });
 
 app.get('/api/playback/local/:id/stream', async (req, res) => {
@@ -7106,6 +7138,9 @@ app.get('/api/playback/local/:id/stream', async (req, res) => {
     audioMap: audioSelection.audioMap,
     remote: false,
     label: entry.file,
+    fallbackOriginal: mode === 'audio' && audioSelection.audioStreamIdx !== null
+      ? () => directStream(req, res, filePath, entry)
+      : null,
   });
 });
 
@@ -7762,6 +7797,9 @@ app.get('/api/playback/ftp', async (req, res) => {
     } else if (mode === 'hls') {
       playUrl = remotePlaybackHlsUrl(srcUrl, req);
     }
+    const duration = (mode === 'remux' || mode === 'audio' || mode === 'hls')
+      ? await playbackDurationSeconds(srcUrl, remoteFilename(srcUrl))
+      : 0;
     return res.json({
       ok: true,
       requestedUrl: media.requestedUrl,
@@ -7782,7 +7820,7 @@ app.get('/api/playback/ftp', async (req, res) => {
       audioTranscodeUrl: remotePlaybackModeUrl(srcUrl, req, 'audio'),
       hlsUrl: remotePlaybackHlsUrl(srcUrl, req),
       transcodeUrl: urls.transcodeUrl,
-      duration: 0,
+      duration,
     });
   }
 
@@ -7806,6 +7844,9 @@ app.get('/api/playback/ftp', async (req, res) => {
       audioMap: audioSelection.audioMap,
       remote: true,
       label: remoteFilename(srcUrl),
+      fallbackOriginal: mode === 'audio' && audioSelection.audioStreamIdx !== null
+        ? () => streamRemotePlaybackProxy(req, res, media, matched)
+        : null,
     });
   }
 

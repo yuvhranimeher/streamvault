@@ -1417,26 +1417,47 @@ function selectionFromAbsoluteAudio(req, track, source = 'server-english') {
     audioStreamIdx,
     audioMap: `0:${audioStreamIdx}`,
     source,
+    audioLanguage: track.language || track.lang || '',
+    audioTitle: track.title || track.label || '',
+    audioCodec: track.codec || '',
   };
 }
 
 async function resolvePlaybackAudioSelection(req, input, label = 'media') {
   const selection = playbackAudioSelectionFromReq(req);
-  if (selection.audioStreamIdx !== null) return selection;
   const wantsEnglish = req.query.english === '1' || req.query.preferEnglish === '1';
-  if (!wantsEnglish) return selection;
-  const info = String(input || '').startsWith('http')
-    ? await getCachedAudioOnlyMediaInfo(input)
-    : await getCachedMediaInfo(input);
-  const tracks = Array.isArray(info.audioTracks) ? info.audioTracks : [];
-  const english = tracks.find(track => serverAudioTrackIsEnglish(track) && serverAudioTrackIsAudible(track));
-  if (!english) {
-    console.warn(`[Playback Audio] English requested but not found for ${label}`);
+  if (!wantsEnglish && selection.audioStreamIdx === null) return selection;
+
+  let tracks = [];
+  try {
+    const info = await getCachedAudioOnlyMediaInfo(input);
+    tracks = Array.isArray(info.audioTracks) ? info.audioTracks : [];
+  } catch (e) {
+    if (wantsEnglish) throw e;
+  }
+
+  if (wantsEnglish) {
+    const english = tracks.find(track => serverAudioTrackIsEnglish(track) && serverAudioTrackIsAudible(track));
+    if (!english) {
+      console.warn(`[Playback Audio] English requested but not found for ${label}`);
+      return selection;
+    }
+    const resolved = selectionFromAbsoluteAudio(req, english, 'server-english');
+    console.log(`[Playback Audio] ${label} route=${normalizePlaybackMode(req.query.mode, 'direct')} chosen lang=${resolved.audioLanguage || ''} title=${resolved.audioTitle || ''} codec=${resolved.audioCodec || ''} stream=${resolved.audioStreamIdx}`);
+    return resolved;
+  }
+
+  if (selection.audioStreamIdx !== null) {
+    const selectedTrack = tracks.find(track => serverAudioTrackAbsoluteIndex(track) === selection.audioStreamIdx);
+    if (selectedTrack) {
+      const resolved = selectionFromAbsoluteAudio(req, selectedTrack, 'absolute-stream');
+      console.log(`[Playback Audio] ${label} route=${normalizePlaybackMode(req.query.mode, 'direct')} requested lang=${resolved.audioLanguage || ''} title=${resolved.audioTitle || ''} codec=${resolved.audioCodec || ''} stream=${resolved.audioStreamIdx}`);
+      return resolved;
+    }
     return selection;
   }
-  const resolved = selectionFromAbsoluteAudio(req, english, 'server-english');
-  console.log(`[Playback Audio] Resolved English for ${label}: stream=${resolved.audioStreamIdx} codec=${english.codec || ''} lang=${english.language || ''} title=${english.title || ''}`);
-  return resolved;
+
+  return selection;
 }
 
 function requireAbsolutePlaybackAudio(req, res, audioSelection, mode, label = 'media') {
@@ -1521,6 +1542,10 @@ function localPlaybackHlsUrl(id, req) {
 
 function playbackUrlHasUnsupportedVideoHint(srcUrl) {
   return /(x265|h265|hevc|10bit|10-bit|av1|vp9|vp8)/i.test(String(srcUrl || ''));
+}
+
+function playbackUrlHasHevcHint(srcUrl) {
+  return /(x265|h265|hevc)/i.test(String(srcUrl || ''));
 }
 
 function readTrustedRemotePlaybackMedia(req, res, errorAsJson = true) {
@@ -5391,7 +5416,7 @@ app.post('/api/mobile-hls/stop', (req, res) => {
   res.json({ ok: true, stopped });
 });
 
-function ffmpegMp4Args({ input, mode = 'remux', startSec = 0, audioMap = '0:a:0?', remote = false }) {
+function ffmpegMp4Args({ input, mode = 'remux', startSec = 0, audioMap = '0:a:0?', remote = false, hevcTag = false }) {
   const args = ['-hide_banner', '-loglevel', 'warning', '-nostdin'];
   if (startSec > 0) args.push('-ss', String(Math.floor(startSec)));
   if (remote) {
@@ -5408,6 +5433,7 @@ function ffmpegMp4Args({ input, mode = 'remux', startSec = 0, audioMap = '0:a:0?
   } else {
     args.push('-c', 'copy');
   }
+  if (hevcTag) args.push('-tag:v', 'hvc1');
   args.push(
     '-avoid_negative_ts', 'make_zero',
     '-max_interleave_delta', '0',
@@ -7130,7 +7156,7 @@ app.get('/api/playback/local/:id/stream', async (req, res) => {
     return jsonError(res, 502, 'ENGLISH_AUDIO_RESOLVE_FAILED', 'Could not resolve English audio stream', { label: entry.file, details: e.message });
   }
   if (!requireAbsolutePlaybackAudio(req, res, audioSelection, mode, entry.file)) return;
-  console.log(`[Local Playback Stream] ${entry.file} mode=${mode} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap}`);
+  console.log(`[Local Playback Stream] ${entry.file} mode=${mode} route=${mode === 'audio' ? 'audio-copy' : 'remux-copy'} lang=${audioSelection.audioLanguage || ''} title=${audioSelection.audioTitle || ''} codec=${audioSelection.audioCodec || ''} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap}`);
   return streamFfmpegMp4(req, res, {
     input: filePath,
     mode,
@@ -7138,6 +7164,7 @@ app.get('/api/playback/local/:id/stream', async (req, res) => {
     audioMap: audioSelection.audioMap,
     remote: false,
     label: entry.file,
+    hevcTag: playbackUrlHasHevcHint(entry.file),
     fallbackOriginal: mode === 'audio' && audioSelection.audioStreamIdx !== null
       ? () => directStream(req, res, filePath, entry)
       : null,
@@ -7836,7 +7863,7 @@ app.get('/api/playback/ftp', async (req, res) => {
       return jsonError(res, 502, 'ENGLISH_AUDIO_RESOLVE_FAILED', 'Could not resolve English audio stream', { label: remoteFilename(srcUrl), details: e.message });
     }
     if (!requireAbsolutePlaybackAudio(req, res, audioSelection, mode, remoteFilename(srcUrl))) return;
-    console.log(`[FTP Playback FFmpeg] ${remoteFilename(srcUrl)} mode=${mode} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap}`);
+    console.log(`[FTP Playback FFmpeg] ${remoteFilename(srcUrl)} mode=${mode} route=${mode === 'audio' ? 'audio-copy' : 'remux-copy'} lang=${audioSelection.audioLanguage || ''} title=${audioSelection.audioTitle || ''} codec=${audioSelection.audioCodec || ''} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap}`);
     return streamFfmpegMp4(req, res, {
       input: srcUrl,
       mode,
@@ -7844,6 +7871,7 @@ app.get('/api/playback/ftp', async (req, res) => {
       audioMap: audioSelection.audioMap,
       remote: true,
       label: remoteFilename(srcUrl),
+      hevcTag: playbackUrlHasHevcHint(srcUrl),
       fallbackOriginal: mode === 'audio' && audioSelection.audioStreamIdx !== null
         ? () => streamRemotePlaybackProxy(req, res, media, matched)
         : null,

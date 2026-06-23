@@ -1,6 +1,6 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260623-prod-stable-audio-e0ad764-1';
+const SV_ASSET_VERSION = '20260623-global-english-audio2';
 function mediaFixLog(step, data={}){
   try{console.warn(`[${SV_MEDIA_FIX_MARKER}] ${step}`, data);}catch(_){}
 }
@@ -2832,6 +2832,12 @@ function urlHasUnsupportedVideoHint(url){
   return /(x265|h265|hevc|10bit|10-bit|av1|vp9|vp8)/i.test(String(url || ''));
 }
 
+function sourceNeedsBrowserRemux(url){
+  const value=String(url || '');
+  return /\.(mkv|webm|avi|flv|ts|m2ts)(?:$|[?#])/i.test(value)
+    || /(matroska|webm|x265|h265|hevc)/i.test(value);
+}
+
 function playbackOptionsForStep(step){
   if(step === 'proxy')return {forceProxy:true};
   if(step === 'remux')return {forceRemux:true};
@@ -3258,12 +3264,10 @@ async function loadFtpDuration(streamUrl){
 }
 
 function fallbackOrderForRemote(url, plan={}){
-  if(vid?._svDisableMappedAudioFallback){
-    return isMobilePlaybackClient() ? ['hls','transcode','proxy'] : ['proxy','transcode','hls'];
-  }
   const unsupported = plan?.unsupportedVideoHint || urlHasUnsupportedVideoHint(url);
   const selected=selectedAudioTrack();
   const explicitAudio=availableAudio.length > 1 || currentAudioIdx > 0 || Number.isFinite(selected?.streamIndex ?? selected?.sourceIndex);
+  if((plan?.mode === 'audio' || plan?.transport === 'audio') && selected && !audioCodecIsBrowserSafe(selected))return ['audio','proxy'];
   if(englishStartupRequiresMappedSource() || explicitAudio)return ['audio','remux','proxy'];
   if(!isMobilePlaybackClient())return ['proxy','remux','audio'];
   if(unsupported || explicitAudio)return ['audio','remux','proxy'];
@@ -3271,7 +3275,6 @@ function fallbackOrderForRemote(url, plan={}){
 }
 
 function fallbackOrderForLocal(plan={}){
-  if(vid?._svDisableMappedAudioFallback)return ['direct','transcode'];
   if(englishStartupRequiresMappedSource())return ['audio','remux','direct'];
   return ['remux','audio','direct'];
 }
@@ -3296,43 +3299,29 @@ function applyStartupAudioInfo(info, sourceUrl='', context='startup audio'){
   }
   const hints=filenameAudioHints(sourceUrl);
   availableAudio=normalizeDiscoveredAudioTracks(tracks,hints);
-  currentAudioIdx=preferredAudioTrackIndex(availableAudio);
-  let selected=selectedAudioTrack();
-  const hasEnglish=availableAudio.some(audioTrackIsEnglish);
-  let streamIndex=audioTrackStreamIndex(selected);
-  let relativeIndex=audioTrackRelativeIndex(selected,currentAudioIdx);
-  let safeCodec=audioCodecIsBrowserSafe(selected);
+  const englishIdx=availableAudio.findIndex(track=>audioTrackIsEnglish(track) && audioTrackIsAudible(track));
+  currentAudioIdx=englishIdx >= 0 ? englishIdx : preferredAudioTrackIndex(availableAudio);
+  const selected=selectedAudioTrack();
+  const hasEnglish=englishIdx >= 0;
+  const streamIndex=audioTrackStreamIndex(selected);
+  const relativeIndex=audioTrackRelativeIndex(selected,currentAudioIdx);
+  const safeCodec=audioCodecIsBrowserSafe(selected);
   let options={};
   let reason='direct/default audio';
-  let lockStableAudio=true;
 
   if(hasEnglish && audioTrackIsEnglish(selected)){
-    if(relativeIndex !== 0 && urlHasUnsupportedVideoHint(sourceUrl)){
-      currentAudioIdx=0;
-      selected=selectedAudioTrack();
-      streamIndex=audioTrackStreamIndex(selected);
-      relativeIndex=audioTrackRelativeIndex(selected,currentAudioIdx);
-      safeCodec=audioCodecIsBrowserSafe(selected);
-      options={};
-      lockStableAudio=false;
-      if(vid)vid._svDisableMappedAudioFallback=true;
-      reason='HEVC dual-audio starts on original source for browser playback';
-    }else if(streamIndex === null && relativeIndex !== 0){
+    if(streamIndex === null){
       options={forceAudio:true, preferEnglishServer:true};
       reason='English needs server-side absolute stream selection';
     }else if(!safeCodec){
-      currentAudioIdx=0;
-      selected=selectedAudioTrack();
-      streamIndex=audioTrackStreamIndex(selected);
-      relativeIndex=audioTrackRelativeIndex(selected,currentAudioIdx);
-      safeCodec=audioCodecIsBrowserSafe(selected);
-      options={};
-      lockStableAudio=false;
-      if(vid)vid._svDisableMappedAudioFallback=true;
-      reason='English AC3/EAC3 starts on original source for browser playback';
+      options={forceAudio:true};
+      reason='English audio codec needs AAC audio-copy route';
     }else if(relativeIndex !== 0){
       options={forceRemux:true};
       reason='English AAC is not the first/default browser stream';
+    }else if(sourceNeedsBrowserRemux(sourceUrl)){
+      options={forceRemux:true};
+      reason='English first stream needs browser MP4 remux';
     }else{
       reason='English browser-safe first stream';
     }
@@ -3349,7 +3338,7 @@ function applyStartupAudioInfo(info, sourceUrl='', context='startup audio'){
     lockAudioToCurrent(reason, {requiresMappedSource:true});
   }else{
     setAppliedAudioIndex(currentAudioIdx, `${context} startup`);
-    if(availableAudio.length > 1 && lockStableAudio){
+    if(availableAudio.length > 1){
       lockAudioToCurrent(reason || 'Manual audio switching disabled for stable startup', {requiresMappedSource:false});
       renderAudioTracks();
     }
@@ -3362,6 +3351,7 @@ function applyStartupAudioInfo(info, sourceUrl='', context='startup audio'){
     safeCodec,
     relativeIndex,
     streamIndex,
+    route:options.forceAudio ? 'audio-copy' : options.forceRemux ? 'remux-copy' : 'proxy/direct',
     tracks:availableAudio.map((track,index)=>audioDebugSummary(track,index))
   });
   return {info, options, selected, reason};
@@ -3385,7 +3375,6 @@ async function prepareLocalStartupAudio(id, movie={}){
     return applyStartupAudioInfo(info, sourceUrl, 'local startup');
   }catch(e){
     resetUncertainStartupAudio('local startup', e.message);
-    if(sourceLooksMultiAudio(sourceUrl) && vid)vid._svDisableMappedAudioFallback=true;
     return {info:null, options:{}, selected:null, reason:e.message};
   }
 }
@@ -3401,7 +3390,6 @@ async function prepareFtpStartupAudio(streamUrl){
     return applyStartupAudioInfo(info, streamUrl, 'FTP startup');
   }catch(e){
     resetUncertainStartupAudio('FTP startup', e.message);
-    if(sourceLooksMultiAudio(streamUrl) && vid)vid._svDisableMappedAudioFallback=true;
     return {info:null, options:{}, selected:null, reason:e.message};
   }
 }
@@ -3572,7 +3560,6 @@ async function playMedia(id, name, year){
   vid._vlcFallbackTitle = name || '';
   vid._hlsNoticeOnFatal = true;
   vid._svPlaybackShouldPlay = true;
-  vid._svDisableMappedAudioFallback = false;
   vid._stableDuration = 0;        // ← new: ensure duration locking for this video
   resetSeekPreview();
 
@@ -3669,6 +3656,14 @@ async function playMedia(id, name, year){
       tryLocalAdaptiveFallback(id, playbackTime()).catch(()=>showPlayerNotice(DESKTOP_UNSUPPORTED_MESSAGE));
     }, {once:true});
     const attachPromise = attachPlayerSource(plan.src, plan.mode);
+    mediaFixLog('attach local source',{
+      title:name || movie.name || '',
+      id,
+      route:plan.mode === 'audio' ? 'audio-copy' : plan.mode === 'remux' ? 'remux-copy' : plan.mode,
+      src:plan.src,
+      reason:startupAudio.reason || '',
+      selectedAudio:audioDebugSummary(selectedAudioTrack(),currentAudioIdx)
+    });
     const initialPlay = !mobilePlayback
       ? vid.play().catch(e=>handleInitialPlayRejection(e, ()=>{
           if(vid._localFallbackTried)return;
@@ -3874,6 +3869,16 @@ async function switchAudioWithServer(idx){
 }
 
 function setAudio(idx){
+  if(availableAudio.length > 1){
+    closeAllDropdowns();
+    showToast('English audio is selected automatically.');
+    mediaFixLog('manual audio switch disabled', {
+      requested:idx,
+      current:currentAudioIdx,
+      selected:audioDebugSummary(selectedAudioTrack(),currentAudioIdx)
+    });
+    return;
+  }
   const lockedIdx=audioLockedIndex();
   if(lockedIdx !== null && idx !== lockedIdx){
     closeAllDropdowns();
@@ -4146,7 +4151,6 @@ async function playFtpMedia(streamUrl, name, year){
     vid._ftpPlaybackFallbackTried = false;
     vid._ftpFallbackStepsTried = new Set();
     vid._svPlaybackShouldPlay = true;
-    vid._svDisableMappedAudioFallback = false;
     clearTimeout(vid._ftpFallbackTimer);
     vid._ftpFallbackTimer = null;
     vid._durationPending = false;
@@ -4272,9 +4276,11 @@ async function playFtpMedia(streamUrl, name, year){
 
     console.log(`[Playback] FTP ${playbackMode}`);
     mediaFixLog('attach FTP source',{
+      title:name || '',
       url:resolvedStreamUrl,
-      mode:playbackMode,
+      route:playbackMode === 'audio' ? 'audio-copy' : playbackMode === 'remux' ? 'remux-copy' : playbackMode,
       src:finalPlayUrl,
+      reason:startupAudio.reason || '',
       selectedAudio:audioDebugSummary(selectedAudioTrack(),currentAudioIdx)
     });
     const attachPromise = attachPlayerSource(finalPlayUrl, playbackMode);

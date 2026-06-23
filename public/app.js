@@ -1,6 +1,6 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260623-audio-mapped-fallback1';
+const SV_ASSET_VERSION = '20260623-prod-stable-audio-e0ad764-1';
 function mediaFixLog(step, data={}){
   try{console.warn(`[${SV_MEDIA_FIX_MARKER}] ${step}`, data);}catch(_){}
 }
@@ -3258,6 +3258,9 @@ async function loadFtpDuration(streamUrl){
 }
 
 function fallbackOrderForRemote(url, plan={}){
+  if(vid?._svDisableMappedAudioFallback){
+    return isMobilePlaybackClient() ? ['hls','transcode','proxy'] : ['proxy','transcode','hls'];
+  }
   const unsupported = plan?.unsupportedVideoHint || urlHasUnsupportedVideoHint(url);
   const selected=selectedAudioTrack();
   const explicitAudio=availableAudio.length > 1 || currentAudioIdx > 0 || Number.isFinite(selected?.streamIndex ?? selected?.sourceIndex);
@@ -3268,6 +3271,7 @@ function fallbackOrderForRemote(url, plan={}){
 }
 
 function fallbackOrderForLocal(plan={}){
+  if(vid?._svDisableMappedAudioFallback)return ['direct','transcode'];
   if(englishStartupRequiresMappedSource())return ['audio','remux','direct'];
   return ['remux','audio','direct'];
 }
@@ -3293,21 +3297,39 @@ function applyStartupAudioInfo(info, sourceUrl='', context='startup audio'){
   const hints=filenameAudioHints(sourceUrl);
   availableAudio=normalizeDiscoveredAudioTracks(tracks,hints);
   currentAudioIdx=preferredAudioTrackIndex(availableAudio);
-  const selected=selectedAudioTrack();
+  let selected=selectedAudioTrack();
   const hasEnglish=availableAudio.some(audioTrackIsEnglish);
-  const streamIndex=audioTrackStreamIndex(selected);
-  const relativeIndex=audioTrackRelativeIndex(selected,currentAudioIdx);
-  const safeCodec=audioCodecIsBrowserSafe(selected);
+  let streamIndex=audioTrackStreamIndex(selected);
+  let relativeIndex=audioTrackRelativeIndex(selected,currentAudioIdx);
+  let safeCodec=audioCodecIsBrowserSafe(selected);
   let options={};
   let reason='direct/default audio';
+  let lockStableAudio=true;
 
   if(hasEnglish && audioTrackIsEnglish(selected)){
-    if(streamIndex === null && relativeIndex !== 0){
+    if(relativeIndex !== 0 && urlHasUnsupportedVideoHint(sourceUrl)){
+      currentAudioIdx=0;
+      selected=selectedAudioTrack();
+      streamIndex=audioTrackStreamIndex(selected);
+      relativeIndex=audioTrackRelativeIndex(selected,currentAudioIdx);
+      safeCodec=audioCodecIsBrowserSafe(selected);
+      options={};
+      lockStableAudio=false;
+      if(vid)vid._svDisableMappedAudioFallback=true;
+      reason='HEVC dual-audio starts on original source for browser playback';
+    }else if(streamIndex === null && relativeIndex !== 0){
       options={forceAudio:true, preferEnglishServer:true};
       reason='English needs server-side absolute stream selection';
     }else if(!safeCodec){
-      options={forceAudio:true};
-      reason='English codec needs audio-only AAC conversion';
+      currentAudioIdx=0;
+      selected=selectedAudioTrack();
+      streamIndex=audioTrackStreamIndex(selected);
+      relativeIndex=audioTrackRelativeIndex(selected,currentAudioIdx);
+      safeCodec=audioCodecIsBrowserSafe(selected);
+      options={};
+      lockStableAudio=false;
+      if(vid)vid._svDisableMappedAudioFallback=true;
+      reason='English AC3/EAC3 starts on original source for browser playback';
     }else if(relativeIndex !== 0){
       options={forceRemux:true};
       reason='English AAC is not the first/default browser stream';
@@ -3327,7 +3349,7 @@ function applyStartupAudioInfo(info, sourceUrl='', context='startup audio'){
     lockAudioToCurrent(reason, {requiresMappedSource:true});
   }else{
     setAppliedAudioIndex(currentAudioIdx, `${context} startup`);
-    if(availableAudio.length > 1){
+    if(availableAudio.length > 1 && lockStableAudio){
       lockAudioToCurrent(reason || 'Manual audio switching disabled for stable startup', {requiresMappedSource:false});
       renderAudioTracks();
     }
@@ -3363,8 +3385,8 @@ async function prepareLocalStartupAudio(id, movie={}){
     return applyStartupAudioInfo(info, sourceUrl, 'local startup');
   }catch(e){
     resetUncertainStartupAudio('local startup', e.message);
-    const blockPlayback=sourceLooksMultiAudio(sourceUrl);
-    return {info:null, options:blockPlayback ? {forceAudio:true, preferEnglishServer:true} : {}, selected:null, reason:e.message};
+    if(sourceLooksMultiAudio(sourceUrl) && vid)vid._svDisableMappedAudioFallback=true;
+    return {info:null, options:{}, selected:null, reason:e.message};
   }
 }
 
@@ -3379,8 +3401,8 @@ async function prepareFtpStartupAudio(streamUrl){
     return applyStartupAudioInfo(info, streamUrl, 'FTP startup');
   }catch(e){
     resetUncertainStartupAudio('FTP startup', e.message);
-    const blockPlayback=sourceLooksMultiAudio(streamUrl);
-    return {info:null, options:blockPlayback ? {forceAudio:true, preferEnglishServer:true} : {}, selected:null, reason:e.message};
+    if(sourceLooksMultiAudio(streamUrl) && vid)vid._svDisableMappedAudioFallback=true;
+    return {info:null, options:{}, selected:null, reason:e.message};
   }
 }
 
@@ -3550,6 +3572,7 @@ async function playMedia(id, name, year){
   vid._vlcFallbackTitle = name || '';
   vid._hlsNoticeOnFatal = true;
   vid._svPlaybackShouldPlay = true;
+  vid._svDisableMappedAudioFallback = false;
   vid._stableDuration = 0;        // ← new: ensure duration locking for this video
   resetSeekPreview();
 
@@ -4123,6 +4146,7 @@ async function playFtpMedia(streamUrl, name, year){
     vid._ftpPlaybackFallbackTried = false;
     vid._ftpFallbackStepsTried = new Set();
     vid._svPlaybackShouldPlay = true;
+    vid._svDisableMappedAudioFallback = false;
     clearTimeout(vid._ftpFallbackTimer);
     vid._ftpFallbackTimer = null;
     vid._durationPending = false;

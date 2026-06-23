@@ -1373,13 +1373,24 @@ function playbackAudioSelectionFromReq(req) {
   return {
     audioIdx,
     audioStreamIdx: hasAbsoluteStream ? audioStreamIdx : null,
-    audioMap: hasAbsoluteStream ? `0:${audioStreamIdx}?` : `0:a:${audioIdx}?`,
+    audioMap: hasAbsoluteStream ? `0:${audioStreamIdx}` : `0:a:${audioIdx}?`,
     source: hasAbsoluteStream ? 'absolute-stream' : 'relative-audio',
   };
 }
 
 function playbackAudioMapFromReq(req) {
   return playbackAudioSelectionFromReq(req).audioMap;
+}
+
+function requireAbsolutePlaybackAudio(req, res, audioSelection, mode, label = 'media') {
+  if (audioSelection.audioStreamIdx !== null) return true;
+  jsonError(res, 400, 'ABSOLUTE_AUDIO_STREAM_REQUIRED', 'Mapped playback requires a ffprobe absolute audio stream index', {
+    mode,
+    label,
+    requestedAudio: audioSelection.audioIdx,
+    source: audioSelection.source,
+  });
+  return false;
 }
 
 function playbackStartFromReq(req) {
@@ -6988,6 +6999,11 @@ app.get('/api/playback/local/:id', (req, res) => {
   if (!entry) return jsonError(res, 404, 'LOCAL_MEDIA_NOT_FOUND', 'Local media was not found');
   const filePath = entryPath(entry);
   if (!fs.existsSync(filePath)) return jsonError(res, 404, 'LOCAL_MEDIA_MISSING', 'Local media file is missing');
+  const requestedMode = req.query.forceHls === '1' ? 'hls' : normalizePlaybackMode(req.query.mode, 'direct');
+  if (requestedMode === 'remux' || requestedMode === 'audio') {
+    const audioSelection = playbackAudioSelectionFromReq(req);
+    if (!requireAbsolutePlaybackAudio(req, res, audioSelection, requestedMode, entry.file)) return;
+  }
   return res.json(localPlaybackPlan(String(idx), req, entry, filePath));
 });
 
@@ -7004,6 +7020,7 @@ app.get('/api/playback/local/:id/stream', (req, res) => {
   }
 
   const audioSelection = playbackAudioSelectionFromReq(req);
+  if (!requireAbsolutePlaybackAudio(req, res, audioSelection, mode, entry.file)) return;
   console.log(`[Local Playback Stream] ${entry.file} mode=${mode} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap}`);
   return streamFfmpegMp4(req, res, {
     input: filePath,
@@ -7648,6 +7665,10 @@ app.get('/api/playback/ftp', (req, res) => {
   console.log(`[FTP Playback] mode: ${planRequested ? 'plan:' : ''}${mode}`);
 
   if (planRequested) {
+    if ((mode === 'remux' || mode === 'audio')) {
+      const audioSelection = playbackAudioSelectionFromReq(req);
+      if (!requireAbsolutePlaybackAudio(req, res, audioSelection, mode, remoteFilename(srcUrl))) return;
+    }
     let playUrl = urls.redirectUrl;
     if (mode === 'proxy') playUrl = urls.proxyUrl;
     else if (mode === 'remux' || mode === 'audio') {
@@ -7685,6 +7706,7 @@ app.get('/api/playback/ftp', (req, res) => {
 
   if (mode === 'remux' || mode === 'audio') {
     const audioSelection = playbackAudioSelectionFromReq(req);
+    if (!requireAbsolutePlaybackAudio(req, res, audioSelection, mode, remoteFilename(srcUrl))) return;
     console.log(`[FTP Playback FFmpeg] ${remoteFilename(srcUrl)} mode=${mode} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap}`);
     return streamFfmpegMp4(req, res, {
       input: srcUrl,

@@ -1611,6 +1611,20 @@ function openSeriesDetail(key){
   if(show)showSeriesDetail(show);
 }
 
+function setDetailPageScrollLock(locked){
+  if(locked){
+    document.body.classList.add('modal-open');
+    document.body.style.overflow = 'hidden';
+    return;
+  }
+  const detailOpen = document.getElementById('movieDetailModal')?.classList.contains('open');
+  const seriesOpen = document.getElementById('seriesModal')?.classList.contains('open');
+  if(!detailOpen && !seriesOpen){
+    document.body.classList.remove('modal-open');
+    document.body.style.overflow = '';
+  }
+}
+
 function showSeriesDetail(show){
   currentShow=show;
   recordWatchHistory(show.id||show.name, show.name, show.genre||'', 'series');
@@ -1651,7 +1665,7 @@ function showSeriesDetail(show){
   loadSeriesOnlineDetails(show, token);
   document.getElementById('seriesModal').classList.add('open');
   document.getElementById('seriesModal').scrollTop=0;
-  document.body.style.overflow='hidden';
+  setDetailPageScrollLock(true);
 }
 
 function openSeriesModal(showName){
@@ -1690,7 +1704,7 @@ function openSeriesModal(showName){
   buildRelated(show);
   document.getElementById('seriesModal').classList.add('open');
   document.getElementById('seriesModal').scrollTop=0;
-  document.body.style.overflow='hidden';
+  setDetailPageScrollLock(true);
 }
 
 function buildRelated(show){
@@ -1839,7 +1853,10 @@ function playSeriesEpisode(showName, season, epIdx){
   setTimeout(()=>showSeriesPlayerBar(show,season,epIdx),100);
 }
 
-function closeSeriesModal(){document.getElementById('seriesModal').classList.remove('open');document.body.style.overflow='';}
+function closeSeriesModal(){
+  document.getElementById('seriesModal').classList.remove('open');
+  setDetailPageScrollLock(false);
+}
 
 function showSeriesPlayerBar(show, season, epIdx){
   _playerShow=show; _playerSeason=season; _playerEpIdx=epIdx;
@@ -3112,6 +3129,8 @@ async function sourceSeekTo(seconds){
   const wasPlaying = !vid.paused;
   const token = (vid._seekToken || 0) + 1;
   vid._seekToken = token;
+  const previousOffset = vid._sourceOffset || 0;
+  const previousTime = playbackTime();
   vid._sourceOffset = target;
   vid.pause();
   document.getElementById('playerSpinner').classList.add('on');
@@ -3143,7 +3162,16 @@ async function sourceSeekTo(seconds){
     if(token !== vid._seekToken)return;
     clearTimeout(seekTimer);
     document.getElementById('playerSpinner').classList.remove('on');
-    showPlayerNotice(DESKTOP_UNSUPPORTED_MESSAGE);
+    vid._sourceOffset = previousOffset;
+    mediaFixLog('local seek route failed; resumed previous source', {
+      id:currentStreamId,
+      target,
+      previousTime,
+      mode:_currentPlaybackPlan?.mode || '',
+      message:e.message
+    });
+    if(wasPlaying)vid.play().catch(()=>{});
+    showToast('Seek failed; resumed previous stream');
   }
 }
 
@@ -3262,6 +3290,7 @@ function applyStartupAudioInfo(info, sourceUrl='', context='startup audio'){
 
   if(hasEnglish && audioTrackIsEnglish(selected)){
     if(streamIndex === null && relativeIndex !== 0){
+      options={blockPlayback:true};
       reason='English exists but has no absolute stream index';
     }else if(!safeCodec){
       options={forceAudio:true};
@@ -3273,6 +3302,7 @@ function applyStartupAudioInfo(info, sourceUrl='', context='startup audio'){
       reason='English browser-safe first stream';
     }
   }else if(hasEnglish){
+    options={blockPlayback:true};
     reason='English detected but not selectable';
   }else{
     reason='English audio not found';
@@ -3391,6 +3421,17 @@ async function tryFtpAdaptiveFallback(resolvedStreamUrl, name, failedAt=playback
       failedAt,
       selected:audioDebugSummary(selectedAudioTrack(),currentAudioIdx)
     });
+    mediaFixLog('FTP English startup route failed; fallback blocked', {
+      url:resolvedStreamUrl,
+      failedAt,
+      selected:audioDebugSummary(selectedAudioTrack(),currentAudioIdx),
+      error:videoErrorInfo()
+    });
+    try{
+      vid.pause();
+      vid.removeAttribute('src');
+      vid.load();
+    }catch(_){}
     showPlayerNotice('English audio could not start safely without changing playback route.');
     return false;
   }
@@ -3458,6 +3499,17 @@ async function tryLocalAdaptiveFallback(id, failedAt=playbackTime()){
       failedAt,
       selected:audioDebugSummary(selectedAudioTrack(),currentAudioIdx)
     });
+    mediaFixLog('local English startup route failed; fallback blocked', {
+      id,
+      failedAt,
+      selected:audioDebugSummary(selectedAudioTrack(),currentAudioIdx),
+      error:videoErrorInfo()
+    });
+    try{
+      vid.pause();
+      vid.removeAttribute('src');
+      vid.load();
+    }catch(_){}
     showPlayerNotice('English audio could not start safely without changing playback route.');
     return false;
   }
@@ -4236,7 +4288,18 @@ async function playFtpMedia(streamUrl, name, year){
     }
   } catch (e) {
     document.getElementById('playerSpinner').classList.remove('on');
-    showToast('Error: ' + e.message);
+    mediaFixLog('FTP playback startup failed', {
+      url:requestedStreamUrl,
+      selected:audioDebugSummary(selectedAudioTrack(),currentAudioIdx),
+      options:startupOptions,
+      message:e.message
+    });
+    try{
+      vid.pause();
+      vid.removeAttribute('src');
+      vid.load();
+    }catch(_){}
+    showPlayerNotice('Playback could not start with stable English audio. ' + e.message);
   }
 }
 
@@ -4246,6 +4309,8 @@ async function ftpSeekTo(seconds){
   const wasPlaying = !vid.paused;
   const token = (vid._seekToken || 0) + 1;
   vid._seekToken = token;
+  const previousOffset = vid._sourceOffset || 0;
+  const previousFtpTime = _ftpCurrentTime || playbackTime();
   vid.pause();
   document.getElementById('playerSpinner').classList.add('on');
   const target = Math.max(0, seconds);
@@ -4286,7 +4351,17 @@ async function ftpSeekTo(seconds){
     _ftpSeekPending = false;
     clearTimeout(seekTimer);
     document.getElementById('playerSpinner').classList.remove('on');
-    showVlcPlaybackNotice(_ftpStreamUrl, vid._vlcFallbackTitle || '');
+    _ftpCurrentTime = previousFtpTime;
+    vid._sourceOffset = previousOffset;
+    mediaFixLog('FTP seek route failed; resumed previous source', {
+      url:_ftpStreamUrl,
+      target,
+      previousTime:previousFtpTime,
+      mode:_currentFtpPlaybackPlan?.mode || '',
+      message:e.message
+    });
+    if(wasPlaying)vid.play().catch(()=>{});
+    showToast('Seek failed; resumed previous stream');
   }
 }
 
@@ -5450,13 +5525,13 @@ function openMovieDetail(key){
   updateMovieWatchlistButtons();
   modal.classList.add('open');
   modal.scrollTop = 0;
-  document.body.classList.add('modal-open');
+  setDetailPageScrollLock(true);
 }
 
 function closeMovieDetail(){
   document.getElementById('movieDetailModal')?.classList.remove('open');
   currentDetailMovie = null;
-  document.body.classList.remove('modal-open');
+  setDetailPageScrollLock(false);
 }
 
 async function hydrateMoviePlayback(movie){

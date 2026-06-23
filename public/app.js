@@ -1,6 +1,6 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260623-global-english-audio2';
+const SV_ASSET_VERSION = '20260623-english-av-sync1';
 function mediaFixLog(step, data={}){
   try{console.warn(`[${SV_MEDIA_FIX_MARKER}] ${step}`, data);}catch(_){}
 }

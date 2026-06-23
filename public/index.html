@@ -779,28 +779,6 @@
             <div class="progress-tooltip" id="progressTooltip">0:00</div>
           </div>
         </div>
-        <div class="series-player-bar" id="seriesPlayerBar">
-          <button class="next-ep-btn" id="nextEpBtn" onclick="playNextEpisode()">
-            <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM16 6h2v12h-2z"/></svg>
-            Next Episode
-          </button>
-          <div style="position:relative;flex-shrink:0">
-            <button class="series-ctrl-btn" id="seriesEpBtn" onclick="openSeriesDropdown('seriesEpDD',this)">
-              <svg viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
-              <span class="series-ctrl-btn-text" id="seriesEpLabel">Episode</span>
-              <svg viewBox="0 0 24 24" width="14" height="14" style="margin-left:2px;opacity:.5"><path d="M7 10l5 5 5-5z"/></svg>
-            </button>
-            <div class="spd-series" id="seriesEpDD"></div>
-          </div>
-          <div style="position:relative;flex-shrink:0">
-            <button class="series-ctrl-btn" id="seriesShowBtn" onclick="openSeriesDropdown('seriesShowDD',this)">
-              <svg viewBox="0 0 24 24"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg>
-              <span class="series-ctrl-btn-text" id="seriesShowLabel">Series</span>
-              <svg viewBox="0 0 24 24" width="14" height="14" style="margin-left:2px;opacity:.5"><path d="M7 10l5 5 5-5z"/></svg>
-            </button>
-            <div class="spd-series" id="seriesShowDD"></div>
-          </div>
-        </div>
         <div class="controls-row">
           <button class="ctrl ctrl-icon-only" onclick="togglePlay()" title="Play/Pause">
             <svg id="ppIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -813,6 +791,28 @@
           </div>
           <div class="ctrl-sep vol-sep"></div>
           <span class="time-display"><span id="timeNow">0:00</span><span id="timeSep"> / </span><span id="timeDur">--:--</span></span>
+          <div class="series-player-bar" id="seriesPlayerBar">
+            <button class="next-ep-btn" id="nextEpBtn" onclick="playNextEpisode()">
+              <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM16 6h2v12h-2z"/></svg>
+              Next Episode
+            </button>
+            <div style="position:relative;flex-shrink:0">
+              <button class="series-ctrl-btn" id="seriesEpBtn" onclick="openSeriesDropdown('seriesEpDD',this)">
+                <svg viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
+                <span class="series-ctrl-btn-text" id="seriesEpLabel">Episode</span>
+                <svg viewBox="0 0 24 24" width="14" height="14" style="margin-left:2px;opacity:.5"><path d="M7 10l5 5 5-5z"/></svg>
+              </button>
+              <div class="spd-series" id="seriesEpDD"></div>
+            </div>
+            <div style="position:relative;flex-shrink:0">
+              <button class="series-ctrl-btn" id="seriesShowBtn" onclick="openSeriesDropdown('seriesShowDD',this)">
+                <svg viewBox="0 0 24 24"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg>
+                <span class="series-ctrl-btn-text" id="seriesShowLabel">Series</span>
+                <svg viewBox="0 0 24 24" width="14" height="14" style="margin-left:2px;opacity:.5"><path d="M7 10l5 5 5-5z"/></svg>
+              </button>
+              <div class="spd-series" id="seriesShowDD"></div>
+            </div>
+          </div>
           <div class="spacer"></div>
           <div class="player-tool-wrap sub-tool" style="position:relative;flex-shrink:0">
             <button class="ctrl" id="subBtn" onclick="openDropdown('subDD',this)" title="Subtitles">

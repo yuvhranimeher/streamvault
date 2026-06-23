@@ -901,9 +901,10 @@ nav:not(.solid){background:linear-gradient(to bottom,rgba(0,0,0,.88),transparent
 .series-player-bar{
   display:none;
   align-items:center;
-  gap:8px;
-  margin-bottom:8px;
-  flex-wrap:wrap;
+  gap:6px;
+  margin:0;
+  flex-wrap:nowrap;
+  flex:0 0 auto;
 }
 .series-player-bar.show{display:flex}
 .next-ep-btn{
@@ -911,7 +912,7 @@ nav:not(.solid){background:linear-gradient(to bottom,rgba(0,0,0,.88),transparent
   background:rgba(255,255,255,.13);
   border:1px solid rgba(255,255,255,.2);
   color:#fff;border-radius:999px;
-  padding:9px 18px;font-size:.82rem;font-weight:600;
+  padding:8px 12px;font-size:.76rem;font-weight:650;
   cursor:pointer;white-space:nowrap;
   font-family:'DM Sans',sans-serif;
   transition:background .18s,transform .15s;
@@ -925,15 +926,15 @@ nav:not(.solid){background:linear-gradient(to bottom,rgba(0,0,0,.88),transparent
   background:rgba(255,255,255,.08);
   border:1px solid rgba(255,255,255,.12);
   color:rgba(255,255,255,.8);border-radius:999px;
-  padding:8px 14px;font-size:.78rem;font-weight:600;
+  padding:7px 11px;font-size:.74rem;font-weight:650;
   cursor:pointer;white-space:nowrap;
   font-family:'DM Sans',sans-serif;
   transition:background .18s;
-  flex-shrink:0;max-width:200px;
+  flex-shrink:0;max-width:170px;
 }
 .series-ctrl-btn:hover{background:rgba(255,255,255,.14);color:#fff}
 .series-ctrl-btn svg{width:16px;height:16px;fill:currentColor;flex-shrink:0}
-.series-ctrl-btn-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px}
+.series-ctrl-btn-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:104px}
 .spd-series{
   position:fixed;z-index:99999;background:#1a1a22;
   border:1px solid rgba(255,255,255,.1);border-radius:14px;
@@ -2444,9 +2445,9 @@ img{content-visibility:auto}
   height:calc(var(--card-h) + 20px)!important;
   overflow-x:auto!important;
   overflow-y:hidden!important;
-  touch-action:pan-x!important;
+  touch-action:pan-x pan-y!important;
   overscroll-behavior-x:contain!important;
-  overscroll-behavior-y:none!important;
+  overscroll-behavior-y:auto!important;
   scroll-snap-type:x proximity!important;
   -webkit-overflow-scrolling:touch!important;
   transform:none!important;
@@ -2477,7 +2478,7 @@ img{content-visibility:auto}
 }
 @media(max-width:759px){
   #marvelTrack,#dcTrack{
-    touch-action:pan-x!important;
+    touch-action:pan-x pan-y!important;
     padding-top:2px!important;
     padding-bottom:12px!important;
   }
@@ -7762,7 +7763,7 @@ html[data-theme="light"] .fifa-live-section :is(.fifa-headline-item:hover,.fifa-
 }
 .player-wrap.premium-player .player-bottom{
   margin:0 calc(22px + var(--sr)) calc(var(--sb) + 20px) calc(22px + var(--sl));
-  padding:14px 16px 15px;
+  padding:10px 12px 11px;
   border:1px solid rgba(255,255,255,.12);
   border-radius:12px;
   background:rgba(10,12,16,.82);
@@ -7771,10 +7772,10 @@ html[data-theme="light"] .fifa-live-section :is(.fifa-headline-item:hover,.fifa-
   -webkit-backdrop-filter:none;
 }
 .player-wrap.premium-player .player-progress-row{
-  margin:0 2px 10px;
+  margin:0 2px 6px;
 }
 .player-wrap.premium-player .progress-wrap{
-  height:28px;
+  height:24px;
   margin:0;
   touch-action:none;
 }
@@ -7849,18 +7850,19 @@ html[data-theme="light"] .fifa-live-section :is(.fifa-headline-item:hover,.fifa-
   font-family:var(--player-font);
 }
 .player-wrap.premium-player .controls-row{
-  gap:8px;
-  overflow:visible;
+  gap:6px;
+  overflow-x:auto;
+  overflow-y:visible;
   padding:0;
   min-width:0;
 }
 .player-wrap.premium-player .ctrl{
-  min-height:46px;
+  min-height:38px;
   border:1px solid rgba(255,255,255,.11);
   background:rgba(255,255,255,.055);
   color:rgba(255,255,255,.84);
   border-radius:999px;
-  padding:10px 14px;
+  padding:7px 10px;
   transition:background .1s linear,border-color .1s linear,color .1s linear;
   font-family:var(--player-font);
 }
@@ -7881,13 +7883,13 @@ html[data-theme="light"] .fifa-live-section :is(.fifa-headline-item:hover,.fifa-
   box-shadow:none;
 }
 .player-wrap.premium-player .ctrl svg{
-  width:21px;
-  height:21px;
+  width:19px;
+  height:19px;
 }
 .player-wrap.premium-player .ctrl-icon-only{
-  width:46px;
-  min-width:46px;
-  padding:10px;
+  width:38px;
+  min-width:38px;
+  padding:7px;
   justify-content:center;
 }
 .player-wrap.premium-player .ctrl-sep{
@@ -8033,13 +8035,13 @@ html[data-theme="light"] .fifa-live-section :is(.fifa-headline-item:hover,.fifa-
     gap:6px;
   }
   .player-wrap.premium-player .ctrl{
-    min-height:46px;
-    padding:8px 10px;
+    min-height:38px;
+    padding:7px 9px;
     font-size:.72rem;
   }
   .player-wrap.premium-player .ctrl-icon-only{
-    width:46px;
-    min-width:46px;
+    width:38px;
+    min-width:38px;
   }
   .player-wrap.premium-player .ctrl svg{
     width:19px;
@@ -8052,11 +8054,11 @@ html[data-theme="light"] .fifa-live-section :is(.fifa-headline-item:hover,.fifa-
     display:none;
   }
   .player-wrap.premium-player .progress-wrap{
-    height:30px;
+    height:24px;
     margin-bottom:0;
   }
   .player-wrap.premium-player .player-progress-row{
-    margin-bottom:8px;
+    margin-bottom:6px;
   }
   .progress-preview{
     width:150px;
@@ -8075,7 +8077,7 @@ html[data-theme="light"] .fifa-live-section :is(.fifa-headline-item:hover,.fifa-
     gap:5px;
   }
   .player-wrap.premium-player .ctrl{
-    padding:8px;
+    padding:7px;
   }
   .player-wrap.premium-player .skip-center{
     flex-direction:row;

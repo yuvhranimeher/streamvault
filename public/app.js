@@ -368,6 +368,7 @@ function selectPreferredAudioTrack(context, options={}){
 function appendSelectedAudioParams(params){
   const selected=selectedAudioTrack();
   const streamIndex=selected?.streamIndex ?? selected?.sourceIndex;
+  if(audioTrackIsEnglish(selected))params.set('english','1');
   if(Number.isFinite(streamIndex)){
     params.set('audio', String(Math.max(0,currentAudioIdx || 0)));
     params.set('audioStream', String(streamIndex));
@@ -380,6 +381,7 @@ function planOptionsNeedAudioMap(options={}){
     options.forceAudio ||
     options.forceRemux ||
     options.forceHls ||
+    options.preferEnglishServer ||
     mode === 'audio' ||
     mode === 'audio-transcode' ||
     mode === 'audio-copy' ||
@@ -2741,6 +2743,7 @@ async function fetchLocalPlaybackPlan(id, start=0, options={}){
   if(isMobilePlaybackClient())params.set('mobile','1');
   if(currentQuality && currentQuality !== 'auto')params.set('quality', currentQuality);
   if(planOptionsNeedAudioMap(options))appendSelectedAudioParams(params);
+  if(options.preferEnglishServer)params.set('english','1');
   if(start > 0)params.set('start', Math.floor(start));
   if(options.forceHls)params.set('forceHls','1');
   if(options.forceRemux)params.set('mode','remux');
@@ -2769,6 +2772,7 @@ async function fetchFtpPlaybackPlan(streamUrl, start=0, options={}){
   params.set('plan','1');
   if(isMobilePlaybackClient())params.set('mobile','1');
   if(planOptionsNeedAudioMap(options))appendSelectedAudioParams(params);
+  if(options.preferEnglishServer)params.set('english','1');
   if(start > 0)params.set('start', Math.floor(start));
   if(options.forceHls)params.set('forceHls','1');
   if(options.forceProxy || options.forceStream)params.set('mode','proxy');
@@ -3254,15 +3258,17 @@ async function loadFtpDuration(streamUrl){
 }
 
 function fallbackOrderForRemote(url, plan={}){
-  if(!isMobilePlaybackClient())return ['proxy','remux','audio'];
   const unsupported = plan?.unsupportedVideoHint || urlHasUnsupportedVideoHint(url);
   const selected=selectedAudioTrack();
   const explicitAudio=availableAudio.length > 1 || currentAudioIdx > 0 || Number.isFinite(selected?.streamIndex ?? selected?.sourceIndex);
+  if(englishStartupRequiresMappedSource() || explicitAudio)return ['audio','remux'];
+  if(!isMobilePlaybackClient())return ['proxy','remux','audio'];
   if(unsupported || explicitAudio)return ['audio','remux','proxy'];
   return ['proxy','remux','audio'];
 }
 
 function fallbackOrderForLocal(plan={}){
+  if(englishStartupRequiresMappedSource())return ['audio','remux'];
   return ['remux','audio'];
 }
 
@@ -3290,8 +3296,8 @@ function applyStartupAudioInfo(info, sourceUrl='', context='startup audio'){
 
   if(hasEnglish && audioTrackIsEnglish(selected)){
     if(streamIndex === null && relativeIndex !== 0){
-      options={blockPlayback:true};
-      reason='English exists but has no absolute stream index';
+      options={forceAudio:true, preferEnglishServer:true};
+      reason='English needs server-side absolute stream selection';
     }else if(!safeCodec){
       options={forceAudio:true};
       reason='English codec needs audio-only AAC conversion';
@@ -3302,8 +3308,8 @@ function applyStartupAudioInfo(info, sourceUrl='', context='startup audio'){
       reason='English browser-safe first stream';
     }
   }else if(hasEnglish){
-    options={blockPlayback:true};
-    reason='English detected but not selectable';
+    options={forceAudio:true, preferEnglishServer:true};
+    reason='English detected; server-side absolute stream selection required';
   }else{
     reason='English audio not found';
   }
@@ -3351,7 +3357,7 @@ async function prepareLocalStartupAudio(id, movie={}){
   }catch(e){
     resetUncertainStartupAudio('local startup', e.message);
     const blockPlayback=sourceLooksMultiAudio(sourceUrl);
-    return {info:null, options:blockPlayback ? {blockPlayback:true} : {}, selected:null, reason:e.message};
+    return {info:null, options:blockPlayback ? {forceAudio:true, preferEnglishServer:true} : {}, selected:null, reason:e.message};
   }
 }
 
@@ -3367,7 +3373,7 @@ async function prepareFtpStartupAudio(streamUrl){
   }catch(e){
     resetUncertainStartupAudio('FTP startup', e.message);
     const blockPlayback=sourceLooksMultiAudio(streamUrl);
-    return {info:null, options:blockPlayback ? {blockPlayback:true} : {}, selected:null, reason:e.message};
+    return {info:null, options:blockPlayback ? {forceAudio:true, preferEnglishServer:true} : {}, selected:null, reason:e.message};
   }
 }
 
@@ -3414,27 +3420,6 @@ async function attachFtpFallbackStep(resolvedStreamUrl, name, step, failedAt){
 
 async function tryFtpAdaptiveFallback(resolvedStreamUrl, name, failedAt=playbackTime()){
   if(!_ftpStreamUrl || _ftpStreamUrl !== resolvedStreamUrl)return false;
-  if(englishStartupRequiresMappedSource()){
-    document.getElementById('playerSpinner').classList.remove('on');
-    playbackDebug('ftp fallback blocked for English startup', {
-      url:resolvedStreamUrl,
-      failedAt,
-      selected:audioDebugSummary(selectedAudioTrack(),currentAudioIdx)
-    });
-    mediaFixLog('FTP English startup route failed; fallback blocked', {
-      url:resolvedStreamUrl,
-      failedAt,
-      selected:audioDebugSummary(selectedAudioTrack(),currentAudioIdx),
-      error:videoErrorInfo()
-    });
-    try{
-      vid.pause();
-      vid.removeAttribute('src');
-      vid.load();
-    }catch(_){}
-    showPlayerNotice('English audio could not start safely without changing playback route.');
-    return false;
-  }
   const tried = vid._ftpFallbackStepsTried || (vid._ftpFallbackStepsTried = new Set());
   const order = fallbackOrderForRemote(resolvedStreamUrl, _currentFtpPlaybackPlan);
   document.getElementById('playerSpinner').classList.add('on');
@@ -3492,27 +3477,6 @@ async function attachLocalFallbackStep(id, step, failedAt){
 
 async function tryLocalAdaptiveFallback(id, failedAt=playbackTime()){
   if(!currentStreamId || String(currentStreamId) !== String(id) || _ftpStreamUrl)return false;
-  if(englishStartupRequiresMappedSource()){
-    document.getElementById('playerSpinner').classList.remove('on');
-    playbackDebug('local fallback blocked for English startup', {
-      id,
-      failedAt,
-      selected:audioDebugSummary(selectedAudioTrack(),currentAudioIdx)
-    });
-    mediaFixLog('local English startup route failed; fallback blocked', {
-      id,
-      failedAt,
-      selected:audioDebugSummary(selectedAudioTrack(),currentAudioIdx),
-      error:videoErrorInfo()
-    });
-    try{
-      vid.pause();
-      vid.removeAttribute('src');
-      vid.load();
-    }catch(_){}
-    showPlayerNotice('English audio could not start safely without changing playback route.');
-    return false;
-  }
   const tried = vid._localFallbackStepsTried || (vid._localFallbackStepsTried = new Set());
   const order = fallbackOrderForLocal(_currentPlaybackPlan);
   document.getElementById('playerSpinner').classList.add('on');
@@ -3612,10 +3576,10 @@ async function playMedia(id, name, year){
   const startupInfo = startupAudio.info;
   const startupOptions = startupAudio.options || {};
   if(startupOptions.blockPlayback){
-    document.getElementById('playerSpinner').classList.remove('on');
-    showPlayerNotice('English audio metadata did not load; playback was not started on an unsafe default track.');
-    mediaFixLog('local startup blocked without audio metadata', {id, reason:startupAudio.reason});
-    return;
+    delete startupOptions.blockPlayback;
+    startupOptions.forceAudio = true;
+    startupOptions.preferEnglishServer = true;
+    mediaFixLog('local startup recovered with server English audio', {id, reason:startupAudio.reason});
   }
   setTimeout(()=>{
     if(String(currentStreamId) === String(id) && !_ftpStreamUrl){
@@ -4175,10 +4139,10 @@ async function playFtpMedia(streamUrl, name, year){
     const startupInfo = startupAudio.info;
     const startupOptions = startupAudio.options || {};
     if(startupOptions.blockPlayback){
-      document.getElementById('playerSpinner').classList.remove('on');
-      showPlayerNotice('English audio metadata did not load; playback was not started on an unsafe default track.');
-      mediaFixLog('FTP startup blocked without audio metadata', {url:requestedStreamUrl, reason:startupAudio.reason});
-      return;
+      delete startupOptions.blockPlayback;
+      startupOptions.forceAudio = true;
+      startupOptions.preferEnglishServer = true;
+      mediaFixLog('FTP startup recovered with server English audio', {url:requestedStreamUrl, reason:startupAudio.reason});
     }
 
     let playInfo;
@@ -6593,6 +6557,7 @@ function svApplyHomeOrder(){
     }
   });
   svEnhanceCarouselControls();
+  svBindStudioWheelScroll();
 }
 function svTrackForRow(row){
   return row?.querySelector?.('.cards-track,.live-home-track');
@@ -6613,6 +6578,24 @@ function svScrollCarousel(rowId, direction){
   const amount=Math.max(260, Math.floor(track.clientWidth*.82));
   track.scrollBy({left:direction*amount,behavior:'smooth'});
   setTimeout(()=>svUpdateCarouselControls(row),360);
+}
+function svBindStudioWheelScroll(){
+  ['marvelRow','dcRow'].forEach(rowId=>{
+    const row=document.getElementById(rowId);
+    const track=svTrackForRow(row);
+    if(!track || track.dataset.studioWheelBound)return;
+    track.dataset.studioWheelBound='1';
+    track.addEventListener('wheel', e=>{
+      const horizontal=Math.abs(e.deltaX) > Math.abs(e.deltaY);
+      if(!horizontal && !e.shiftKey)return;
+      e.preventDefault();
+      if((horizontal ? e.deltaX : e.deltaY) > 0 && track._svItems && track._svRendered < track._svItems.length){
+        svAppendLazyTrack(track);
+      }
+      track.scrollLeft += horizontal ? e.deltaX : e.deltaY;
+      svUpdateCarouselControls(row);
+    }, {passive:false});
+  });
 }
 function svUpdateCarouselControls(row){
   const track=svTrackForRow(row);

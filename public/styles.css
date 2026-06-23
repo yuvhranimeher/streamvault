@@ -8275,3 +8275,85 @@ html[data-theme="light"] .fifa-live-section :is(.fifa-headline-item:hover,.fifa-
     max-width:100vw!important;
   }
 }
+
+/* Single-flow detail pages: hero, episodes, metadata, and related content share one scroll container. */
+.series-modal.open{
+  display:block!important;
+}
+.series-modal{
+  flex-direction:initial!important;
+  overflow-y:auto!important;
+  overflow-x:hidden!important;
+  height:100dvh!important;
+  max-height:100dvh!important;
+  scroll-behavior:auto!important;
+  overscroll-behavior-y:contain!important;
+  -webkit-overflow-scrolling:touch!important;
+}
+.series-modal :is(.sm-hero,.series-modal-inner,.sm-tabs-row,.ep-grid,.detail-section,.metadata-grid,.detail-related-track){
+  content-visibility:visible!important;
+  contain:none!important;
+  contain-intrinsic-size:auto!important;
+}
+.series-modal .sm-hero{
+  display:block!important;
+  position:relative!important;
+  width:100%!important;
+  min-height:clamp(520px,72vh,760px)!important;
+  height:auto!important;
+  overflow:hidden!important;
+}
+.series-modal .sm-info{
+  position:relative!important;
+  inset:auto!important;
+  min-height:clamp(520px,72vh,760px)!important;
+  height:auto!important;
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:flex-end!important;
+  padding:calc(84px + var(--si)) 5% 42px!important;
+  overflow:visible!important;
+}
+.series-modal .series-modal-inner{
+  display:block!important;
+  width:min(1120px,100%)!important;
+  margin:0 auto!important;
+  padding:0 5% calc(42px + var(--bnav-h))!important;
+  overflow:visible!important;
+}
+.series-modal .sm-tabs-row{
+  display:flex!important;
+  align-items:center!important;
+  justify-content:space-between!important;
+  gap:12px!important;
+  padding:28px 0 0!important;
+  overflow:visible!important;
+}
+.series-modal .season-tabs{
+  flex:0 1 auto!important;
+  overflow-x:auto!important;
+  overflow-y:hidden!important;
+}
+.series-modal .ep-grid{
+  display:grid!important;
+  max-height:none!important;
+  overflow:visible!important;
+  padding:20px 0 0!important;
+}
+@media(max-width:639px){
+  .series-modal .sm-hero,
+  .series-modal .sm-info{
+    min-height:auto!important;
+  }
+  .series-modal .sm-info{
+    padding:calc(72px + var(--si)) 5% 30px!important;
+  }
+  .series-modal .series-modal-inner{
+    padding-left:calc(var(--sv-mobile-pad) + var(--sl))!important;
+    padding-right:calc(var(--sv-mobile-pad) + var(--sr))!important;
+  }
+  .series-modal .sm-tabs-row{
+    padding-top:20px!important;
+  }
+}

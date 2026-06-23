@@ -1,6 +1,6 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260622-english-audio-original-video1';
+const SV_ASSET_VERSION = '20260623-english-seek-overflow1';
 function mediaFixLog(step, data={}){
   try{console.warn(`[${SV_MEDIA_FIX_MARKER}] ${step}`, data);}catch(_){}
 }
@@ -283,7 +283,7 @@ function audioTrackRelativeIndex(track,index=0){
 function audioCodecIsBrowserSafe(track){
   const codec=String(track?.codec || '').trim().toLowerCase();
   if(!codec)return false;
-  return /^(aac|mp3|mp4a|opus|vorbis)$/.test(codec) || codec.includes('aac') || codec.includes('mp4a');
+  return /^(aac|mp3|mp4a)$/.test(codec) || codec.includes('aac') || codec.includes('mp4a');
 }
 
 function audioLockedIndex(){
@@ -299,12 +299,13 @@ function clearAudioLock(){
   vid._svEnglishStartupRequired = false;
 }
 
-function lockAudioToCurrent(reason=''){
+function lockAudioToCurrent(reason='', options={}){
   if(!vid)return;
   vid._svAudioLockedIndex = currentAudioIdx;
-  vid._svEnglishStartupRequired = true;
+  vid._svEnglishStartupRequired = !!options.requiresMappedSource;
   if(reason)mediaFixLog('audio locked to startup selection', {
     reason,
+    requiresMappedSource:!!options.requiresMappedSource,
     selected:audioDebugSummary(selectedAudioTrack(),currentAudioIdx)
   });
 }
@@ -367,10 +368,9 @@ function selectPreferredAudioTrack(context, options={}){
 function appendSelectedAudioParams(params){
   const selected=selectedAudioTrack();
   const streamIndex=selected?.streamIndex ?? selected?.sourceIndex;
-  const hasMultipleAudio=availableAudio.length > 1;
-  if(currentAudioIdx > 0 || (hasMultipleAudio && Number.isFinite(streamIndex))){
+  if(Number.isFinite(streamIndex)){
     params.set('audio', String(Math.max(0,currentAudioIdx || 0)));
-    if(Number.isFinite(streamIndex))params.set('audioStream', String(streamIndex));
+    params.set('audioStream', String(streamIndex));
   }
 }
 
@@ -526,6 +526,10 @@ function resetLocalTrackOptions(){
 
 function ensureLocalTrackOptionsLoaded(){
   if(!currentStreamId || _ftpStreamUrl)return Promise.resolve();
+  if(audioLockedIndex() !== null){
+    mediaFixLog('local full metadata deferred for locked startup audio', {id:currentStreamId});
+    return Promise.resolve();
+  }
   if(!isMobilePlaybackClient()){
     refreshDesktopNativeAudioTracks();
     if(_localTrackLoadPromise)return _localTrackLoadPromise;
@@ -3183,15 +3187,9 @@ async function loadPlayerDuration(id){
   vid._durationToken = token;
   vid._durationPending = true;
   try{
-    const r = await fetch(`/api/media-info/${id}`);
+    const r = await fetch(`/api/duration/${encodeURIComponent(id)}`);
     if(token !== vid._durationToken || !r.ok)return;
     const data = await r.json();
-    vid._mediaSourceSeekRequired = mediaInfoNeedsSourceSeek(data);
-    vid._sourceSeekRequired = vid._mediaSourceSeekRequired;
-    if(_currentPlaybackPlan){
-      _currentPlaybackPlan.unsupportedVideoHint = vid._mediaSourceSeekRequired;
-      _currentPlaybackPlan.unsupportedVideoCodec = mediaInfoHasUnsupportedVideo(data);
-    }
     const duration = setPlayerDuration(data.duration, 'api');
     if(duration)maybeResumeProgress(id, duration);
   }catch(e){
@@ -3228,22 +3226,16 @@ async function loadFtpDuration(streamUrl){
 }
 
 function fallbackOrderForRemote(url, plan={}){
-  if(!isMobilePlaybackClient())return ['proxy'];
+  if(!isMobilePlaybackClient())return ['proxy','remux','audio'];
   const unsupported = plan?.unsupportedVideoHint || urlHasUnsupportedVideoHint(url);
   const selected=selectedAudioTrack();
   const explicitAudio=availableAudio.length > 1 || currentAudioIdx > 0 || Number.isFinite(selected?.streamIndex ?? selected?.sourceIndex);
-  if(unsupported)return ['transcode','hls'];
-  if(explicitAudio)return ['audio','transcode','hls','proxy'];
-  const order = ['proxy'];
-  order.push('remux','audio');
-  order.push('transcode','hls');
-  return order;
+  if(unsupported || explicitAudio)return ['audio','remux','proxy'];
+  return ['proxy','remux','audio'];
 }
 
 function fallbackOrderForLocal(plan={}){
-  if(!isMobilePlaybackClient())return [];
-  if(plan?.unsupportedVideoHint)return ['transcode','hls'];
-  return ['remux','audio','transcode','hls'];
+  return ['remux','audio'];
 }
 
 function applyStartupAudioInfo(info, sourceUrl='', context='startup audio'){
@@ -3289,9 +3281,13 @@ function applyStartupAudioInfo(info, sourceUrl='', context='startup audio'){
   renderAudioTracks();
   if(options.forceAudio || options.forceRemux){
     setAppliedAudioIndex(currentAudioIdx, `${context} mapped audio startup`);
-    lockAudioToCurrent(reason);
+    lockAudioToCurrent(reason, {requiresMappedSource:true});
   }else{
     setAppliedAudioIndex(currentAudioIdx, `${context} startup`);
+    if(availableAudio.length > 1){
+      lockAudioToCurrent(reason || 'Manual audio switching disabled for stable startup', {requiresMappedSource:false});
+      renderAudioTracks();
+    }
   }
   mediaFixLog('startup audio decision', {
     context,
@@ -4224,10 +4220,10 @@ async function playFtpMedia(streamUrl, name, year){
       if(_ftpStreamUrl !== resolvedStreamUrl)return;
       if(audioLockedIndex() === null){
         ensureFtpTrackOptionsLoaded();
-        loadFtpDuration(resolvedStreamUrl);
       }else{
         mediaFixLog('FTP full metadata deferred for locked English startup', {url:resolvedStreamUrl});
       }
+      loadFtpDuration(resolvedStreamUrl);
     }, 500);
 
     if(mobilePlayback){
@@ -5785,7 +5781,7 @@ vid._mdH = () => {
     updatePlayIcons(true);
     if(currentStreamId&&!_ftpStreamUrl){watchProgress[currentStreamId]={progress:0.99,updatedAt:Date.now()};try{localStorage.setItem('sv_progress',JSON.stringify(watchProgress));}catch(_){}}
   };
-  vid._waH=()=>document.getElementById('playerSpinner').classList.add('on');
+  vid._waH=()=>{document.getElementById('playerSpinner').classList.add('on');showUI();};
   vid._plH=()=>{document.getElementById('playerSpinner').classList.remove('on');startPlayerUiClock();schedulePlayerProgressRender(playbackTime(),dur());scheduleHideUI();};
   vid._cpH=()=>{document.getElementById('playerSpinner').classList.remove('on');};
   vid._paH=()=>{updatePlayIcons(false);startPlayerUiClock();scheduleHideUI();};

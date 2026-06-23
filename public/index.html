@@ -42,7 +42,7 @@
     });
 })();
 </script>
-<link rel="stylesheet" href="/styles.css?v=20260622-audio-playable-loading1">
+<link rel="stylesheet" href="/styles.css?v=20260623-english-seek-overflow1">
 </head>
 <body>
 
@@ -728,7 +728,6 @@
       disablepictureinpicture
       controlslist="nodownload nofullscreen noremoteplayback nopictureinpicture"></video>
     <div class="subtitle-overlay" id="subtitleOverlay"></div>
-    <div class="player-spinner" id="playerSpinner"><div class="spinner-ring"></div></div>
     <div class="seek-flash left" id="seekFlashLeft" aria-hidden="true">
       <div class="seek-flash-ring"><svg viewBox="0 0 24 24"><path d="M11 6.5 5 12l6 5.5v-4c3.1.2 5.7 1.9 7.2 4.7l1.7-.95C18.05 13.7 15.05 11.65 11 11.45V6.5z"/></svg></div>
     </div>
@@ -765,17 +764,20 @@
         </div>
       </div>
       <div class="player-bottom">
-        <div class="progress-wrap" id="progressWrap">
-          <div class="progress-track">
-            <div class="progress-buffered" id="progressBuffered"></div>
-            <div class="progress-played" id="progressPlayed"></div>
+        <div class="player-progress-row">
+          <div class="player-spinner" id="playerSpinner"><div class="spinner-ring"></div></div>
+          <div class="progress-wrap" id="progressWrap">
+            <div class="progress-track">
+              <div class="progress-buffered" id="progressBuffered"></div>
+              <div class="progress-played" id="progressPlayed"></div>
+            </div>
+            <div class="progress-thumb" id="progressThumb"></div>
+            <div class="progress-preview" id="progressPreview" aria-hidden="true">
+              <canvas class="progress-preview-canvas" id="progressPreviewCanvas" width="192" height="108"></canvas>
+              <div class="progress-preview-time" id="progressPreviewTime">0:00</div>
+            </div>
+            <div class="progress-tooltip" id="progressTooltip">0:00</div>
           </div>
-          <div class="progress-thumb" id="progressThumb"></div>
-          <div class="progress-preview" id="progressPreview" aria-hidden="true">
-            <canvas class="progress-preview-canvas" id="progressPreviewCanvas" width="192" height="108"></canvas>
-            <div class="progress-preview-time" id="progressPreviewTime">0:00</div>
-          </div>
-          <div class="progress-tooltip" id="progressTooltip">0:00</div>
         </div>
         <div class="series-player-bar" id="seriesPlayerBar">
           <button class="next-ep-btn" id="nextEpBtn" onclick="playNextEpisode()">
@@ -876,9 +878,9 @@
 
 <div class="toast" id="toast"></div>
 
-<script defer src="/app.js?v=20260622-english-audio-original-video1"></script>
-<script defer src="/details.js?v=20260622-english-audio-original-video1"></script>
-<script defer src="/home.js?v=20260622-english-audio-original-video1"></script>
+<script defer src="/app.js?v=20260623-english-seek-overflow1"></script>
+<script defer src="/details.js?v=20260623-english-seek-overflow1"></script>
+<script defer src="/home.js?v=20260623-english-seek-overflow1"></script>
 <script defer src="/downloads.js?v=20260621-real-browser-track-loading1"></script>
 <script defer src="/search.js?v=20260621-real-browser-track-loading1"></script>
 <script defer src="/livetv.js?v=20260621-real-browser-track-loading1"></script>

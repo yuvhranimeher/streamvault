@@ -33,7 +33,7 @@ const MOBILE_HLS_MAX_FPS = Number(process.env.MOBILE_HLS_MAX_FPS || 24);
 const MOBILE_HLS_VIDEO_MAXRATE = String(process.env.MOBILE_HLS_VIDEO_MAXRATE || '1200k');
 const MOBILE_HLS_VIDEO_BUFSIZE = String(process.env.MOBILE_HLS_VIDEO_BUFSIZE || '2400k');
 const MOBILE_HLS_AUDIO_BITRATE = String(process.env.MOBILE_HLS_AUDIO_BITRATE || '96k');
-const MEDIA_FFMPEG_STREAM_MAX = Number(process.env.MEDIA_FFMPEG_STREAM_MAX || 2);
+const MEDIA_FFMPEG_STREAM_MAX = Number(process.env.MEDIA_FFMPEG_STREAM_MAX || 4);
 const MEDIA_FFMPEG_STARTUP_MS = Number(process.env.MEDIA_FFMPEG_STARTUP_MS || 15000);
 let activeMediaFfmpegStreams = 0;
 
@@ -124,6 +124,7 @@ function getMediaInfo(filePath) {
 
 const mediaInfoCache = new Map();
 const mediaAudioInfoCache = new Map();
+const mediaDurationInfoCache = new Map();
 
 function getAudioOnlyMediaInfo(filePath) {
   return new Promise((resolve, reject) => {
@@ -178,6 +179,50 @@ function getAudioOnlyMediaInfo(filePath) {
           duration: 0,
           container: 'unknown'
         });
+      } catch (e) {
+        reject(e);
+      }
+    });
+
+    ffprobe.on('error', err => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      reject(err);
+    });
+  });
+}
+
+function getDurationOnlyMediaInfo(filePath) {
+  return new Promise((resolve, reject) => {
+    const ffprobe = spawn(FFPROBE_BIN, [
+      '-v', 'quiet',
+      '-print_format', 'json',
+      '-show_entries', 'format=duration',
+      filePath
+    ]);
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try { ffprobe.kill('SIGKILL'); } catch {}
+      reject(new Error('duration ffprobe timed out'));
+    }, 15000);
+
+    ffprobe.stdout.on('data', data => stdout += data);
+    ffprobe.stderr.on('data', data => stderr += data);
+
+    ffprobe.on('close', code => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (code !== 0) return reject(new Error(`duration ffprobe failed: ${stderr}`));
+      try {
+        const info = JSON.parse(stdout);
+        resolve({ duration: parseFloat(info.format?.duration) || 0 });
       } catch (e) {
         reject(e);
       }
@@ -249,6 +294,34 @@ function getCachedAudioOnlyMediaInfo(filePath) {
   if (mediaAudioInfoCache.size > 200) {
     const oldestKey = mediaAudioInfoCache.keys().next().value;
     mediaAudioInfoCache.delete(oldestKey);
+  }
+
+  return promise;
+}
+
+function getCachedDurationOnlyMediaInfo(filePath) {
+  let cacheKey;
+  let mapKey = filePath;
+  try {
+    const stat = fs.statSync(filePath);
+    cacheKey = `${stat.size}:${stat.mtimeMs}`;
+  } catch {
+    mapKey = `remote:${filePath}`;
+    cacheKey = mapKey;
+  }
+
+  const cached = mediaDurationInfoCache.get(mapKey);
+  if (cached && cached.cacheKey === cacheKey) return cached.promise;
+
+  const promise = getDurationOnlyMediaInfo(filePath).catch(err => {
+    mediaDurationInfoCache.delete(mapKey);
+    throw err;
+  });
+  mediaDurationInfoCache.set(mapKey, { cacheKey, promise });
+
+  if (mediaDurationInfoCache.size > 200) {
+    const oldestKey = mediaDurationInfoCache.keys().next().value;
+    mediaDurationInfoCache.delete(oldestKey);
   }
 
   return promise;
@@ -5276,7 +5349,14 @@ function streamFfmpegMp4(req, res, options) {
   const ffmpeg = spawn(FFMPEG_BIN, args);
   let started = false;
   let closed = false;
+  let released = false;
   let stderr = '';
+  const releaseActive = reason => {
+    if (released) return;
+    released = true;
+    activeMediaFfmpegStreams = Math.max(0, activeMediaFfmpegStreams - 1);
+    if (reason) console.log(`[Media FFmpeg] ${mode} released ${label}: ${reason}`);
+  };
   const headers = {
     'Content-Type': 'video/mp4',
     'Accept-Ranges': 'none',
@@ -5323,6 +5403,7 @@ function streamFfmpegMp4(req, res, options) {
   ffmpeg.on('error', err => {
     console.error(`[Media FFmpeg] ${mode} spawn error ${label}:`, err.message);
     clearTimeout(startupTimer);
+    releaseActive('spawn error');
     if (!started && !res.headersSent) {
       jsonError(res, 500, 'MEDIA_FFMPEG_SPAWN_FAILED', 'Could not start media fallback', {
         mode,
@@ -5334,7 +5415,7 @@ function streamFfmpegMp4(req, res, options) {
   ffmpeg.on('close', code => {
     closed = true;
     clearTimeout(startupTimer);
-    activeMediaFfmpegStreams = Math.max(0, activeMediaFfmpegStreams - 1);
+    releaseActive(`process close code=${code}`);
     if (code !== 0 && !started && !res.headersSent) {
       console.error(`[Media FFmpeg] ${mode} failed ${label}:`, stderr.trim());
       jsonError(res, 502, 'MEDIA_FFMPEG_FAILED', 'Media fallback failed before playback started', {
@@ -5351,6 +5432,7 @@ function streamFfmpegMp4(req, res, options) {
 
   req.on('close', () => {
     if (!closed) {
+      releaseActive('client closed');
       try { ffmpeg.kill('SIGKILL'); } catch {}
     }
   });
@@ -6796,7 +6878,7 @@ app.get('/api/duration/:id', async (req, res) => {
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing' });
 
   try {
-    const info = await getCachedMediaInfo(filePath);
+    const info = await getCachedDurationOnlyMediaInfo(filePath);
     res.json({ duration: Number(info.duration) || 0 });
   } catch (e) {
     console.error(`[Duration] Error for ${entry.file}:`, e.message);
@@ -7982,7 +8064,7 @@ app.get('/api/ftp/duration', async (req, res) => {
   console.log(`[FTP Duration] final play URL: ${urls.finalPlayUrl}`);
 
   try {
-    const info = await getCachedMediaInfo(media.decodedUrl);
+    const info = await getCachedDurationOnlyMediaInfo(media.decodedUrl);
     res.json({
       ok: true,
       requestedUrl: media.requestedUrl,

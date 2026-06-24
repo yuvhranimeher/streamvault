@@ -1,15 +1,20 @@
 (function(){
-  const BOOT_SEARCH_VERSION = '20260624-instant-search-audio-sync1';
-  const BOOT_INDEX_URL = `/api/boot-search-index?v=${BOOT_SEARCH_VERSION}`;
-  const SEARCH_DELAY = 45;
+  const BOOT_SEARCH_VERSION = '20260624-instant-search-smooth-playback3';
+  const BOOT_INDEX_URL = `/boot-search-index.json?v=${BOOT_SEARCH_VERSION}`;
+  const BOOT_INDEX_API_URL = `/api/boot-search-index?v=${BOOT_SEARCH_VERSION}`;
+  const SEARCH_DELAY = 90;
+  const SEARCH_REFINE_DELAY = 700;
+  const INSTANT_LIMIT = 40;
   const PAGE_LIMIT = 72;
   const MOBILE_LIMIT = 36;
   const cache = new Map();
   const bootQueryCache = new Map();
   let timer = 0;
+  let refineTimer = 0;
   let controller = null;
   let bootIndex = null;
   let bootIndexPromise = null;
+  let searchSeq = 0;
   let activeQuery = '';
   let activePage = 1;
   let activePages = 1;
@@ -84,9 +89,30 @@
     });
   }
 
+  function expandBootSearchItem(row, fields){
+    if(!Array.isArray(row))return row;
+    const item = {};
+    (fields || []).forEach((field, index)=>{
+      const value = row[index];
+      if(value === '' || value === null || value === undefined)return;
+      if(field === 'type')item.type = value === 's' ? 'series' : 'movie';
+      else if(field === 'isFtp' || field === 'hasStream')item[field] = value === 1 || value === true;
+      else item[field] = value;
+    });
+    item.name = item.name || item.title || '';
+    if(item.type === 'series'){
+      item._isSeries = true;
+      item.isSummary = true;
+    }
+    return item;
+  }
+
   function adoptBootIndex(data){
     if(!data || data.version !== BOOT_SEARCH_VERSION || !Array.isArray(data.items))return null;
-    bootIndex = data;
+    const items = Array.isArray(data.fields)
+      ? data.items.map(row=>expandBootSearchItem(row, data.fields))
+      : data.items;
+    bootIndex = { ...data, items };
     return bootIndex;
   }
 
@@ -99,7 +125,15 @@
     bootIndexPromise = (early || fetch(BOOT_INDEX_URL, {
       cache:'force-cache',
       headers:{ Accept:'application/json' }
-    }).then(res=>res.ok ? res.json() : null))
+    })
+      .then(res=>{
+        if(res.ok)return res.json();
+        throw new Error(`boot index HTTP ${res.status}`);
+      })
+      .catch(()=>fetch(BOOT_INDEX_API_URL, {
+        cache:'force-cache',
+        headers:{ Accept:'application/json' }
+      }).then(res=>res.ok ? res.json() : null)))
       .then(adoptBootIndex)
       .catch(err=>{
         console.warn('[Search] boot index unavailable:', err?.message || err);
@@ -120,7 +154,7 @@
     const type = isSeriesItem(item) ? 'series' : 'movie';
     if(kind === 'movie' && type !== 'movie')return -1;
     if(kind === 'series' && type !== 'series')return -1;
-    const nameNorm = normalizeSearchText(item.name || item.title || '');
+    const nameNorm = item.normalizedTitle || normalizeSearchText(item.name || item.title || '');
     const searchNorm = item.searchText || normalizeSearchText([
       item.name,
       item.title,
@@ -129,7 +163,7 @@
       item.genre,
       item.category
     ].filter(Boolean).join(' '));
-    const tokens = Array.isArray(item.searchTokens) ? item.searchTokens : searchTokens(searchNorm);
+    const tokens = Array.isArray(item.searchTokens) ? item.searchTokens : (item.searchTokens = searchTokens(searchNorm));
     let score = 0;
     if(nameNorm === queryNorm)score += 9000;
     else if(queryNorm && nameNorm.startsWith(queryNorm + ' '))score += 7200;
@@ -182,10 +216,15 @@
 
   function renderBootResults(grid, label, query, items, total, append=false){
     if(!grid || !Array.isArray(items) || !items.length)return false;
+    if(!append && grid.dataset?.svSearchSource === 'refined' && grid.dataset.svSearchQuery === query)return false;
     activePage = 1;
     activePages = 1;
     if(label)label.textContent = `${Number(total || items.length).toLocaleString()} instant result${Number(total || items.length) === 1 ? '' : 's'} for "${query}"`;
-    renderItems(grid, items, append);
+    if(!append){
+      grid.dataset.svSearchSource = 'boot';
+      grid.dataset.svSearchQuery = query;
+    }
+    renderItems(grid, items, append, query);
     return true;
   }
 
@@ -193,12 +232,20 @@
     return `${q.toLowerCase()}|${page}|${limit}|${kind || 'mixed'}`;
   }
 
+  function abortRefinement(){
+    clearTimeout(refineTimer);
+    if(controller){
+      controller.abort();
+      controller = null;
+    }
+  }
+
   async function fetchResults(q, page, limit, kind='mixed'){
     const key = cacheKey(q, page, limit, kind);
     if(cache.has(key))return cache.get(key);
     if(controller)controller.abort();
     controller = new AbortController();
-    const params = new URLSearchParams({ q, kind, page:String(page), limit:String(limit), massive:'1' });
+    const params = new URLSearchParams({ q, kind, page:String(page), limit:String(limit), massive:'0', background:'1' });
     const res = await fetch(`/api/search?${params.toString()}`, { cache:'no-store', signal:controller.signal });
     if(!res.ok)throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
@@ -240,13 +287,68 @@
     document.getElementById('downloadNavBtn')?.classList.remove('active');
   }
 
-  function renderItems(grid, items, append){
+  function renderItems(grid, items, append, expectedQuery=''){
     const html = (items || []).map(resultHTML).join('');
+    const seq = searchSeq;
     requestAnimationFrame(()=>{
+      if(expectedQuery && (expectedQuery !== activeQuery || seq !== searchSeq))return;
       if(append)grid.insertAdjacentHTML('beforeend', html);
       else grid.innerHTML = html;
       if(typeof svQueuePosterImages === 'function')svQueuePosterImages(grid);
     });
+  }
+
+  async function runRefinedSearch(query, opts={}){
+    const seq = opts.seq ?? searchSeq;
+    const mobile = !!opts.mobile;
+    const append = !!opts.append;
+    const page = opts.page || (append ? activePage + 1 : 1);
+    const limit = opts.limit || (mobile ? MOBILE_LIMIT : PAGE_LIMIT);
+    const kind = opts.kind || 'mixed';
+    const grid = opts.grid || (mobile ? document.getElementById('mobileSearchGrid') : document.getElementById('searchGrid'));
+    const label = opts.label || (mobile ? document.getElementById('mobileSearchLabel') : document.getElementById('searchLabel'));
+    if(seq !== searchSeq || query !== activeQuery)return;
+
+    loading = true;
+    try{
+      const data = await fetchResults(query, page, limit, kind);
+      if(seq !== searchSeq || query !== activeQuery)return;
+      const items = Array.isArray(data?.items) ? data.items : [];
+      const total = Number(data?.total || items.length || 0);
+      activePage = Number(data?.page || page) || page;
+      activePages = Number(data?.pages || Math.ceil(total / limit) || 1) || 1;
+      if(!grid)return;
+      const hasRenderedCards = !!grid.querySelector('.card');
+      if(label){
+        label.textContent = total
+          ? `${total.toLocaleString()} result${total === 1 ? '' : 's'} for "${query}"`
+          : (hasRenderedCards ? label.textContent : `No results for "${query}"`);
+      }
+      if(!items.length && !append){
+        if(!hasRenderedCards)renderEmptyState(grid, label, query);
+      }else{
+        if(!append){
+          grid.dataset.svSearchSource = 'refined';
+          grid.dataset.svSearchQuery = query;
+        }
+        renderItems(grid, items, append, query);
+      }
+    }catch(err){
+      if(err.name !== 'AbortError'){
+        console.warn('[Search] failed:', err);
+        if(!grid?.querySelector?.('.card'))renderEmptyState(grid, label, query);
+      }
+    }finally{
+      if(seq === searchSeq)loading = false;
+    }
+  }
+
+  function scheduleRefinedSearch(query, opts={}){
+    clearTimeout(refineTimer);
+    const seq = opts.seq ?? searchSeq;
+    refineTimer = setTimeout(()=>{
+      runRefinedSearch(query, { ...opts, seq, append:false });
+    }, SEARCH_REFINE_DELAY);
   }
 
   async function runSearch(q, opts={}){
@@ -258,6 +360,14 @@
     const grid = mobile ? document.getElementById('mobileSearchGrid') : document.getElementById('searchGrid');
     const label = mobile ? document.getElementById('mobileSearchLabel') : document.getElementById('searchLabel');
     lastTarget = mobile ? 'mobile' : 'desktop';
+
+    if(append){
+      if(loading)return;
+      return runRefinedSearch(activeQuery || query, { mobile, append:true, page, limit, kind:opts.kind || 'mixed', grid, label, seq:searchSeq });
+    }
+
+    const seq = ++searchSeq;
+    abortRefinement();
 
     if(!query){
       activeQuery = '';
@@ -271,48 +381,33 @@
     if(!mobile)setSearchViewVisible();
     let bootRendered = false;
     const kind = opts.kind || 'mixed';
-    if(!append){
-      activeQuery = query;
-      activePage = 1;
-      activePages = 1;
-      const boot = searchBootIndex(query, limit, kind);
-      bootRendered = renderBootResults(grid, label, query, boot.items, boot.total, false);
-      if(!bootRendered){
-        ensureBootIndex().then(()=>{
-          if(query !== activeQuery)return;
-          const readyBoot = searchBootIndex(query, limit, kind);
-          renderBootResults(grid, label, query, readyBoot.items, readyBoot.total, false);
-        });
-        fetchBootQuery(query, limit, kind).then(data=>{
-          if(query !== activeQuery || !data?.items?.length)return;
-          renderBootResults(grid, label, query, data.items, data.total || data.items.length, false);
-        });
-        if(label)label.textContent = `Searching "${query}"...`;
-        if(grid && !grid.children.length)grid.innerHTML = '<div class="downloads-empty">Searching...</div>';
-      }
+    activeQuery = query;
+    activePage = 1;
+    activePages = 1;
+    if(grid){
+      grid.dataset.svSearchSource = '';
+      grid.dataset.svSearchQuery = query;
     }
 
-    loading = true;
-    try{
-      const data = await fetchResults(query, page, limit, kind);
-      if(query !== activeQuery && !append)return;
-      const items = Array.isArray(data?.items) ? data.items : [];
-      const total = Number(data?.total || items.length || 0);
-      activePage = Number(data?.page || page) || page;
-      activePages = Number(data?.pages || Math.ceil(total / limit) || 1) || 1;
-      if(!grid)return;
-      const hasRenderedCards = !!grid.querySelector('.card');
-      if(label)label.textContent = total ? `${total.toLocaleString()} result${total === 1 ? '' : 's'} for "${query}"` : ((bootRendered || hasRenderedCards) ? label.textContent : `No results for "${query}"`);
-      if(!items.length && !append){
-        if(!bootRendered && !hasRenderedCards)renderEmptyState(grid, label, query);
-      }
-      else renderItems(grid, items, append);
-    }catch(err){
-      if(err.name !== 'AbortError'){
-        console.warn('[Search] failed:', err);
-        if(!grid?.querySelector?.('.card'))renderEmptyState(grid, label, query);
-      }
-    }finally{ loading = false; }
+    const instantLimit = Math.min(limit, INSTANT_LIMIT);
+    const boot = searchBootIndex(query, instantLimit, kind);
+    bootRendered = renderBootResults(grid, label, query, boot.items, boot.total, false);
+    if(!bootRendered){
+      ensureBootIndex().then(()=>{
+        if(seq !== searchSeq || query !== activeQuery)return;
+        const readyBoot = searchBootIndex(query, instantLimit, kind);
+        renderBootResults(grid, label, query, readyBoot.items, readyBoot.total, false);
+      });
+      fetchBootQuery(query, instantLimit, kind).then(data=>{
+        if(seq !== searchSeq || query !== activeQuery || !data?.items?.length)return;
+        renderBootResults(grid, label, query, data.items, data.total || data.items.length, false);
+      });
+      if(label)label.textContent = `Preparing instant results for "${query}"`;
+      if(grid && !grid.children.length)grid.innerHTML = '<div class="downloads-empty">Preparing instant results...</div>';
+    }
+
+    loading = false;
+    scheduleRefinedSearch(query, { mobile, limit, kind, grid, label, seq });
   }
 
   renderSearchPage = function(q=''){
@@ -324,15 +419,15 @@
     const source = SEARCH_INPUT_IDS.includes(document.activeElement?.id) ? document.activeElement : null;
     syncSearchInputs(q, source);
     clearTimeout(timer);
+    searchSeq += 1;
+    abortRefinement();
     timer = setTimeout(()=>runSearch(q, { append:false }), SEARCH_DELAY);
   };
 
   clearGlobalSearch = function(opts={}){
     clearTimeout(timer);
-    if(controller){
-      controller.abort();
-      controller = null;
-    }
+    searchSeq += 1;
+    abortRefinement();
     activeQuery = '';
     activePage = 1;
     activePages = 1;

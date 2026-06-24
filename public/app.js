@@ -1,6 +1,6 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260624-player-performance1';
+const SV_ASSET_VERSION = '20260624-instant-search-smooth-playback3';
 function svDebugLoggingEnabled(){
   try{
     return new URLSearchParams(location.search).has('debug')

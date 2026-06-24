@@ -4,6 +4,7 @@ const path    = require('path');
 const https   = require('https');
 const http    = require('http');
 const crypto  = require('crypto');
+const zlib    = require('zlib');
 const { spawn } = require('child_process');
 
 const tracker         = require('./middleware/tracker');
@@ -23,6 +24,8 @@ const HISTORY_FILE = path.join(__dirname, 'watch-history.json');
 const INDEX_FILE   = path.join(__dirname, 'file-index.json');
 const CHANNELS_FILE = path.join(__dirname, 'channels.json');
 const MASSIVE_CATALOG_FILE = path.join(__dirname, 'scan-output', 'clean-catalog.json');
+const SV_CACHE_DIR = path.join(__dirname, 'cache');
+const SV_BOOT_SEARCH_FILE = path.join(SV_CACHE_DIR, 'boot-search-index.json');
 const MOBILE_HLS_DIR = path.join(__dirname, 'cache', 'mobile-hls');
 const MOBILE_HLS_IDLE_MS = Number(process.env.MOBILE_HLS_IDLE_MS || 45000);
 const MOBILE_HLS_MAX_SESSIONS = Number(process.env.MOBILE_HLS_MAX_SESSIONS || 2);
@@ -142,6 +145,7 @@ function getMediaInfo(filePath) {
 const mediaInfoCache = new Map();
 const mediaAudioInfoCache = new Map();
 const mediaDurationInfoCache = new Map();
+const playbackAudioSelectionCache = new Map();
 
 function getAudioOnlyMediaInfo(filePath) {
   return new Promise((resolve, reject) => {
@@ -303,6 +307,11 @@ function getCachedAudioOnlyMediaInfo(filePath) {
 
   const cached = mediaAudioInfoCache.get(mapKey);
   if (cached && cached.cacheKey === cacheKey) return cached.promise;
+  const fullCached = mediaInfoCache.get(mapKey);
+  if (fullCached && fullCached.cacheKey === cacheKey) {
+    mediaAudioInfoCache.set(mapKey, fullCached);
+    return fullCached.promise;
+  }
 
   const promise = getAudioOnlyMediaInfo(filePath).catch(err => {
     mediaAudioInfoCache.delete(mapKey);
@@ -316,6 +325,39 @@ function getCachedAudioOnlyMediaInfo(filePath) {
   }
 
   return promise;
+}
+
+function mediaStableCacheKey(input) {
+  try {
+    const stat = fs.statSync(input);
+    return `local:${input}:${stat.size}:${stat.mtimeMs}`;
+  } catch {
+    return `remote:${input}`;
+  }
+}
+
+function playbackAudioSelectionCacheKey(req, input) {
+  return [
+    mediaStableCacheKey(input),
+    `english=${req.query.english === '1' ? '1' : '0'}`,
+    `preferEnglish=${req.query.preferEnglish === '1' ? '1' : '0'}`,
+    `audio=${req.query.audio ?? ''}`,
+    `audioStream=${req.query.audioStream ?? ''}`,
+  ].join('|');
+}
+
+function clonePlaybackAudioSelection(selection) {
+  return selection ? { ...selection } : selection;
+}
+
+function rememberPlaybackAudioSelection(cacheKey, selection) {
+  if (!cacheKey || !selection) return selection;
+  playbackAudioSelectionCache.set(cacheKey, clonePlaybackAudioSelection(selection));
+  if (playbackAudioSelectionCache.size > 240) {
+    const oldestKey = playbackAudioSelectionCache.keys().next().value;
+    playbackAudioSelectionCache.delete(oldestKey);
+  }
+  return selection;
 }
 
 function getCachedDurationOnlyMediaInfo(filePath) {
@@ -798,14 +840,18 @@ function svShouldDropSearchResult(entry, score, terms, queryNorm) {
 const SV_SEARCH_STOPWORDS = new Set(['in','on','of','to','a','an','the','and','or','for','with','by','from']);
 const SV_SEARCH_CACHE_LIMIT = Number(process.env.SV_SEARCH_CACHE_LIMIT || 160);
 const SV_SEARCH_CANDIDATE_LIMIT = Number(process.env.SV_SEARCH_CANDIDATE_LIMIT || 6000);
-const SV_BOOT_SEARCH_VERSION = '20260624-instant-search-audio-sync1';
-const SV_BOOT_SEARCH_MAX_ITEMS = Number(process.env.SV_BOOT_SEARCH_MAX_ITEMS || 14000);
+const SV_BOOT_SEARCH_VERSION = '20260624-instant-search-smooth-playback3';
+const SV_BOOT_SEARCH_MAX_ITEMS = Number(process.env.SV_BOOT_SEARCH_MAX_ITEMS || 50000);
 const _svQueryResultCache = new Map();
 let _svFastSearchIndex = null;
 let _svFastSearchIndexStamp = '';
 let _svBootSearchIndex = null;
 let _svBootSearchStamp = '';
 let _svBootSearchAllItems = null;
+let _svBootSearchFilePayload = null;
+let _svBootSearchFileStamp = '';
+let _svBootSearchFileJson = '';
+let _svBootSearchFileGzip = null;
 
 function svNormalizeSearchText(value) {
   return svSafeDecode(value || '')
@@ -1269,6 +1315,94 @@ function svBootSearchItem(raw, kind = 'movie', source = 'local', sourceRank = 0,
   return item;
 }
 
+function svBootSearchRoute(item) {
+  const id = item?.id ?? item?.streamUrl ?? item?.file ?? item?.name ?? '';
+  return item?.type === 'series'
+    ? `/details/series/${encodeURIComponent(id || item?.name || '')}`
+    : `/details/movie/${encodeURIComponent(id || item?.name || '')}`;
+}
+
+function svCompactBootSearchItem(item) {
+  const name = item?.name || item?.title || '';
+  const compact = {
+    id: item?.id ?? null,
+    title: item?.title || name,
+    name,
+    normalizedTitle: svNormalizeSearchText(name),
+    year: item?.year || '',
+    type: item?.type === 'series' ? 'series' : 'movie',
+    poster: item?.poster || item?.backdrop || null,
+    route: svBootSearchRoute(item),
+    rating: item?.rating || null,
+    isFtp: !!item?.isFtp,
+  };
+  if (item?.streamUrl || item?.id != null) compact.hasStream = true;
+  if (compact.type === 'series') {
+    compact._isSeries = true;
+    compact.isSummary = true;
+    const seasons = item?.seasons || {};
+    compact.seasonCount = item?.seasonCount ?? Object.keys(seasons).length;
+    compact.episodeCount = item?.episodeCount ?? Object.values(seasons).reduce((sum, eps) => sum + (Array.isArray(eps) ? eps.length : 0), 0);
+  }
+  return compact;
+}
+
+const SV_BOOT_SEARCH_FIELDS = ['id','title','normalizedTitle','year','type','poster','route','rating','isFtp','hasStream','seasonCount','episodeCount'];
+
+function svCompactBootSearchRow(item) {
+  const compact = svCompactBootSearchItem(item);
+  return SV_BOOT_SEARCH_FIELDS.map(field => {
+    if (field === 'type') return compact.type === 'series' ? 's' : 'm';
+    if (field === 'isFtp' || field === 'hasStream') return compact[field] ? 1 : 0;
+    const value = compact[field];
+    return value === undefined || value === null ? '' : value;
+  });
+}
+
+function svCompactBootSearchIndex(index) {
+  const items = Array.isArray(index?.items) ? index.items : [];
+  return {
+    ok: true,
+    version: SV_BOOT_SEARCH_VERSION,
+    format: 'sv-boot-search-v3',
+    fields: SV_BOOT_SEARCH_FIELDS,
+    generatedAt: index?.generatedAt || Date.now(),
+    totalAvailable: index?.totalAvailable || items.length,
+    total: items.length,
+    items: items.map(svCompactBootSearchRow),
+  };
+}
+
+function svWriteBootSearchIndexFile(index) {
+  const stamp = _svBootSearchStamp || svBootSearchStamp();
+  const payload = svCompactBootSearchIndex(index);
+  const json = JSON.stringify(payload);
+  _svBootSearchFilePayload = payload;
+  _svBootSearchFileStamp = stamp;
+  _svBootSearchFileJson = json;
+  try {
+    _svBootSearchFileGzip = zlib.gzipSync(json);
+  } catch {
+    _svBootSearchFileGzip = null;
+  }
+  try {
+    fs.mkdirSync(path.dirname(SV_BOOT_SEARCH_FILE), { recursive: true });
+    const tmp = `${SV_BOOT_SEARCH_FILE}.tmp`;
+    fs.writeFileSync(tmp, json);
+    fs.renameSync(tmp, SV_BOOT_SEARCH_FILE);
+  } catch (e) {
+    console.warn('[Search] boot index file write failed:', e.message);
+  }
+  return payload;
+}
+
+function svGetBootSearchFilePayload() {
+  const index = svGetBootSearchIndex();
+  const stamp = _svBootSearchStamp || svBootSearchStamp();
+  if (_svBootSearchFilePayload && _svBootSearchFileStamp === stamp) return _svBootSearchFilePayload;
+  return svWriteBootSearchIndexFile(index);
+}
+
 function svBuildBootSearchIndex() {
   const seen = new Set();
   const items = [];
@@ -1337,6 +1471,7 @@ function svBuildBootSearchIndex() {
     items: capped,
   };
   _svBootSearchStamp = svBootSearchStamp();
+  svWriteBootSearchIndexFile(_svBootSearchIndex);
   console.log(`⚡ Boot search index ready: ${capped.length.toLocaleString()} of ${items.length.toLocaleString()} titles`);
   return _svBootSearchIndex;
 }
@@ -1369,7 +1504,7 @@ function svBootSearchScore(item, terms, queryNorm, kind = 'mixed') {
   return score;
 }
 
-function svQueryBootSearch(q, kind = 'mixed', limit = 72) {
+function svBootSearchRows(q, kind = 'mixed') {
   const index = svGetBootSearchIndex();
   const sourceItems = Array.isArray(_svBootSearchAllItems) ? _svBootSearchAllItems : index.items;
   const terms = svSearchTokensFromText(q);
@@ -1378,9 +1513,24 @@ function svQueryBootSearch(q, kind = 'mixed', limit = 72) {
   return sourceItems
     .map(item => ({ item, score: svBootSearchScore(item, terms, queryNorm, kind) }))
     .filter(row => row.score > 0)
-    .sort((a, b) => b.score - a.score || String(a.item.name || '').localeCompare(String(b.item.name || '')))
-    .slice(0, limit)
-    .map(row => row.item);
+    .sort((a, b) => b.score - a.score || String(a.item.name || '').localeCompare(String(b.item.name || '')));
+}
+
+function svQueryBootSearchPaged(q, kind = 'mixed', limit = 72, page = 1) {
+  const rows = svBootSearchRows(q, kind);
+  const safeLimit = Math.min(120, Math.max(1, parseInt(limit, 10) || 72));
+  const safePage = Math.max(1, parseInt(page, 10) || 1);
+  const start = (safePage - 1) * safeLimit;
+  return {
+    items: rows.slice(start, start + safeLimit).map(row => row.item),
+    total: rows.length,
+    page: safePage,
+    pages: Math.ceil(rows.length / safeLimit) || 1,
+  };
+}
+
+function svQueryBootSearch(q, kind = 'mixed', limit = 72) {
+  return svQueryBootSearchPaged(q, kind, limit, 1).items;
 }
 function jsonError(res, status, code, message, details = {}) {
   return res.status(status).json({
@@ -1704,6 +1854,9 @@ async function resolvePlaybackAudioSelection(req, input, label = 'media') {
   const selection = playbackAudioSelectionFromReq(req);
   const wantsEnglish = req.query.english === '1' || req.query.preferEnglish === '1';
   if (!wantsEnglish && selection.audioStreamIdx === null) return selection;
+  const cacheKey = playbackAudioSelectionCacheKey(req, input);
+  const cachedSelection = playbackAudioSelectionCache.get(cacheKey);
+  if (cachedSelection) return clonePlaybackAudioSelection(cachedSelection);
 
   let tracks = [];
   let videoStartTime = 0;
@@ -1725,7 +1878,7 @@ async function resolvePlaybackAudioSelection(req, input, label = 'media') {
     }
     const resolved = selectionFromAbsoluteAudio(req, english, 'server-english', videoStartTime, videoStreamIdx);
     if (SV_PLAYBACK_VERBOSE) console.log(`[Playback Audio] ${label} route=${normalizePlaybackMode(req.query.mode, 'direct')} chosen lang=${resolved.audioLanguage || ''} title=${resolved.audioTitle || ''} codec=${resolved.audioCodec || ''} stream=${resolved.audioStreamIdx} audioStart=${resolved.audioStartTime} videoStart=${resolved.videoStartTime} offset=${resolved.audioVideoOffsetSec}`);
-    return resolved;
+    return rememberPlaybackAudioSelection(cacheKey, resolved);
   }
 
   if (selection.audioStreamIdx !== null) {
@@ -1733,7 +1886,7 @@ async function resolvePlaybackAudioSelection(req, input, label = 'media') {
     if (selectedTrack) {
       const resolved = selectionFromAbsoluteAudio(req, selectedTrack, 'absolute-stream', videoStartTime, videoStreamIdx);
       if (SV_PLAYBACK_VERBOSE) console.log(`[Playback Audio] ${label} route=${normalizePlaybackMode(req.query.mode, 'direct')} requested lang=${resolved.audioLanguage || ''} title=${resolved.audioTitle || ''} codec=${resolved.audioCodec || ''} stream=${resolved.audioStreamIdx} audioStart=${resolved.audioStartTime} videoStart=${resolved.videoStartTime} offset=${resolved.audioVideoOffsetSec}`);
-      return resolved;
+      return rememberPlaybackAudioSelection(cacheKey, resolved);
     }
     return selection;
   }
@@ -5716,6 +5869,7 @@ function ffmpegSeconds(value) {
 
 const mediaPacketSyncCache = new Map();
 const mediaPacketSyncInflight = new Map();
+const mediaPacketSyncScheduled = new Set();
 
 function mediaPacketSyncCacheKey(input, remote, videoStreamIdx, audioStreamIdx) {
   let sourceKey = String(input || '');
@@ -5871,7 +6025,8 @@ function cachedPlaybackPacketSync({
   const cached = mediaPacketSyncCache.get(cacheKey);
   if (cached) return { ...cached, source:'packet-cache' };
 
-  if (MEDIA_PACKET_SYNC_BACKGROUND && !mediaPacketSyncInflight.has(cacheKey)) {
+  if (MEDIA_PACKET_SYNC_BACKGROUND && !mediaPacketSyncInflight.has(cacheKey) && !mediaPacketSyncScheduled.has(cacheKey)) {
+    mediaPacketSyncScheduled.add(cacheKey);
     setTimeout(() => {
       measurePlaybackPacketSync({
         input,
@@ -5881,7 +6036,9 @@ function cachedPlaybackPacketSync({
         startSec: 0,
         label,
         route,
-      }).catch(() => {});
+      }).catch(() => {}).finally(() => {
+        mediaPacketSyncScheduled.delete(cacheKey);
+      });
     }, 6000);
   }
 
@@ -6633,6 +6790,21 @@ app.get('/api/search', (req, res) => {
 
     const kindRaw = String(req.query.kind || req.query.type || 'mixed').toLowerCase();
     const kind = kindRaw === 'movie' || kindRaw === 'movies' ? 'movie' : (kindRaw === 'series' || kindRaw === 'tv' || kindRaw === 'show' || kindRaw === 'shows' ? 'series' : 'mixed');
+    const useMassive = String(req.query.massive || '0') === '1';
+    if (!useMassive) {
+      const boot = svQueryBootSearchPaged(q, kind, limit, page);
+      return res.json({
+        items: boot.items,
+        total: boot.total,
+        page: boot.page,
+        pages: boot.pages,
+        instant: true,
+        indexed: true,
+        source: 'boot',
+        massive: false,
+      });
+    }
+
     const list = svFastSearch(req, kind) || [];
     const start = (page - 1) * limit;
     res.json({
@@ -6641,7 +6813,9 @@ app.get('/api/search', (req, res) => {
       page,
       pages: Math.ceil(list.length / limit) || 1,
       instant: true,
-      indexed: true
+      indexed: true,
+      source: 'massive',
+      massive: true,
     });
   } catch (e) {
     console.error('/api/search error:', e.message);
@@ -6658,21 +6832,47 @@ app.get('/api/boot-search-index', (req, res) => {
     res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=3600');
     res.setHeader('X-StreamVault-Search-Version', SV_BOOT_SEARCH_VERSION);
     if (q.length >= 2) {
-      const items = svQueryBootSearch(q, kind, limit);
+      const boot = svQueryBootSearchPaged(q, kind, limit, 1);
       return res.json({
         ok: true,
         version: SV_BOOT_SEARCH_VERSION,
         boot: true,
         query: q,
-        items,
-        total: items.length,
-        page: 1,
-        pages: 1,
+        items: boot.items,
+        total: boot.total,
+        page: boot.page,
+        pages: boot.pages,
       });
     }
     return res.json(svGetBootSearchIndex());
   } catch (e) {
     console.error('/api/boot-search-index error:', e.message);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({
+      ok: false,
+      version: SV_BOOT_SEARCH_VERSION,
+      items: [],
+      total: 0,
+      error: e.message,
+    });
+  }
+});
+
+app.get('/boot-search-index.json', (req, res) => {
+  try {
+    svGetBootSearchFilePayload();
+    res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=3600');
+    res.setHeader('X-StreamVault-Search-Version', SV_BOOT_SEARCH_VERSION);
+    res.type('application/json');
+    const acceptEncoding = String(req.headers['accept-encoding'] || '');
+    if (_svBootSearchFileGzip && /\bgzip\b/i.test(acceptEncoding)) {
+      res.setHeader('Content-Encoding', 'gzip');
+      res.setHeader('Content-Length', String(_svBootSearchFileGzip.length));
+      return res.send(_svBootSearchFileGzip);
+    }
+    return res.send(_svBootSearchFileJson || JSON.stringify(svGetBootSearchFilePayload()));
+  } catch (e) {
+    console.error('/boot-search-index.json error:', e.message);
     res.setHeader('Cache-Control', 'no-store');
     return res.json({
       ok: false,

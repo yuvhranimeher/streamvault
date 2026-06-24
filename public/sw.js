@@ -1,4 +1,4 @@
-const SV_CACHE_VERSION = '20260624-player-performance1';
+const SV_CACHE_VERSION = '20260624-instant-search-smooth-playback3';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
 const SV_POSTER_CACHE = `streamvault-posters-${SV_CACHE_VERSION}`;
 const SV_ASSET_CACHE = `streamvault-assets-${SV_CACHE_VERSION}`;
@@ -157,7 +157,7 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  if (url.pathname === '/api/boot-search-index') {
+  if (url.pathname === '/boot-search-index.json' || url.pathname === '/api/boot-search-index') {
     event.respondWith(cachedBootSearchIndex(request));
   }
 });

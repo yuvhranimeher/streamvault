@@ -38,6 +38,8 @@ const MEDIA_FFMPEG_STARTUP_MS = Number(process.env.MEDIA_FFMPEG_STARTUP_MS || 15
 const MEDIA_AUDIO_OFFSET_THRESHOLD_SEC = Number(process.env.MEDIA_AUDIO_OFFSET_THRESHOLD_SEC || 0.05);
 const MEDIA_PACKET_PROBE_WINDOW_SEC = Number(process.env.MEDIA_PACKET_PROBE_WINDOW_SEC || 20);
 const MEDIA_PACKET_PROBE_TIMEOUT_MS = Number(process.env.MEDIA_PACKET_PROBE_TIMEOUT_MS || 12000);
+const MEDIA_PACKET_SYNC_BACKGROUND = process.env.MEDIA_PACKET_SYNC_BACKGROUND !== '0';
+const SV_PLAYBACK_VERBOSE = process.env.SV_PLAYBACK_VERBOSE === '1';
 let activeMediaFfmpegStreams = 0;
 
 // ── FFmpeg helper for extracting media info ──────────────────────────────────
@@ -1722,7 +1724,7 @@ async function resolvePlaybackAudioSelection(req, input, label = 'media') {
       return selection;
     }
     const resolved = selectionFromAbsoluteAudio(req, english, 'server-english', videoStartTime, videoStreamIdx);
-    console.log(`[Playback Audio] ${label} route=${normalizePlaybackMode(req.query.mode, 'direct')} chosen lang=${resolved.audioLanguage || ''} title=${resolved.audioTitle || ''} codec=${resolved.audioCodec || ''} stream=${resolved.audioStreamIdx} audioStart=${resolved.audioStartTime} videoStart=${resolved.videoStartTime} offset=${resolved.audioVideoOffsetSec}`);
+    if (SV_PLAYBACK_VERBOSE) console.log(`[Playback Audio] ${label} route=${normalizePlaybackMode(req.query.mode, 'direct')} chosen lang=${resolved.audioLanguage || ''} title=${resolved.audioTitle || ''} codec=${resolved.audioCodec || ''} stream=${resolved.audioStreamIdx} audioStart=${resolved.audioStartTime} videoStart=${resolved.videoStartTime} offset=${resolved.audioVideoOffsetSec}`);
     return resolved;
   }
 
@@ -1730,7 +1732,7 @@ async function resolvePlaybackAudioSelection(req, input, label = 'media') {
     const selectedTrack = tracks.find(track => serverAudioTrackAbsoluteIndex(track) === selection.audioStreamIdx);
     if (selectedTrack) {
       const resolved = selectionFromAbsoluteAudio(req, selectedTrack, 'absolute-stream', videoStartTime, videoStreamIdx);
-      console.log(`[Playback Audio] ${label} route=${normalizePlaybackMode(req.query.mode, 'direct')} requested lang=${resolved.audioLanguage || ''} title=${resolved.audioTitle || ''} codec=${resolved.audioCodec || ''} stream=${resolved.audioStreamIdx} audioStart=${resolved.audioStartTime} videoStart=${resolved.videoStartTime} offset=${resolved.audioVideoOffsetSec}`);
+      if (SV_PLAYBACK_VERBOSE) console.log(`[Playback Audio] ${label} route=${normalizePlaybackMode(req.query.mode, 'direct')} requested lang=${resolved.audioLanguage || ''} title=${resolved.audioTitle || ''} codec=${resolved.audioCodec || ''} stream=${resolved.audioStreamIdx} audioStart=${resolved.audioStartTime} videoStart=${resolved.videoStartTime} offset=${resolved.audioVideoOffsetSec}`);
       return resolved;
     }
     return selection;
@@ -5713,8 +5715,9 @@ function ffmpegSeconds(value) {
 }
 
 const mediaPacketSyncCache = new Map();
+const mediaPacketSyncInflight = new Map();
 
-function mediaPacketSyncCacheKey(input, remote, videoStreamIdx, audioStreamIdx, startSec) {
+function mediaPacketSyncCacheKey(input, remote, videoStreamIdx, audioStreamIdx) {
   let sourceKey = String(input || '');
   if (!remote) {
     try {
@@ -5722,7 +5725,7 @@ function mediaPacketSyncCacheKey(input, remote, videoStreamIdx, audioStreamIdx, 
       sourceKey = `${input}:${stat.size}:${stat.mtimeMs}`;
     } catch {}
   }
-  return `${remote ? 'remote' : 'local'}|${sourceKey}|v${videoStreamIdx}|a${audioStreamIdx}|s${Math.floor(Number(startSec) || 0)}`;
+  return `${remote ? 'remote' : 'local'}|${sourceKey}|v${videoStreamIdx}|a${audioStreamIdx}`;
 }
 
 function packetPtsSeconds(packet = {}) {
@@ -5810,16 +5813,17 @@ async function measurePlaybackPacketSync({
     return { videoFirstPts:null, audioFirstPts:null, calculatedOffsetSec:0, correctionAppliedSec:0, measured:false };
   }
   const safeVideoStreamIdx = Number.isFinite(selectedVideoStreamIdx) && selectedVideoStreamIdx >= 0 ? selectedVideoStreamIdx : 0;
-  const cacheKey = mediaPacketSyncCacheKey(input, remote, safeVideoStreamIdx, selectedAudioStreamIdx, startSec);
+  const cacheKey = mediaPacketSyncCacheKey(input, remote, safeVideoStreamIdx, selectedAudioStreamIdx);
   if (mediaPacketSyncCache.has(cacheKey)) return mediaPacketSyncCache.get(cacheKey);
+  if (mediaPacketSyncInflight.has(cacheKey)) return mediaPacketSyncInflight.get(cacheKey);
 
-  try {
+  const promise = (async () => {
     const pts = await probeFirstPacketPts({
       input,
       remote,
       videoStreamIdx: safeVideoStreamIdx,
       audioStreamIdx: selectedAudioStreamIdx,
-      startSec,
+      startSec: 0,
     });
     const calculatedOffsetSec = roundedSeconds(pts.audioFirstPts - pts.videoFirstPts);
     const correctionAppliedSec = Math.abs(calculatedOffsetSec) >= MEDIA_AUDIO_OFFSET_THRESHOLD_SEC
@@ -5834,12 +5838,65 @@ async function measurePlaybackPacketSync({
     };
     mediaPacketSyncCache.set(cacheKey, result);
     if (mediaPacketSyncCache.size > 120) mediaPacketSyncCache.delete(mediaPacketSyncCache.keys().next().value);
-    console.log(`[Media Sync] title="${label}" route=${route} videoFirstPts=${result.videoFirstPts} audioFirstPts=${result.audioFirstPts} calculatedOffset=${result.calculatedOffsetSec} correctionApplied=${result.correctionAppliedSec}`);
+    if (SV_PLAYBACK_VERBOSE) console.log(`[Media Sync] title="${label}" route=${route} videoFirstPts=${result.videoFirstPts} audioFirstPts=${result.audioFirstPts} calculatedOffset=${result.calculatedOffsetSec} correctionApplied=${result.correctionAppliedSec}`);
     return result;
-  } catch (e) {
-    console.warn(`[Media Sync] title="${label}" route=${route} packet probe failed: ${e.message}`);
-    return { videoFirstPts:null, audioFirstPts:null, calculatedOffsetSec:0, correctionAppliedSec:0, measured:false };
+  })()
+    .catch(e => {
+      if (SV_PLAYBACK_VERBOSE) console.warn(`[Media Sync] title="${label}" route=${route} packet probe failed: ${e.message}`);
+      return { videoFirstPts:null, audioFirstPts:null, calculatedOffsetSec:0, correctionAppliedSec:0, measured:false };
+    })
+    .finally(() => {
+      mediaPacketSyncInflight.delete(cacheKey);
+    });
+  mediaPacketSyncInflight.set(cacheKey, promise);
+  return promise;
+}
+
+function cachedPlaybackPacketSync({
+  input,
+  remote = false,
+  videoStreamIdx = 0,
+  audioStreamIdx = null,
+  audioVideoOffsetSec = 0,
+  label = 'media',
+  route = 'remux',
+}) {
+  const selectedAudioStreamIdx = Number(audioStreamIdx);
+  const selectedVideoStreamIdx = Number(videoStreamIdx);
+  if (!Number.isFinite(selectedAudioStreamIdx) || selectedAudioStreamIdx < 0) {
+    return { videoFirstPts:null, audioFirstPts:null, calculatedOffsetSec:0, correctionAppliedSec:0, measured:false, source:'none' };
   }
+  const safeVideoStreamIdx = Number.isFinite(selectedVideoStreamIdx) && selectedVideoStreamIdx >= 0 ? selectedVideoStreamIdx : 0;
+  const cacheKey = mediaPacketSyncCacheKey(input, remote, safeVideoStreamIdx, selectedAudioStreamIdx);
+  const cached = mediaPacketSyncCache.get(cacheKey);
+  if (cached) return { ...cached, source:'packet-cache' };
+
+  if (MEDIA_PACKET_SYNC_BACKGROUND && !mediaPacketSyncInflight.has(cacheKey)) {
+    setTimeout(() => {
+      measurePlaybackPacketSync({
+        input,
+        remote,
+        videoStreamIdx: safeVideoStreamIdx,
+        audioStreamIdx: selectedAudioStreamIdx,
+        startSec: 0,
+        label,
+        route,
+      }).catch(() => {});
+    }, 6000);
+  }
+
+  const metadataOffset = Number(audioVideoOffsetSec);
+  const metadataCorrection = Number.isFinite(metadataOffset) && Math.abs(metadataOffset) >= MEDIA_AUDIO_OFFSET_THRESHOLD_SEC
+    ? roundedSeconds(-metadataOffset)
+    : 0;
+  return {
+    videoFirstPts:null,
+    audioFirstPts:null,
+    calculatedOffsetSec:Number.isFinite(metadataOffset) ? roundedSeconds(metadataOffset) : 0,
+    correctionAppliedSec:metadataCorrection,
+    measured:false,
+    source:metadataCorrection ? 'metadata-cache' : 'none',
+  };
 }
 
 function ffmpegMp4Args({
@@ -5906,12 +5963,12 @@ async function streamFfmpegMp4(req, res, options) {
     });
   }
 
-  const sync = await measurePlaybackPacketSync({
+  const sync = cachedPlaybackPacketSync({
     input: options.input,
     remote: !!options.remote,
     videoStreamIdx: options.videoStreamIdx ?? 0,
     audioStreamIdx: options.audioStreamIdx,
-    startSec: options.startSec || 0,
+    audioVideoOffsetSec: options.audioVideoOffsetSec,
     label,
     route: mode,
   });
@@ -5920,7 +5977,9 @@ async function streamFfmpegMp4(req, res, options) {
     mode,
     audioCorrectionSec: sync.correctionAppliedSec,
   });
-  console.log(`[Media FFmpeg] playbackType=${playbackType} selected source URL=${options.input} fallback reason=${fallbackReason || 'ffmpeg-start'} ${mode} start ${label} audioMap=${options.audioMap || '0:a:0?'} audioStream=${options.audioStreamIdx ?? 'relative'} avOffset=${options.audioVideoOffsetSec ?? 0} videoFirstPts=${sync.videoFirstPts ?? 'n/a'} audioFirstPts=${sync.audioFirstPts ?? 'n/a'} packetOffset=${sync.calculatedOffsetSec ?? 0} correctionApplied=${sync.correctionAppliedSec ?? 0}`);
+  if (SV_PLAYBACK_VERBOSE) {
+    console.log(`[Media FFmpeg] playbackType=${playbackType} selected source URL=${options.input} fallback reason=${fallbackReason || 'ffmpeg-start'} ${mode} start ${label} audioMap=${options.audioMap || '0:a:0?'} audioStream=${options.audioStreamIdx ?? 'relative'} syncSource=${sync.source || 'none'} offset=${sync.calculatedOffsetSec ?? 0} correctionApplied=${sync.correctionAppliedSec ?? 0}`);
+  }
   activeMediaFfmpegStreams += 1;
   const ffmpeg = spawn(FFMPEG_BIN, args);
   let started = false;
@@ -5931,7 +5990,7 @@ async function streamFfmpegMp4(req, res, options) {
     if (released) return;
     released = true;
     activeMediaFfmpegStreams = Math.max(0, activeMediaFfmpegStreams - 1);
-    if (reason) console.log(`[Media FFmpeg] ${mode} released ${label}: ${reason}`);
+    if (reason && SV_PLAYBACK_VERBOSE) console.log(`[Media FFmpeg] ${mode} released ${label}: ${reason}`);
   };
   const fallbackToOriginal = reason => {
     if (started || res.headersSent || res.writableEnded || typeof options.fallbackOriginal !== 'function') return false;
@@ -6017,7 +6076,7 @@ async function streamFfmpegMp4(req, res, options) {
       console.error(`[Media FFmpeg] ${mode} ended code=${code} ${label}:`, stderr.slice(-1000));
       if (started && !res.writableEnded) res.end();
     } else {
-      console.log(`[Media FFmpeg] ${mode} ended ${label}`);
+      if (SV_PLAYBACK_VERBOSE) console.log(`[Media FFmpeg] ${mode} ended ${label}`);
     }
   });
 
@@ -7632,7 +7691,7 @@ app.get('/api/playback/local/:id', async (req, res) => {
     ? await playbackDurationSeconds(filePath, entry.file)
     : 0;
   const plan = localPlaybackPlan(String(idx), req, entry, filePath, duration);
-  console.log(`[Media Playback] playbackType=${req.query.playbackType || 'media'} route=local-plan mode=${plan.mode} selected source URL=${plan.src} fallback reason=${req.query.fallbackReason || 'initial'}`);
+  if (SV_PLAYBACK_VERBOSE) console.log(`[Media Playback] playbackType=${req.query.playbackType || 'media'} route=local-plan mode=${plan.mode} selected source URL=${plan.src} fallback reason=${req.query.fallbackReason || 'initial'}`);
   return res.json(plan);
 });
 
@@ -7655,7 +7714,7 @@ app.get('/api/playback/local/:id/stream', async (req, res) => {
     return jsonError(res, 502, 'ENGLISH_AUDIO_RESOLVE_FAILED', 'Could not resolve English audio stream', { label: entry.file, details: e.message });
   }
   if (!requireAbsolutePlaybackAudio(req, res, audioSelection, mode, entry.file)) return;
-  console.log(`[Local Playback Stream] playbackType=${req.query.playbackType || 'media'} selected source URL=${req.originalUrl} fallback reason=${req.query.fallbackReason || 'stream'} ${entry.file} mode=${mode} route=${mode === 'audio' ? 'audio-copy' : 'remux-copy'} lang=${audioSelection.audioLanguage || ''} title=${audioSelection.audioTitle || ''} codec=${audioSelection.audioCodec || ''} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} videoStream=${audioSelection.videoStreamIdx ?? 0} map=${audioSelection.audioMap} audioStart=${audioSelection.audioStartTime ?? 0} videoStart=${audioSelection.videoStartTime ?? 0} offset=${audioSelection.audioVideoOffsetSec ?? 0}`);
+  if (SV_PLAYBACK_VERBOSE) console.log(`[Local Playback Stream] playbackType=${req.query.playbackType || 'media'} selected source URL=${req.originalUrl} fallback reason=${req.query.fallbackReason || 'stream'} ${entry.file} mode=${mode} route=${mode === 'audio' ? 'audio-copy' : 'remux-copy'} lang=${audioSelection.audioLanguage || ''} title=${audioSelection.audioTitle || ''} codec=${audioSelection.audioCodec || ''} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} videoStream=${audioSelection.videoStreamIdx ?? 0} map=${audioSelection.audioMap} audioStart=${audioSelection.audioStartTime ?? 0} videoStart=${audioSelection.videoStartTime ?? 0} offset=${audioSelection.audioVideoOffsetSec ?? 0}`);
   return streamFfmpegMp4(req, res, {
     input: filePath,
     mode,
@@ -7690,15 +7749,15 @@ app.get('/stream/:id', async (req, res) => {
   try {
     const mobilePlayback = isMobilePlaybackRequest(req);
     if (!forceTranscode && !mobilePlayback) {
-      console.log(`[Stream] Direct playbackType=${req.query.playbackType || 'media'} selected source URL=${req.originalUrl} fallback reason=${req.query.fallbackReason || 'direct'} file=${entry.file}`);
+      if (SV_PLAYBACK_VERBOSE) console.log(`[Stream] Direct playbackType=${req.query.playbackType || 'media'} selected source URL=${req.originalUrl} fallback reason=${req.query.fallbackReason || 'direct'} file=${entry.file}`);
       return directStream(req, res, filePath, entry);
     }
     const mediaInfo = await getCachedMediaInfo(filePath);
     if (forceTranscode || (mobilePlayback && needsTranscode(mediaInfo, userAgent))) {
-      console.log(`[Stream] Transcoding playbackType=${req.query.playbackType || 'media'} selected source URL=${req.originalUrl} fallback reason=${req.query.fallbackReason || 'transcode'} file=${entry.file}`);
+      if (SV_PLAYBACK_VERBOSE) console.log(`[Stream] Transcoding playbackType=${req.query.playbackType || 'media'} selected source URL=${req.originalUrl} fallback reason=${req.query.fallbackReason || 'transcode'} file=${entry.file}`);
       return transcodeStream(req, res, filePath, mediaInfo, entry);
     }
-    console.log(`[Stream] Direct: ${entry.file}`);
+    if (SV_PLAYBACK_VERBOSE) console.log(`[Stream] Direct: ${entry.file}`);
     return directStream(req, res, filePath, entry);
   } catch (error) {
     console.error(`[Stream] Error for ${entry.file}:`, error.message);
@@ -8314,11 +8373,13 @@ app.get('/api/playback/ftp', async (req, res) => {
   const playbackType = req.query.playbackType || 'media';
   const fallbackReason = req.query.fallbackReason || (planRequested ? 'plan' : 'direct');
 
-  console.log(`[FTP Playback] requested URL: ${media.requestedUrl}`);
-  console.log(`[FTP Playback] decoded URL: ${srcUrl}`);
-  console.log(`[FTP Playback] matched catalog item: ${catalogLogLabel(matched)}`);
-  console.log(`[FTP Playback] mode: ${planRequested ? 'plan:' : ''}${mode}`);
-  console.log(`[Media Playback] playbackType=${playbackType} route=ftp-playback mode=${mode} selected source URL=${srcUrl} fallback reason=${fallbackReason}`);
+  if (SV_PLAYBACK_VERBOSE) {
+    console.log(`[FTP Playback] requested URL: ${media.requestedUrl}`);
+    console.log(`[FTP Playback] decoded URL: ${srcUrl}`);
+    console.log(`[FTP Playback] matched catalog item: ${catalogLogLabel(matched)}`);
+    console.log(`[FTP Playback] mode: ${planRequested ? 'plan:' : ''}${mode}`);
+    console.log(`[Media Playback] playbackType=${playbackType} route=ftp-playback mode=${mode} selected source URL=${srcUrl} fallback reason=${fallbackReason}`);
+  }
 
   if (planRequested) {
     if ((mode === 'remux' || mode === 'audio')) {
@@ -8343,7 +8404,7 @@ app.get('/api/playback/ftp', async (req, res) => {
     } else if (mode === 'hls') {
       playUrl = remotePlaybackHlsUrl(srcUrl, req);
     }
-    console.log(`[Media Playback] playbackType=${playbackType} route=ftp-plan mode=${mode} selected source URL=${playUrl} fallback reason=${fallbackReason}`);
+    if (SV_PLAYBACK_VERBOSE) console.log(`[Media Playback] playbackType=${playbackType} route=ftp-plan mode=${mode} selected source URL=${playUrl} fallback reason=${fallbackReason}`);
     const duration = (mode === 'remux' || mode === 'audio' || mode === 'hls')
       ? await playbackDurationSeconds(srcUrl, remoteFilename(srcUrl))
       : 0;
@@ -8372,7 +8433,7 @@ app.get('/api/playback/ftp', async (req, res) => {
   }
 
   if (mode === 'proxy') {
-    console.log(`[Media Playback] playbackType=${playbackType} route=ftp-proxy selected source URL=${srcUrl} fallback reason=${fallbackReason}`);
+    if (SV_PLAYBACK_VERBOSE) console.log(`[Media Playback] playbackType=${playbackType} route=ftp-proxy selected source URL=${srcUrl} fallback reason=${fallbackReason}`);
     return streamRemotePlaybackProxy(req, res, media, matched);
   }
 
@@ -8384,7 +8445,7 @@ app.get('/api/playback/ftp', async (req, res) => {
       return jsonError(res, 502, 'ENGLISH_AUDIO_RESOLVE_FAILED', 'Could not resolve English audio stream', { label: remoteFilename(srcUrl), details: e.message });
     }
     if (!requireAbsolutePlaybackAudio(req, res, audioSelection, mode, remoteFilename(srcUrl))) return;
-    console.log(`[FTP Playback FFmpeg] playbackType=${playbackType} selected source URL=${srcUrl} fallback reason=${fallbackReason} ${remoteFilename(srcUrl)} mode=${mode} route=${mode === 'audio' ? 'audio-copy' : 'remux-copy'} lang=${audioSelection.audioLanguage || ''} title=${audioSelection.audioTitle || ''} codec=${audioSelection.audioCodec || ''} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} videoStream=${audioSelection.videoStreamIdx ?? 0} map=${audioSelection.audioMap} audioStart=${audioSelection.audioStartTime ?? 0} videoStart=${audioSelection.videoStartTime ?? 0} offset=${audioSelection.audioVideoOffsetSec ?? 0}`);
+    if (SV_PLAYBACK_VERBOSE) console.log(`[FTP Playback FFmpeg] playbackType=${playbackType} selected source URL=${srcUrl} fallback reason=${fallbackReason} ${remoteFilename(srcUrl)} mode=${mode} route=${mode === 'audio' ? 'audio-copy' : 'remux-copy'} lang=${audioSelection.audioLanguage || ''} title=${audioSelection.audioTitle || ''} codec=${audioSelection.audioCodec || ''} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} videoStream=${audioSelection.videoStreamIdx ?? 0} map=${audioSelection.audioMap} audioStart=${audioSelection.audioStartTime ?? 0} videoStart=${audioSelection.videoStartTime ?? 0} offset=${audioSelection.audioVideoOffsetSec ?? 0}`);
     return streamFfmpegMp4(req, res, {
       input: srcUrl,
       mode,
@@ -8592,7 +8653,7 @@ app.get('/api/ftp/stream', async (req, res) => {
   console.log(`[FTP Stream] decoded URL: ${srcUrl}`);
   console.log(`[FTP Stream] matched catalog item: ${catalogLogLabel(matched)}`);
   console.log(`[FTP Stream] final play URL: ${urls.transcodeUrl}`);
-  console.log(`[Media Playback] playbackType=${req.query.playbackType || 'media'} route=ftp-legacy-stream selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'stream'}`);
+  if (SV_PLAYBACK_VERBOSE) console.log(`[Media Playback] playbackType=${req.query.playbackType || 'media'} route=ftp-legacy-stream selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'stream'}`);
 
   const startSec = parseFloat(req.query.start) || 0;
   const audioSelection = playbackAudioSelectionFromReq(req);
@@ -8695,7 +8756,7 @@ app.get('/api/ftp/proxy', (req, res) => {
   console.log(`[FTP Proxy] decoded URL: ${srcUrl}`);
   console.log(`[FTP Proxy] matched catalog item: ${catalogLogLabel(matched)}`);
   console.log(`[FTP Proxy] final play URL: ${urls.proxyUrl}`);
-  console.log(`[Media Playback] playbackType=${req.query.playbackType || 'media'} route=ftp-legacy-proxy selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'proxy'}`);
+  if (SV_PLAYBACK_VERBOSE) console.log(`[Media Playback] playbackType=${req.query.playbackType || 'media'} route=ftp-legacy-proxy selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'proxy'}`);
 
   const headers = {
     'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0',

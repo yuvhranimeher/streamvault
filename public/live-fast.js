@@ -9,6 +9,22 @@
       } catch {}
     };
 
+    const liveSession = typeof svBeginLivePlayback === 'function'
+      ? svBeginLivePlayback(channelId, channelName)
+      : Date.now();
+    const liveActive = () => typeof svIsLivePlaybackSession === 'function'
+      ? svIsLivePlaybackSession(liveSession, channelId)
+      : (isLiveMode && currentStreamId === null);
+    const noteLiveSource = reason => {
+      if(typeof svNoteSelectedSource === 'function'){
+        svNoteSelectedSource('live', src, {
+          mode:sourceMode,
+          fallbackReason:reason || '',
+          recoverySourceUrl:sourceMode === 'relay' ? relaySrc : ''
+        });
+      }
+    };
+
     isLiveMode=true;
     currentStreamId=null;
     liveDebug('open', { channelId, channelName });
@@ -86,6 +102,7 @@
     }
 
     function hardRestart(force=false){
+      if(!liveActive())return;
       if(started && !force)return;
       restartCount++;
       clearStallTimer();
@@ -93,25 +110,28 @@
       if(sub)sub.textContent='Retrying live stream...';
       const delay=Math.min(5000,400*Math.pow(2,Math.min(restartCount-1,3)));
       liveDebug('schedule relay restart',{delay,restartCount});
-      restartTimer=setTimeout(()=>{restartTimer=null;start();},delay);
+      restartTimer=setTimeout(()=>{restartTimer=null;if(liveActive())start();},delay);
     }
 
     function switchToRelay(reason){
+      if(!liveActive())return false;
       if(sourceMode === 'relay')return false;
       liveDebug('proxy failed; switching to relay fallback',{reason});
       src=relaySrc;
       sourceMode='relay';
+      noteLiveSource(reason || 'live relay fallback');
       restartCount=0;
       networkRecoveryCount=0;
       mediaRecoveryCount=0;
       clearStallTimer();
       if(sub)sub.textContent='Retrying live stream...';
       if(restartTimer){clearTimeout(restartTimer);restartTimer=null;}
-      restartTimer=setTimeout(()=>{restartTimer=null;start();},150);
+      restartTimer=setTimeout(()=>{restartTimer=null;if(liveActive())start();},150);
       return true;
     }
 
     function nudgeLiveEdge(reason){
+      if(!liveActive())return;
       liveDebug('live edge nudge', {reason});
       clearStallTimer();
       try{
@@ -125,12 +145,15 @@
     }
 
     function armStallTimer(reason){
+      if(!liveActive())return;
       if(stallTimer)return;
       stallTimer=setTimeout(()=>{
+        if(!liveActive())return;
         stallTimer=null;
         const before=Number(vid.currentTime)||0;
         nudgeLiveEdge(reason);
         stallTimer=setTimeout(()=>{
+          if(!liveActive())return;
           stallTimer=null;
           const advanced=Math.abs((Number(vid.currentTime)||0)-before)>0.25;
           if(!advanced){
@@ -142,6 +165,7 @@
     }
 
     function start(){
+      if(!liveActive())return;
       if(hlsInstance){try{hlsInstance.destroy();}catch{} hlsInstance=null;}
 
       started=false;
@@ -152,10 +176,12 @@
 
       if(watchdog)clearTimeout(watchdog);
       watchdog=setTimeout(()=>{
+        if(!liveActive())return;
         liveDebug('first-playback watchdog restart');
         if(switchToRelay('startup watchdog'))return;
         hardRestart(true);
       }, sourceMode === 'proxy' ? 9000 : 15000);
+      noteLiveSource(sourceMode === 'relay' ? 'live relay source' : 'live proxy source');
       liveDebug('attach source', {src, sourceMode});
 
       if(typeof Hls!=='undefined' && Hls.isSupported()){
@@ -192,9 +218,10 @@
           fragLoadingRetryDelay:300
         });
 
-        hlsInstance.on(Hls.Events.MEDIA_ATTACHED,()=>hlsInstance.loadSource(src));
+        hlsInstance.on(Hls.Events.MEDIA_ATTACHED,()=>{if(liveActive())hlsInstance.loadSource(src);});
 
         hlsInstance.on(Hls.Events.MANIFEST_LOADED,(e,data)=>{
+          if(!liveActive())return;
           liveDebug('manifest loaded', {
             url:data?.url || src,
             levels:data?.levels?.length || 0,
@@ -203,6 +230,7 @@
         });
 
         hlsInstance.on(Hls.Events.LEVEL_LOADED,(e,data)=>{
+          if(!liveActive())return;
           liveDebug('level loaded', {
             url:data?.details?.url || '',
             live:data?.details?.live,
@@ -211,10 +239,12 @@
         });
 
         hlsInstance.on(Hls.Events.FRAG_LOADING,(e,data)=>{
+          if(!liveActive())return;
           liveDebug('frag loading', data?.frag?.url || '');
         });
 
         hlsInstance.on(Hls.Events.FRAG_LOADED,(e,data)=>{
+          if(!liveActive())return;
           liveDebug('frag loaded', {
             url:data?.frag?.url || '',
             stats:data?.stats || null
@@ -222,18 +252,21 @@
         });
 
         hlsInstance.on(Hls.Events.MANIFEST_PARSED,()=>{
+          if(!liveActive())return;
           liveDebug('manifest parsed');
           if(typeof refreshPlayerControlVisibility==='function')refreshPlayerControlVisibility();
           vid.play().catch(()=>{});
         });
 
         hlsInstance.on(Hls.Events.FRAG_BUFFERED,()=>{
+          if(!liveActive())return;
           liveDebug('frag buffered');
           hideSpin();
           try{vid.play().catch(()=>{});}catch{}
         });
 
         hlsInstance.on(Hls.Events.ERROR,(e,data)=>{
+          if(!liveActive())return;
           if(!data)return;
           liveDebug(data.fatal ? 'fatal hls error' : 'hls warning', {
             type:data.type,
@@ -279,13 +312,16 @@
       }
 
       if(vid.canPlayType('application/vnd.apple.mpegurl')){
+        if(!liveActive())return;
         liveDebug('native hls attach', src);
+        noteLiveSource(sourceMode === 'relay' ? 'native live relay source' : 'native live proxy source');
         vid.src=src;
         vid.play().catch(()=>{});
         return;
       }
 
       loadHlsScript().then(ok=>{
+        if(!liveActive())return;
         if(ok && typeof Hls!=='undefined' && Hls.isSupported()) start();
         else {
           spinner?.classList.remove('on');
@@ -294,12 +330,13 @@
       });
     }
 
-    const onPlaying=()=>{ liveDebug('video playing'); hideSpin(); };
-    const onCanplay=()=>{ liveDebug('video canplay'); hideSpin(); };
-    const onLoadedData=()=>{ liveDebug('video loadeddata'); hideSpin(); };
-    const onWaiting=()=>{ liveDebug('video waiting'); armStallTimer('waiting'); };
-    const onStalled=()=>{ liveDebug('video stalled'); armStallTimer('stalled'); };
+    const onPlaying=()=>{ if(!liveActive())return; liveDebug('video playing'); hideSpin(); };
+    const onCanplay=()=>{ if(!liveActive())return; liveDebug('video canplay'); hideSpin(); };
+    const onLoadedData=()=>{ if(!liveActive())return; liveDebug('video loadeddata'); hideSpin(); };
+    const onWaiting=()=>{ if(!liveActive())return; liveDebug('video waiting'); armStallTimer('waiting'); };
+    const onStalled=()=>{ if(!liveActive())return; liveDebug('video stalled'); armStallTimer('stalled'); };
     const onError=()=>{
+      if(!liveActive())return;
       liveDebug('video error',vid.error?.code||0);
       if(switchToRelay('native video error'))return;
       hardRestart(true);

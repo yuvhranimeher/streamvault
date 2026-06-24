@@ -1221,6 +1221,64 @@ function rawQueryParam(req, name) {
   return null;
 }
 
+function svServerNormalizeUrlForGuard(value) {
+  try {
+    return new URL(safeDecodeURIComponent(value)).href;
+  } catch {
+    return String(value || '').trim();
+  }
+}
+
+function svServerLiveSourceBlockReason(value) {
+  const decoded = safeDecodeURIComponent(value);
+  const lower = String(decoded || '').toLowerCase();
+  let parsed = null;
+  try { parsed = new URL(decoded); } catch {}
+  const path = String(parsed?.pathname || '').toLowerCase();
+  const pathParts = path.split('/').filter(Boolean).map(part => safeDecodeURIComponent(part).toLowerCase());
+
+  if (path.startsWith('/live/')) return 'media URL points at /live';
+  if (path.startsWith('/live-relay/')) return 'media URL points at /live-relay';
+  if (lower.includes('/live/') || lower.includes('/live-relay/')) return 'media URL contains live route';
+  if (lower.includes('playlist.m3u8')) return 'media URL contains live playlist';
+  if (/\btsports(?:hd)?\b|t[ ._-]*sports/i.test(decoded)) return 'media URL contains T Sports';
+
+  const normalized = svServerNormalizeUrlForGuard(decoded).toLowerCase();
+  for (const channel of channels || []) {
+    const id = String(channel?.id || '').trim().toLowerCase();
+    const name = String(channel?.name || '').trim().toLowerCase();
+    if (id && pathParts.includes(id)) return `media URL contains live channel id ${id}`;
+    if (name === 't sports' && /t[ ._-]*sports/i.test(decoded)) return 'media URL contains T Sports';
+    const urls = [channel?.url, ...(Array.isArray(channel?.fallbackUrls) ? channel.fallbackUrls : [])]
+      .map(svServerNormalizeUrlForGuard)
+      .filter(Boolean);
+    for (const url of urls) {
+      const candidate = url.toLowerCase();
+      if (candidate && (normalized === candidate || normalized.startsWith(`${candidate}?`))) {
+        return `media URL matches live channel ${id || name || 'source'}`;
+      }
+    }
+  }
+  return '';
+}
+
+function svServerRejectLiveMediaSource(req, requestedUrl, decodedUrl) {
+  const reason = svServerLiveSourceBlockReason(decodedUrl);
+  if (!reason) return null;
+  const playbackType = String(req.query.playbackType || 'media');
+  const fallbackReason = String(req.query.fallbackReason || '');
+  console.warn(`[Media Playback Guard] blocked live fallback attempt playbackType=${playbackType} route=${req.path} selectedSourceURL=${decodedUrl} fallback reason=${fallbackReason || 'none'} reason=${reason}`);
+  return Object.assign(new Error('Live TV sources are blocked for media playback'), {
+    status: 400,
+    code: 'LIVE_MEDIA_SOURCE_BLOCKED',
+    requestedUrl,
+    decodedUrl,
+    playbackType,
+    fallbackReason,
+    blockReason: reason,
+  });
+}
+
 function readRemoteUrlParam(req, names = ['url']) {
   for (const name of names) {
     const raw = rawQueryParam(req, name);
@@ -1250,6 +1308,9 @@ function readRemoteUrlParam(req, names = ['url']) {
         decodedUrl: decodedCandidate,
       });
     }
+
+    const liveBlock = svServerRejectLiveMediaSource(req, requestedUrl, parsed.href);
+    if (liveBlock) throw liveBlock;
 
     return {
       param: name,
@@ -1520,6 +1581,8 @@ function normalizePlaybackMode(value, fallback = 'direct') {
 
 function playbackQueryFromReq(req, extra = {}) {
   const params = new URLSearchParams();
+  if (req.query.playbackType) params.set('playbackType', String(req.query.playbackType));
+  if (req.query.fallbackReason) params.set('fallbackReason', String(req.query.fallbackReason));
   if (req.query.start) params.set('start', String(Math.floor(playbackStartFromReq(req))));
   if (req.query.audio) params.set('audio', String(req.query.audio));
   if (req.query.audioStream) params.set('audioStream', String(req.query.audioStream));
@@ -1536,6 +1599,8 @@ function playbackQueryFromReq(req, extra = {}) {
 function remotePlaybackHlsUrl(srcUrl, req) {
   const params = new URLSearchParams();
   params.set('url', srcUrl);
+  if (req.query.playbackType) params.set('playbackType', String(req.query.playbackType));
+  if (req.query.fallbackReason) params.set('fallbackReason', String(req.query.fallbackReason));
   if (req.query.start) params.set('start', String(Math.floor(playbackStartFromReq(req))));
   if (req.query.audio) params.set('audio', String(req.query.audio));
   if (req.query.audioStream) params.set('audioStream', String(req.query.audioStream));
@@ -1550,6 +1615,8 @@ function remotePlaybackModeUrl(srcUrl, req, mode) {
   const params = new URLSearchParams();
   params.set('url', srcUrl);
   params.set('mode', mode);
+  if (req.query.playbackType) params.set('playbackType', String(req.query.playbackType));
+  if (req.query.fallbackReason) params.set('fallbackReason', String(req.query.fallbackReason));
   if (req.query.start) params.set('start', String(Math.floor(playbackStartFromReq(req))));
   if (req.query.audio) params.set('audio', String(req.query.audio));
   if (req.query.audioStream) params.set('audioStream', String(req.query.audioStream));
@@ -5502,6 +5569,8 @@ function ffmpegMp4Args({
 function streamFfmpegMp4(req, res, options) {
   const mode = options.mode === 'audio' ? 'audio' : 'remux';
   const label = options.label || options.input;
+  const playbackType = String(req.query.playbackType || 'media');
+  const fallbackReason = String(req.query.fallbackReason || '');
   if (activeMediaFfmpegStreams >= MEDIA_FFMPEG_STREAM_MAX) {
     return jsonError(res, 429, 'MEDIA_FFMPEG_BUSY', 'Media fallback workers are busy; try again in a moment', {
       active: activeMediaFfmpegStreams,
@@ -5510,7 +5579,7 @@ function streamFfmpegMp4(req, res, options) {
   }
 
   const args = ffmpegMp4Args({ ...options, mode });
-  console.log(`[Media FFmpeg] ${mode} start ${label} audioMap=${options.audioMap || '0:a:0?'} audioStream=${options.audioStreamIdx ?? 'relative'} avOffset=${options.audioVideoOffsetSec ?? 0}`);
+  console.log(`[Media FFmpeg] playbackType=${playbackType} selected source URL=${options.input} fallback reason=${fallbackReason || 'ffmpeg-start'} ${mode} start ${label} audioMap=${options.audioMap || '0:a:0?'} audioStream=${options.audioStreamIdx ?? 'relative'} avOffset=${options.audioVideoOffsetSec ?? 0}`);
   activeMediaFfmpegStreams += 1;
   const ffmpeg = spawn(FFMPEG_BIN, args);
   let started = false;
@@ -5526,7 +5595,7 @@ function streamFfmpegMp4(req, res, options) {
   const fallbackToOriginal = reason => {
     if (started || res.headersSent || res.writableEnded || typeof options.fallbackOriginal !== 'function') return false;
     releaseActive(`fallback original: ${reason}`);
-    console.warn(`[Media FFmpeg] ${mode} falling back to original source for ${label}: ${reason}`);
+    console.warn(`[Media FFmpeg] playbackType=${playbackType} selected source URL=${options.input} fallback reason=${fallbackReason || reason} ${mode} falling back to original source for ${label}: ${reason}`);
     try {
       options.fallbackOriginal({ reason, stderr: stderr.slice(-1000) });
       return true;
@@ -7186,7 +7255,9 @@ app.get('/api/playback/local/:id', async (req, res) => {
   const duration = (requestedMode === 'remux' || requestedMode === 'audio' || requestedMode === 'hls')
     ? await playbackDurationSeconds(filePath, entry.file)
     : 0;
-  return res.json(localPlaybackPlan(String(idx), req, entry, filePath, duration));
+  const plan = localPlaybackPlan(String(idx), req, entry, filePath, duration);
+  console.log(`[Media Playback] playbackType=${req.query.playbackType || 'media'} route=local-plan mode=${plan.mode} selected source URL=${plan.src} fallback reason=${req.query.fallbackReason || 'initial'}`);
+  return res.json(plan);
 });
 
 app.get('/api/playback/local/:id/stream', async (req, res) => {
@@ -7208,7 +7279,7 @@ app.get('/api/playback/local/:id/stream', async (req, res) => {
     return jsonError(res, 502, 'ENGLISH_AUDIO_RESOLVE_FAILED', 'Could not resolve English audio stream', { label: entry.file, details: e.message });
   }
   if (!requireAbsolutePlaybackAudio(req, res, audioSelection, mode, entry.file)) return;
-  console.log(`[Local Playback Stream] ${entry.file} mode=${mode} route=${mode === 'audio' ? 'audio-copy' : 'remux-copy'} lang=${audioSelection.audioLanguage || ''} title=${audioSelection.audioTitle || ''} codec=${audioSelection.audioCodec || ''} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap} audioStart=${audioSelection.audioStartTime ?? 0} videoStart=${audioSelection.videoStartTime ?? 0} offset=${audioSelection.audioVideoOffsetSec ?? 0}`);
+  console.log(`[Local Playback Stream] playbackType=${req.query.playbackType || 'media'} selected source URL=${req.originalUrl} fallback reason=${req.query.fallbackReason || 'stream'} ${entry.file} mode=${mode} route=${mode === 'audio' ? 'audio-copy' : 'remux-copy'} lang=${audioSelection.audioLanguage || ''} title=${audioSelection.audioTitle || ''} codec=${audioSelection.audioCodec || ''} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap} audioStart=${audioSelection.audioStartTime ?? 0} videoStart=${audioSelection.videoStartTime ?? 0} offset=${audioSelection.audioVideoOffsetSec ?? 0}`);
   return streamFfmpegMp4(req, res, {
     input: filePath,
     mode,
@@ -7242,12 +7313,12 @@ app.get('/stream/:id', async (req, res) => {
   try {
     const mobilePlayback = isMobilePlaybackRequest(req);
     if (!forceTranscode && !mobilePlayback) {
-      console.log(`[Stream] Direct: ${entry.file}`);
+      console.log(`[Stream] Direct playbackType=${req.query.playbackType || 'media'} selected source URL=${req.originalUrl} fallback reason=${req.query.fallbackReason || 'direct'} file=${entry.file}`);
       return directStream(req, res, filePath, entry);
     }
     const mediaInfo = await getCachedMediaInfo(filePath);
     if (forceTranscode || (mobilePlayback && needsTranscode(mediaInfo, userAgent))) {
-      console.log(`[Stream] Transcoding: ${entry.file}`);
+      console.log(`[Stream] Transcoding playbackType=${req.query.playbackType || 'media'} selected source URL=${req.originalUrl} fallback reason=${req.query.fallbackReason || 'transcode'} file=${entry.file}`);
       return transcodeStream(req, res, filePath, mediaInfo, entry);
     }
     console.log(`[Stream] Direct: ${entry.file}`);
@@ -7787,6 +7858,15 @@ function streamRemotePlaybackProxy(req, res, media, matched, srcUrl = media.deco
     if ([301, 302, 303, 307, 308].includes(status) && location && redirectsLeft > 0 && !res.headersSent) {
       proxyRes.resume();
       const nextUrl = new URL(location, srcUrl).href;
+      const liveReason = svServerLiveSourceBlockReason(nextUrl);
+      if (liveReason) {
+        console.warn(`[Media Playback Guard] blocked live fallback attempt playbackType=${req.query.playbackType || 'media'} route=${req.path} selectedSourceURL=${nextUrl} fallback reason=${req.query.fallbackReason || 'redirect'} reason=${liveReason}`);
+        return jsonError(res, 400, 'LIVE_MEDIA_SOURCE_BLOCKED', 'Live TV sources are blocked for media playback', {
+          requestedUrl: media.requestedUrl,
+          decodedUrl: nextUrl,
+          blockReason: liveReason,
+        });
+      }
       return streamRemotePlaybackProxy(req, res, media, matched, nextUrl, redirectsLeft - 1);
     }
 
@@ -7854,11 +7934,14 @@ app.get('/api/playback/ftp', async (req, res) => {
   const mode = requestedMode === 'direct' ? 'redirect' : requestedMode;
   const planRequested = req.query.plan === '1' || req.query.json === '1' || req.query.format === 'json';
   const urls = remotePlaybackUrls(srcUrl);
+  const playbackType = req.query.playbackType || 'media';
+  const fallbackReason = req.query.fallbackReason || (planRequested ? 'plan' : 'direct');
 
   console.log(`[FTP Playback] requested URL: ${media.requestedUrl}`);
   console.log(`[FTP Playback] decoded URL: ${srcUrl}`);
   console.log(`[FTP Playback] matched catalog item: ${catalogLogLabel(matched)}`);
   console.log(`[FTP Playback] mode: ${planRequested ? 'plan:' : ''}${mode}`);
+  console.log(`[Media Playback] playbackType=${playbackType} route=ftp-playback mode=${mode} selected source URL=${srcUrl} fallback reason=${fallbackReason}`);
 
   if (planRequested) {
     if ((mode === 'remux' || mode === 'audio')) {
@@ -7874,13 +7957,16 @@ app.get('/api/playback/ftp', async (req, res) => {
         req.query.audioStream = String(audioSelection.audioStreamIdx);
       }
     }
-    let playUrl = urls.redirectUrl;
-    if (mode === 'proxy') playUrl = urls.proxyUrl;
+    const redirectUrl = remotePlaybackModeUrl(srcUrl, req, 'redirect');
+    const proxyUrl = remotePlaybackModeUrl(srcUrl, req, 'proxy');
+    let playUrl = redirectUrl;
+    if (mode === 'proxy') playUrl = proxyUrl;
     else if (mode === 'remux' || mode === 'audio') {
       playUrl = remotePlaybackModeUrl(srcUrl, req, mode);
     } else if (mode === 'hls') {
       playUrl = remotePlaybackHlsUrl(srcUrl, req);
     }
+    console.log(`[Media Playback] playbackType=${playbackType} route=ftp-plan mode=${mode} selected source URL=${playUrl} fallback reason=${fallbackReason}`);
     const duration = (mode === 'remux' || mode === 'audio' || mode === 'hls')
       ? await playbackDurationSeconds(srcUrl, remoteFilename(srcUrl))
       : 0;
@@ -7896,9 +7982,9 @@ app.get('/api/playback/ftp', async (req, res) => {
       src: playUrl,
       playUrl,
       finalPlayUrl: playUrl,
-      redirectUrl: urls.redirectUrl,
-      proxyUrl: urls.proxyUrl,
-      fallbackProxyUrl: urls.proxyUrl,
+      redirectUrl,
+      proxyUrl,
+      fallbackProxyUrl: proxyUrl,
       legacyProxyUrl: urls.legacyProxyUrl,
       remuxUrl: remotePlaybackModeUrl(srcUrl, req, 'remux'),
       audioTranscodeUrl: remotePlaybackModeUrl(srcUrl, req, 'audio'),
@@ -7909,6 +7995,7 @@ app.get('/api/playback/ftp', async (req, res) => {
   }
 
   if (mode === 'proxy') {
+    console.log(`[Media Playback] playbackType=${playbackType} route=ftp-proxy selected source URL=${srcUrl} fallback reason=${fallbackReason}`);
     return streamRemotePlaybackProxy(req, res, media, matched);
   }
 
@@ -7920,7 +8007,7 @@ app.get('/api/playback/ftp', async (req, res) => {
       return jsonError(res, 502, 'ENGLISH_AUDIO_RESOLVE_FAILED', 'Could not resolve English audio stream', { label: remoteFilename(srcUrl), details: e.message });
     }
     if (!requireAbsolutePlaybackAudio(req, res, audioSelection, mode, remoteFilename(srcUrl))) return;
-    console.log(`[FTP Playback FFmpeg] ${remoteFilename(srcUrl)} mode=${mode} route=${mode === 'audio' ? 'audio-copy' : 'remux-copy'} lang=${audioSelection.audioLanguage || ''} title=${audioSelection.audioTitle || ''} codec=${audioSelection.audioCodec || ''} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap} audioStart=${audioSelection.audioStartTime ?? 0} videoStart=${audioSelection.videoStartTime ?? 0} offset=${audioSelection.audioVideoOffsetSec ?? 0}`);
+    console.log(`[FTP Playback FFmpeg] playbackType=${playbackType} selected source URL=${srcUrl} fallback reason=${fallbackReason} ${remoteFilename(srcUrl)} mode=${mode} route=${mode === 'audio' ? 'audio-copy' : 'remux-copy'} lang=${audioSelection.audioLanguage || ''} title=${audioSelection.audioTitle || ''} codec=${audioSelection.audioCodec || ''} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap} audioStart=${audioSelection.audioStartTime ?? 0} videoStart=${audioSelection.videoStartTime ?? 0} offset=${audioSelection.audioVideoOffsetSec ?? 0}`);
     return streamFfmpegMp4(req, res, {
       input: srcUrl,
       mode,
@@ -7941,7 +8028,7 @@ app.get('/api/playback/ftp', async (req, res) => {
     const startSec = playbackStartFromReq(req);
     const audioSelection = playbackAudioSelectionFromReq(req);
     const audioMap = audioSelection.audioMap;
-    console.log(`[FTP Playback HLS] ${remoteFilename(srcUrl)} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioMap}`);
+    console.log(`[FTP Playback HLS] playbackType=${playbackType} selected source URL=${srcUrl} fallback reason=${fallbackReason} ${remoteFilename(srcUrl)} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioMap}`);
     const preset = mobileHlsPresetFromQuality(req.query.quality);
     const key = hlsSessionKey('ftp', srcUrl, startSec, `${audioMap}|${preset.key}`);
     const clientId = /^[a-zA-Z0-9_-]{8,80}$/.test(String(req.query.client || '')) ? String(req.query.client) : '';
@@ -8127,6 +8214,7 @@ app.get('/api/ftp/stream', async (req, res) => {
   console.log(`[FTP Stream] decoded URL: ${srcUrl}`);
   console.log(`[FTP Stream] matched catalog item: ${catalogLogLabel(matched)}`);
   console.log(`[FTP Stream] final play URL: ${urls.transcodeUrl}`);
+  console.log(`[Media Playback] playbackType=${req.query.playbackType || 'media'} route=ftp-legacy-stream selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'stream'}`);
 
   const startSec = parseFloat(req.query.start) || 0;
   const audioSelection = playbackAudioSelectionFromReq(req);
@@ -8134,7 +8222,7 @@ app.get('/api/ftp/stream', async (req, res) => {
   const audioStreamIdx = audioSelection.audioStreamIdx;
   const mobilePlayback = isMobilePlaybackRequest(req);
   const copyVideo = !mobilePlayback && isRemoteDirectPlayable(srcUrl) && remoteVideoCanCopy(srcUrl);
-  console.log(`[FTP] Transcoding: ${remoteFilename(srcUrl)} start=${startSec} audioIdx=${audioIdx} audioStream=${audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap}`);
+  console.log(`[FTP] Transcoding playbackType=${req.query.playbackType || 'media'} selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'stream'} ${remoteFilename(srcUrl)} start=${startSec} audioIdx=${audioIdx} audioStream=${audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap}`);
 
   const ffmpegArgs = [
     '-hide_banner',
@@ -8229,6 +8317,7 @@ app.get('/api/ftp/proxy', (req, res) => {
   console.log(`[FTP Proxy] decoded URL: ${srcUrl}`);
   console.log(`[FTP Proxy] matched catalog item: ${catalogLogLabel(matched)}`);
   console.log(`[FTP Proxy] final play URL: ${urls.proxyUrl}`);
+  console.log(`[Media Playback] playbackType=${req.query.playbackType || 'media'} route=ftp-legacy-proxy selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'proxy'}`);
 
   const headers = {
     'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0',

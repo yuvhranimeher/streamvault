@@ -1,6 +1,6 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260623-english-av-sync1';
+const SV_ASSET_VERSION = '20260624-block-live-media-fallback1';
 function mediaFixLog(step, data={}){
   try{console.warn(`[${SV_MEDIA_FIX_MARKER}] ${step}`, data);}catch(_){}
 }
@@ -81,6 +81,256 @@ let hlsInstance=null;
 let _hlsLoader=null;
 let _currentPlaybackPlan=null;
 let _currentFtpPlaybackPlan=null;
+let svActivePlaybackType='idle';
+const svMediaPlayerState={
+  playbackType:'idle',
+  mediaKind:'',
+  sourceKey:'',
+  title:'',
+  selectedSourceUrl:'',
+  recoverySourceUrl:'',
+  fallbackReason:'',
+  sessionToken:0
+};
+const svLivePlayerState={
+  playbackType:'idle',
+  currentChannelId:'',
+  currentChannelName:'',
+  selectedSourceUrl:'',
+  fallbackSourceUrl:'',
+  recoverySourceUrl:'',
+  fallbackReason:'',
+  sessionToken:0
+};
+
+function svPlaybackStateLog(step, data={}){
+  try{
+    console.warn('[Playback State]', step, data);
+  }catch(_){}
+}
+
+function svPlayerVideo(){
+  try{return typeof vid !== 'undefined' ? vid : null;}catch(_){return null;}
+}
+
+function svDecodeForGuard(value){
+  const text=String(value || '');
+  try{return decodeURIComponent(text);}catch(_){return text;}
+}
+
+function svNormalizeGuardUrl(value){
+  try{return new URL(String(value || ''), window.location.href).href;}catch(_){return String(value || '').trim();}
+}
+
+function svLiveChannelGuardEntries(){
+  const list=Array.isArray(channels) ? channels : [];
+  const entries=[];
+  list.forEach(channel=>{
+    if(!channel)return;
+    const id=String(channel.id || '').trim().toLowerCase();
+    const name=String(channel.name || '').trim().toLowerCase();
+    const urls=[channel.url, ...(Array.isArray(channel.fallbackUrls) ? channel.fallbackUrls : [])]
+      .map(svNormalizeGuardUrl)
+      .filter(Boolean);
+    entries.push({id,name,urls});
+  });
+  if(!entries.some(entry=>entry.id === 'tsports')){
+    entries.push({id:'tsports',name:'t sports',urls:[]});
+  }
+  return entries;
+}
+
+function svLiveSourceBlockReason(src){
+  const raw=String(src || '').trim();
+  if(!raw)return '';
+  const decoded=svDecodeForGuard(raw);
+  const normalized=svNormalizeGuardUrl(decoded);
+  const lower=decoded.toLowerCase();
+  const normalizedLower=normalized.toLowerCase();
+
+  let parsed=null;
+  try{parsed=new URL(decoded, window.location.href);}catch(_){}
+  const path=(parsed?.pathname || '').toLowerCase();
+  const pathParts=path.split('/').filter(Boolean).map(part=>svDecodeForGuard(part).toLowerCase());
+
+  if(path.startsWith('/live/'))return 'media source points at /live';
+  if(path.startsWith('/live-relay/'))return 'media source points at /live-relay';
+  if(lower.includes('/live/') || lower.includes('/live-relay/'))return 'media source contains live route';
+  if(lower.includes('playlist.m3u8'))return 'media source contains live playlist';
+  if(/\btsports(?:hd)?\b|t[ ._-]*sports/i.test(decoded))return 'media source contains T Sports';
+
+  const nestedValues=[];
+  if(parsed){
+    ['url','src','streamUrl','movie','movieUrl'].forEach(name=>{
+      const value=parsed.searchParams.get(name);
+      if(value)nestedValues.push(value);
+    });
+  }
+  for(const value of nestedValues){
+    const nestedReason=svLiveSourceBlockReason(value);
+    if(nestedReason)return nestedReason;
+  }
+
+  for(const entry of svLiveChannelGuardEntries()){
+    if(entry.id && pathParts.includes(entry.id))return `media source contains live channel id ${entry.id}`;
+    if(entry.name === 't sports' && /t[ ._-]*sports/i.test(decoded))return 'media source contains T Sports';
+    if(entry.urls.some(url=>url && (normalizedLower === url.toLowerCase() || lower.includes(url.toLowerCase())))){
+      return `media source matches live channel ${entry.id || entry.name || 'source'}`;
+    }
+  }
+  return '';
+}
+
+function svShowBlockedLiveMediaSource(src, reason, context={}){
+  document.getElementById('playerSpinner')?.classList.remove('on');
+  showPlayerNotice('Media playback failed. Live TV fallback was blocked for this movie or episode.');
+  svPlaybackStateLog('blocked live fallback attempt', {
+    playbackType:'media',
+    selectedSourceUrl:src,
+    fallbackReason:context.fallbackReason || context.reason || '',
+    mode:context.mode || '',
+    reason
+  });
+}
+
+function svAssertNoLiveSourceForMedia(src, context={}){
+  const reason=svLiveSourceBlockReason(src);
+  if(!reason)return true;
+  svShowBlockedLiveMediaSource(src, reason, context);
+  return false;
+}
+
+function svSameDecodedUrl(a,b){
+  try{return new URL(svDecodeForGuard(a), window.location.href).href === new URL(svDecodeForGuard(b), window.location.href).href;}catch(_){
+    return String(a || '').trim() === String(b || '').trim();
+  }
+}
+
+function svMediaSourceMatchesExpected(src, expected={}){
+  const value=String(src || '');
+  let parsed=null;
+  try{parsed=new URL(value, window.location.href);}catch(_){return true;}
+  if(expected.localId !== undefined && expected.localId !== null){
+    const id=String(expected.localId);
+    const parts=parsed.pathname.split('/').filter(Boolean).map(part=>svDecodeForGuard(part));
+    if(parsed.pathname.startsWith('/stream/'))return parts[1] === id;
+    if(parsed.pathname.startsWith('/api/playback/local/'))return parts[3] === id;
+    if(parsed.pathname.startsWith('/api/mobile-hls/local/'))return parts[3] === id;
+  }
+  if(expected.ftpUrl){
+    const nested=parsed.searchParams.get('url') || parsed.searchParams.get('streamUrl') || parsed.searchParams.get('movie') || parsed.searchParams.get('movieUrl') || parsed.searchParams.get('src');
+    if(nested)return svSameDecodedUrl(nested, expected.ftpUrl);
+    return svSameDecodedUrl(value, expected.ftpUrl);
+  }
+  return true;
+}
+
+function validateMediaPlaybackSource(src, step, expected={}){
+  if(!validPlaybackSourceUrl(src))throw new Error(`Invalid ${step || 'fallback'} playback source`);
+  const context={fallbackReason:step || expected.fallbackReason || '', mode:expected.mode || ''};
+  if(!svAssertNoLiveSourceForMedia(src, context))throw new Error('Blocked live TV fallback for media playback');
+  if(!svMediaSourceMatchesExpected(src, expected)){
+    svPlaybackStateLog('blocked mismatched media source', {
+      playbackType:'media',
+      selectedSourceUrl:src,
+      fallbackReason:step || expected.fallbackReason || '',
+      expectedLocalId:expected.localId ?? null,
+      expectedFtpUrl:expected.ftpUrl || ''
+    });
+    throw new Error('Fallback source did not match current media');
+  }
+  return src;
+}
+
+function svStopLivePlaybackForMedia(reason='media playback start'){
+  const player=svPlayerVideo();
+  svLivePlayerState.sessionToken++;
+  if(typeof player?._svLiveCleanup === 'function'){
+    try{player._svLiveCleanup();}catch(_){}
+    player._svLiveCleanup=null;
+  }
+  svLivePlayerState.playbackType='idle';
+  svLivePlayerState.currentChannelId='';
+  svLivePlayerState.currentChannelName='';
+  svLivePlayerState.selectedSourceUrl='';
+  svLivePlayerState.fallbackSourceUrl='';
+  svLivePlayerState.recoverySourceUrl='';
+  svLivePlayerState.fallbackReason=reason;
+}
+
+function svBeginMediaPlayback(mediaKind, sourceKey, title=''){
+  svStopLivePlaybackForMedia(`${mediaKind || 'media'} playback start`);
+  svActivePlaybackType='media';
+  svMediaPlayerState.playbackType='media';
+  svMediaPlayerState.mediaKind=mediaKind || 'media';
+  svMediaPlayerState.sourceKey=String(sourceKey ?? '');
+  svMediaPlayerState.title=String(title || '');
+  svMediaPlayerState.selectedSourceUrl='';
+  svMediaPlayerState.recoverySourceUrl='';
+  svMediaPlayerState.fallbackReason='';
+  svMediaPlayerState.sessionToken++;
+  const player=svPlayerVideo();
+  if(player)player._svPlaybackType='media';
+  svPlaybackStateLog('begin media playback', {
+    playbackType:'media',
+    mediaKind:svMediaPlayerState.mediaKind,
+    sourceKey:svMediaPlayerState.sourceKey,
+    title:svMediaPlayerState.title
+  });
+  return svMediaPlayerState.sessionToken;
+}
+
+function svBeginLivePlayback(channelId, channelName=''){
+  svActivePlaybackType='live';
+  svMediaPlayerState.playbackType='idle';
+  svMediaPlayerState.selectedSourceUrl='';
+  svMediaPlayerState.recoverySourceUrl='';
+  svMediaPlayerState.fallbackReason='';
+  svLivePlayerState.playbackType='live';
+  svLivePlayerState.currentChannelId=String(channelId || '');
+  svLivePlayerState.currentChannelName=String(channelName || '');
+  svLivePlayerState.selectedSourceUrl='';
+  svLivePlayerState.fallbackSourceUrl='';
+  svLivePlayerState.recoverySourceUrl='';
+  svLivePlayerState.fallbackReason='';
+  svLivePlayerState.sessionToken++;
+  const player=svPlayerVideo();
+  if(player)player._svPlaybackType='live';
+  svPlaybackStateLog('begin live playback', {
+    playbackType:'live',
+    channelId:svLivePlayerState.currentChannelId,
+    channelName:svLivePlayerState.currentChannelName
+  });
+  return svLivePlayerState.sessionToken;
+}
+
+function svIsLivePlaybackSession(token, channelId=''){
+  return svActivePlaybackType === 'live'
+    && isLiveMode
+    && svLivePlayerState.playbackType === 'live'
+    && svLivePlayerState.sessionToken === token
+    && (!channelId || svLivePlayerState.currentChannelId === String(channelId || ''));
+}
+
+function svNoteSelectedSource(playbackType, src, context={}){
+  const type=playbackType === 'live' ? 'live' : 'media';
+  if(type === 'live'){
+    svLivePlayerState.selectedSourceUrl=String(src || '');
+    if(context.fallbackReason)svLivePlayerState.fallbackReason=context.fallbackReason;
+    if(context.recoverySourceUrl)svLivePlayerState.recoverySourceUrl=context.recoverySourceUrl;
+  }else{
+    svMediaPlayerState.selectedSourceUrl=String(src || '');
+    if(context.fallbackReason)svMediaPlayerState.fallbackReason=context.fallbackReason;
+    if(context.recoverySourceUrl)svMediaPlayerState.recoverySourceUrl=context.recoverySourceUrl;
+  }
+  svPlaybackStateLog('selected source URL', {
+    playbackType:type,
+    selectedSourceUrl:src,
+    fallbackReason:context.fallbackReason || '',
+    mode:context.mode || ''
+  });
+}
+
 function loadHlsScript(){
   if(typeof Hls !== 'undefined')return Promise.resolve(true);
   if(_hlsLoader)return _hlsLoader;
@@ -95,8 +345,14 @@ function loadHlsScript(){
   return _hlsLoader;
 }
 
-async function attachPlayerSource(src, mode='direct'){
+async function attachPlayerSource(src, mode='direct', options={}){
   if(!src)return false;
+  const playbackType=options.playbackType || ((isLiveMode && svActivePlaybackType === 'live') ? 'live' : 'media');
+  const fallbackReason=options.fallbackReason || options.reason || '';
+  if(playbackType !== 'live'){
+    if(!svAssertNoLiveSourceForMedia(src, {mode, fallbackReason}))return false;
+  }
+  svNoteSelectedSource(playbackType, src, {mode, fallbackReason});
   const isHls = mode === 'hls' || /\.m3u8(?:$|\?)/i.test(String(src));
   if(hlsInstance){hlsInstance.destroy();hlsInstance=null;}
   if(!isHls){
@@ -993,6 +1249,7 @@ function darken(hex){
 }
 
 function openLiveChannel(channelId, channelName){
+  svBeginLivePlayback(channelId, channelName);
   isLiveMode=true;
   currentStreamId=null;
   vid._durationToken = (vid._durationToken || 0) + 1;
@@ -1035,6 +1292,7 @@ function openLiveChannel(channelId, channelName){
   showUI();
 
   const src=`/live/${encodeURIComponent(channelId)}/playlist.m3u8`;
+  svNoteSelectedSource('live', src, {mode:'hls'});
 
   const playNative=()=>{
     vid.src=src;
@@ -2698,6 +2956,7 @@ async function showVlcPlaybackNotice(url, title=''){
     showPlayerNotice(DESKTOP_UNSUPPORTED_MESSAGE);
     return;
   }
+  if(!svAssertNoLiveSourceForMedia(streamUrl, {fallbackReason:'browser stream fallback'}))return;
   if(!isMobilePlaybackClient()){
     vid._desktopOriginalOnlyFailed = true;
     document.getElementById('playerSpinner')?.classList.remove('on');
@@ -2716,7 +2975,7 @@ async function showVlcPlaybackNotice(url, title=''){
     vid._sourceOffset = start;
     vid._vlcFallbackUrl = streamUrl;
     vid._vlcFallbackTitle = title || '';
-    const attached = await attachPlayerSource(ftpTranscodeSrc(streamUrl, start), 'stream');
+    const attached = await attachPlayerSource(ftpTranscodeSrc(streamUrl, start, 'browser stream fallback'), 'stream', {playbackType:'media', fallbackReason:'browser stream fallback'});
     if(!attached)throw new Error('Browser stream unavailable');
     await vid.play();
     showToast('Playing with optimized browser stream');
@@ -2731,6 +2990,7 @@ async function showVlcPlaybackNotice(url, title=''){
 
 function streamUrlFor(id, start=0){
   const params = new URLSearchParams();
+  params.set('playbackType', 'media');
   if(isMobilePlaybackClient())params.set('mobile', '1');
   if(currentQuality && currentQuality !== 'auto')params.set('quality', currentQuality);
   if(start > 0)params.set('start', Math.floor(start));
@@ -2740,6 +3000,8 @@ function streamUrlFor(id, start=0){
 
 async function fetchLocalPlaybackPlan(id, start=0, options={}){
   const params = new URLSearchParams();
+  params.set('playbackType','media');
+  if(options.fallbackReason)params.set('fallbackReason', options.fallbackReason);
   if(isMobilePlaybackClient())params.set('mobile','1');
   if(currentQuality && currentQuality !== 'auto')params.set('quality', currentQuality);
   if(planOptionsNeedAudioMap(options))appendSelectedAudioParams(params);
@@ -2770,6 +3032,8 @@ async function fetchFtpPlaybackPlan(streamUrl, start=0, options={}){
   const params = new URLSearchParams();
   params.set('url', streamUrl);
   params.set('plan','1');
+  params.set('playbackType','media');
+  if(options.fallbackReason)params.set('fallbackReason', options.fallbackReason);
   if(isMobilePlaybackClient())params.set('mobile','1');
   if(planOptionsNeedAudioMap(options))appendSelectedAudioParams(params);
   if(options.preferEnglishServer)params.set('english','1');
@@ -2838,12 +3102,13 @@ function sourceNeedsBrowserRemux(url){
     || /(matroska|webm|x265|h265|hevc)/i.test(value);
 }
 
-function playbackOptionsForStep(step){
-  if(step === 'proxy')return {forceProxy:true};
-  if(step === 'remux')return {forceRemux:true};
-  if(step === 'audio')return {forceAudio:true};
-  if(step === 'hls')return {forceHls:true};
-  return {};
+function playbackOptionsForStep(step, fallbackReason=''){
+  const options={fallbackReason:fallbackReason || step || 'media fallback'};
+  if(step === 'proxy')options.forceProxy=true;
+  if(step === 'remux')options.forceRemux=true;
+  if(step === 'audio')options.forceAudio=true;
+  if(step === 'hls')options.forceHls=true;
+  return options;
 }
 
 function validPlaybackSourceUrl(src){
@@ -2864,8 +3129,7 @@ function validPlaybackSourceUrl(src){
 }
 
 function validateFallbackPlaybackSource(src, step){
-  if(!validPlaybackSourceUrl(src))throw new Error(`Invalid ${step || 'fallback'} playback source`);
-  return src;
+  return validateMediaPlaybackSource(src, step);
 }
 
 function ftpDirectPlayable(url, options={}){
@@ -2876,20 +3140,26 @@ function ftpDirectPlayable(url, options={}){
 }
 
 function ftpProxySrc(url){
-  return '/api/ftp/proxy?url=' + encodeURIComponent(url);
+  const params=new URLSearchParams();
+  params.set('url', url);
+  params.set('playbackType', 'media');
+  return '/api/ftp/proxy?' + params.toString();
 }
 
-function ftpPlaybackRouteSrc(url, mode='redirect'){
+function ftpPlaybackRouteSrc(url, mode='redirect', fallbackReason=''){
   const params = new URLSearchParams();
   params.set('url', url);
+  params.set('playbackType', 'media');
+  if(fallbackReason)params.set('fallbackReason', fallbackReason);
   if(mode)params.set('mode', mode);
   return '/api/playback/ftp?' + params.toString();
 }
 
 function localFtpPlaybackPlan(url, options={}){
   const proxy = options.forceProxy || options.forceStream;
-  const src = ftpPlaybackRouteSrc(url, proxy ? 'proxy' : 'redirect');
-  const proxyUrl = ftpPlaybackRouteSrc(url, 'proxy');
+  const reason = options.fallbackReason || (proxy ? 'proxy' : 'redirect');
+  const src = ftpPlaybackRouteSrc(url, proxy ? 'proxy' : 'redirect', reason);
+  const proxyUrl = ftpPlaybackRouteSrc(url, 'proxy', 'proxy');
   return {
     ok: true,
     decodedUrl: url,
@@ -2899,7 +3169,7 @@ function localFtpPlaybackPlan(url, options={}){
     src,
     playUrl: src,
     finalPlayUrl: src,
-    redirectUrl: ftpPlaybackRouteSrc(url, 'redirect'),
+    redirectUrl: ftpPlaybackRouteSrc(url, 'redirect', 'redirect'),
     proxyUrl,
     fallbackProxyUrl: proxyUrl,
     legacyProxyUrl: ftpProxySrc(url),
@@ -2908,7 +3178,10 @@ function localFtpPlaybackPlan(url, options={}){
 }
 
 function ftpRawSrc(url){
-  return '/api/ftp/raw?url=' + encodeURIComponent(url);
+  const params=new URLSearchParams();
+  params.set('url', url);
+  params.set('playbackType', 'media');
+  return '/api/ftp/raw?' + params.toString();
 }
 
 function desktopFtpPlaybackSrc(url){
@@ -2918,16 +3191,18 @@ function desktopFtpPlaybackSrc(url){
   return '';
 }
 
-function ftpTranscodeSrc(url, start=0){
+function ftpTranscodeSrc(url, start=0, fallbackReason=''){
   const params = new URLSearchParams();
   params.set('url', url);
+  params.set('playbackType', 'media');
+  if(fallbackReason)params.set('fallbackReason', fallbackReason);
   if(start > 0)params.set('start', Math.floor(start));
   appendSelectedAudioParams(params);
   return '/api/ftp/stream?' + params.toString();
 }
 
-function ftpStreamPlaybackPlan(url, start=0){
-  const src=ftpTranscodeSrc(url,start);
+function ftpStreamPlaybackPlan(url, start=0, fallbackReason='stream'){
+  const src=ftpTranscodeSrc(url,start,fallbackReason);
   return {
     ok:true,
     decodedUrl:url,
@@ -2943,8 +3218,10 @@ function ftpStreamPlaybackPlan(url, start=0){
   };
 }
 
-function localTranscodeSrc(id, start=0){
+function localTranscodeSrc(id, start=0, fallbackReason=''){
   const params = new URLSearchParams();
+  params.set('playbackType', 'media');
+  if(fallbackReason)params.set('fallbackReason', fallbackReason);
   params.set('mobile', '1');
   if(currentQuality && currentQuality !== 'auto')params.set('quality', currentQuality);
   appendSelectedAudioParams(params);
@@ -2981,7 +3258,7 @@ function ftpPlaybackSrc(start=0){
   }
   const needsTranscode = !ftpDirectPlayable(_ftpStreamUrl) || currentAudioIdx > 0;
   _ftpNeedsTranscode = needsTranscode;
-  return needsTranscode ? ftpTranscodeSrc(_ftpStreamUrl, start) : ftpProxySrc(_ftpStreamUrl);
+  return needsTranscode ? ftpTranscodeSrc(_ftpStreamUrl, start, 'FTP playback source') : ftpProxySrc(_ftpStreamUrl);
 }
 
 function subtitleTextTrackCodecs(){
@@ -2999,6 +3276,7 @@ function ftpSubtitleSrc(idx){
   if(sub.sidecar && sub.src)params.set('sidecar', sub.src);
   const streamIndex = sub.sourceIndex ?? sub.streamIndex;
   params.set('url', _ftpStreamUrl);
+  params.set('playbackType', 'media');
   if(Number.isFinite(streamIndex))params.set('stream', streamIndex);
   return `/api/ftp/subtitle/${idx}.vtt?${params.toString()}`;
 }
@@ -3008,7 +3286,7 @@ function resolveFtpPlayUrl(streamUrl){
   if(!sourceUrl)throw new Error('Missing source URL');
   const directPlayable = ftpDirectPlayable(sourceUrl);
   const proxyUrl = ftpProxySrc(sourceUrl);
-  const transcodeUrl = ftpTranscodeSrc(sourceUrl);
+  const transcodeUrl = ftpTranscodeSrc(sourceUrl, 0, 'resolve FTP play URL');
   const playUrl = directPlayable ? proxyUrl : transcodeUrl;
   return {
     ok: true,
@@ -3032,11 +3310,15 @@ async function loadFtpTrackOptions(streamUrl){
   if(subList)subList.innerHTML = `<div class="pd-item" style="color:#444;pointer-events:none">Loading subtitles...</div>`;
   updateSubBtn();
   mediaFixLog('load FTP metadata start', {url:requestedUrl});
+  if(!svAssertNoLiveSourceForMedia(requestedUrl, {fallbackReason:'FTP metadata'}))return null;
 
   const controller = new AbortController();
   const timeout = setTimeout(()=>controller.abort(), 45000);
   try{
-    const r = await fetch(`/api/ftp/media-info?url=${encodeURIComponent(requestedUrl)}`, {
+    const params=new URLSearchParams();
+    params.set('url', requestedUrl);
+    params.set('playbackType', 'media');
+    const r = await fetch(`/api/ftp/media-info?${params.toString()}`, {
       signal: controller.signal,
       cache:'no-store',
       headers:{'Cache-Control':'no-cache'}
@@ -3150,10 +3432,12 @@ async function sourceSeekTo(seconds){
     if(wasPlaying)vid.play().catch(()=>{});
   }, 12000);
   try{
+    const fallbackReason='local seek';
     const plan = currentMode === 'stream'
-      ? { ok:true, mode:'stream', src:localTranscodeSrc(currentStreamId, target), duration:vid._apiDuration || 0 }
-      : await fetchLocalPlaybackPlan(currentStreamId, target, playbackOptionsForStep(currentMode));
+      ? { ok:true, mode:'stream', src:localTranscodeSrc(currentStreamId, target, fallbackReason), duration:vid._apiDuration || 0 }
+      : await fetchLocalPlaybackPlan(currentStreamId, target, playbackOptionsForStep(currentMode, fallbackReason));
     if(token !== vid._seekToken)return;
+    validateMediaPlaybackSource(plan.src, fallbackReason, {localId:currentStreamId, mode:plan.mode, fallbackReason});
     _currentPlaybackPlan = plan;
     vid._sourceSeekRequired = planNeedsSourceSeek(plan);
     vid._mediaSourceSeekRequired = vid._sourceSeekRequired;
@@ -3165,7 +3449,7 @@ async function sourceSeekTo(seconds){
       document.getElementById('playerSpinner').classList.remove('on');
       if(wasPlaying)vid.play().catch(()=>{});
     }, {once:true});
-    const attached = await attachPlayerSource(plan.src, plan.mode);
+    const attached = await attachPlayerSource(plan.src, plan.mode, {playbackType:'media', fallbackReason});
     if(!attached)throw new Error('HLS not supported');
     if(wasPlaying)vid.play().catch(()=>{});
   }catch(e){
@@ -3248,7 +3532,11 @@ async function loadFtpDuration(streamUrl){
   vid._durationToken = token;
   vid._durationPending = true;
   try{
-    const r = await fetch(`/api/ftp/duration?url=${encodeURIComponent(streamUrl)}`);
+    if(!svAssertNoLiveSourceForMedia(streamUrl, {fallbackReason:'FTP duration lookup'}))return;
+    const params=new URLSearchParams();
+    params.set('url', streamUrl);
+    params.set('playbackType', 'media');
+    const r = await fetch(`/api/ftp/duration?${params.toString()}`);
     if(token !== vid._durationToken || !r.ok)return;
     const data = await r.json();
     const duration = Number(data.duration) || 0;
@@ -3381,7 +3669,12 @@ async function prepareLocalStartupAudio(id, movie={}){
 
 async function prepareFtpStartupAudio(streamUrl){
   try{
-    const r=await fetchWithTimeout(`/api/ftp/media-info?audioOnly=1&url=${encodeURIComponent(streamUrl)}`, {
+    if(!svAssertNoLiveSourceForMedia(streamUrl, {fallbackReason:'FTP startup audio'}))throw new Error('Blocked live TV source for media playback');
+    const params=new URLSearchParams();
+    params.set('audioOnly', '1');
+    params.set('url', streamUrl);
+    params.set('playbackType', 'media');
+    const r=await fetchWithTimeout(`/api/ftp/media-info?${params.toString()}`, {
       cache:'no-store',
       headers:{'Cache-Control':'no-cache'}
     }, startupAudioTimeoutFor(streamUrl));
@@ -3395,13 +3688,14 @@ async function prepareFtpStartupAudio(streamUrl){
 }
 
 async function attachFtpFallbackStep(resolvedStreamUrl, name, step, failedAt){
-  playbackDebug('ftp fallback start', {step, failedAt, error:videoErrorInfo()});
+  const fallbackReason=`FTP ${step} fallback`;
+  playbackDebug('ftp fallback start', {playbackType:'media', step, fallbackReason, failedAt, error:videoErrorInfo()});
   const fallback = step === 'transcode'
-    ? ftpStreamPlaybackPlan(resolvedStreamUrl, failedAt)
-    : await fetchFtpPlaybackPlan(resolvedStreamUrl, failedAt, playbackOptionsForStep(step));
+    ? ftpStreamPlaybackPlan(resolvedStreamUrl, failedAt, fallbackReason)
+    : await fetchFtpPlaybackPlan(resolvedStreamUrl, failedAt, playbackOptionsForStep(step, fallbackReason));
   if(_ftpStreamUrl !== resolvedStreamUrl)return true;
   const fallbackMode = fallback.mode || step;
-  validateFallbackPlaybackSource(fallback.src, step);
+  validateMediaPlaybackSource(fallback.src, step, {ftpUrl:resolvedStreamUrl, mode:fallbackMode, fallbackReason});
   const shouldPlay = vid._svPlaybackShouldPlay !== false;
   _currentFtpPlaybackPlan = fallback;
   _ftpNeedsTranscode = planNeedsSourceSeek({mode:fallbackMode});
@@ -3423,8 +3717,8 @@ async function attachFtpFallbackStep(resolvedStreamUrl, name, step, failedAt){
     playbackDebug('ftp fallback video error', {step, error:videoErrorInfo()});
     tryFtpAdaptiveFallback(resolvedStreamUrl, name, playbackTime()).catch(()=>showVlcPlaybackNotice(resolvedStreamUrl, name));
   }, {once:true});
-  playbackDebug('ftp fallback attach', {step, mode:fallbackMode, src:fallback.src});
-  if(!await attachPlayerSource(fallback.src, fallbackMode))throw new Error(`Could not attach ${step} source`);
+  playbackDebug('ftp fallback attach', {playbackType:'media', step, fallbackReason, mode:fallbackMode, src:fallback.src});
+  if(!await attachPlayerSource(fallback.src, fallbackMode, {playbackType:'media', fallbackReason}))throw new Error(`Could not attach ${step} source`);
   if(shouldPlay)vid.play().catch(e=>{
     if(e?.name === 'NotAllowedError'){
       updatePlayIcons(true);
@@ -3457,13 +3751,14 @@ async function tryFtpAdaptiveFallback(resolvedStreamUrl, name, failedAt=playback
 }
 
 async function attachLocalFallbackStep(id, step, failedAt){
-  playbackDebug('local fallback start', {id, step, failedAt, error:videoErrorInfo()});
+  const fallbackReason=`local ${step} fallback`;
+  playbackDebug('local fallback start', {playbackType:'media', id, step, fallbackReason, failedAt, error:videoErrorInfo()});
   const fallback = step === 'transcode'
-    ? { ok:true, mode:'stream', src:localTranscodeSrc(id, failedAt), duration:vid._apiDuration || 0 }
-    : await fetchLocalPlaybackPlan(id, failedAt, playbackOptionsForStep(step));
+    ? { ok:true, mode:'stream', src:localTranscodeSrc(id, failedAt, fallbackReason), duration:vid._apiDuration || 0 }
+    : await fetchLocalPlaybackPlan(id, failedAt, playbackOptionsForStep(step, fallbackReason));
   if(String(currentStreamId) !== String(id) || _ftpStreamUrl)return true;
   const fallbackMode = fallback.mode || step;
-  validateFallbackPlaybackSource(fallback.src, step);
+  validateMediaPlaybackSource(fallback.src, step, {localId:id, mode:fallbackMode, fallbackReason});
   const shouldPlay = vid._svPlaybackShouldPlay !== false;
   _currentPlaybackPlan = fallback;
   vid._sourceSeekRequired = planNeedsSourceSeek({mode:fallbackMode});
@@ -3481,8 +3776,8 @@ async function attachLocalFallbackStep(id, step, failedAt){
     playbackDebug('local fallback video error', {id, step, error:videoErrorInfo()});
     tryLocalAdaptiveFallback(id, playbackTime()).catch(()=>showPlayerNotice(DESKTOP_UNSUPPORTED_MESSAGE));
   }, {once:true});
-  playbackDebug('local fallback attach', {id, step, mode:fallbackMode, src:fallback.src});
-  if(!await attachPlayerSource(fallback.src, fallbackMode))throw new Error(`Could not attach ${step} source`);
+  playbackDebug('local fallback attach', {playbackType:'media', id, step, fallbackReason, mode:fallbackMode, src:fallback.src});
+  if(!await attachPlayerSource(fallback.src, fallbackMode, {playbackType:'media', fallbackReason}))throw new Error(`Could not attach ${step} source`);
   if(shouldPlay)vid.play().catch(e=>{
     if(e?.name === 'NotAllowedError'){
       updatePlayIcons(true);
@@ -3524,6 +3819,7 @@ async function playMedia(id, name, year){
     return;
   }
   trackView(id);
+  svBeginMediaPlayback('local', id, name || movie.name || '');
   isLiveMode = false;
   if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
   closeAllDropdowns();
@@ -3537,6 +3833,8 @@ async function playMedia(id, name, year){
   availableAudio = [];
   clearInterval(vid._pi);
   vid.pause();
+  vid.removeAttribute('src');
+  try{vid.load();}catch(_){}
   vid.querySelectorAll('track').forEach(t => t.remove());
   clearSubtitleOverlay();
 
@@ -3594,6 +3892,7 @@ async function playMedia(id, name, year){
   const startupAudio = await prepareLocalStartupAudio(id, movie);
   const startupInfo = startupAudio.info;
   const startupOptions = startupAudio.options || {};
+  if(!startupOptions.fallbackReason)startupOptions.fallbackReason = startupAudio.reason || 'local startup';
   if(startupOptions.blockPlayback){
     delete startupOptions.blockPlayback;
     startupOptions.forceAudio = true;
@@ -3641,6 +3940,7 @@ async function playMedia(id, name, year){
       plan = {ok:true, id:String(id), mode:'direct', transport:'direct', src:streamUrlFor(id), duration:0};
     }
     if(String(currentStreamId) !== String(id) || _ftpStreamUrl)return;
+    validateMediaPlaybackSource(plan.src, 'local startup', {localId:id, mode:plan.mode || 'direct', fallbackReason:startupOptions.fallbackReason});
     _currentPlaybackPlan = plan;
     _currentPlaybackPlan.unsupportedVideoCodec = mediaInfoHasUnsupportedVideo(startupInfo);
     if(['audio','remux','direct'].includes(String(plan.mode || '')))vid._localFallbackStepsTried.add(plan.mode);
@@ -3655,7 +3955,7 @@ async function playMedia(id, name, year){
       playbackDebug('local direct video error', {id, error:videoErrorInfo()});
       tryLocalAdaptiveFallback(id, playbackTime()).catch(()=>showPlayerNotice(DESKTOP_UNSUPPORTED_MESSAGE));
     }, {once:true});
-    const attachPromise = attachPlayerSource(plan.src, plan.mode);
+    const attachPromise = attachPlayerSource(plan.src, plan.mode, {playbackType:'media', fallbackReason:startupOptions.fallbackReason});
     mediaFixLog('attach local source',{
       title:name || movie.name || '',
       id,
@@ -3733,7 +4033,13 @@ async function restorePlaybackSnapshot(snapshot, reason='switch failed'){
   const applyTime=()=>{if(!sourceSeek && target>0){try{vid.currentTime=target;}catch(_){}}};
   vid.addEventListener('loadedmetadata',applyTime,{once:true});
   vid.addEventListener('canplay',applyTime,{once:true});
-  const attached=await attachPlayerSource(snapshot.src,snapshot.mode);
+  validateMediaPlaybackSource(snapshot.src, 'audio switch rollback', {
+    ftpUrl:snapshot.ftp ? _ftpStreamUrl : '',
+    localId:snapshot.ftp ? null : currentStreamId,
+    mode:snapshot.mode,
+    fallbackReason:reason
+  });
+  const attached=await attachPlayerSource(snapshot.src,snapshot.mode, {playbackType:'media', fallbackReason:reason || 'audio switch rollback'});
   if(!attached)throw new Error('Previous source could not be restored');
   setTimeout(applyTime,0);
   if(!snapshot.paused)vid.play().catch(()=>{});
@@ -3814,15 +4120,22 @@ async function switchAudioWithServer(idx){
   let canPlay=null;
   try{
     const currentMode = ftpUrl ? _currentFtpPlaybackPlan?.mode : _currentPlaybackPlan?.mode;
-    const switchOptions = {forceAudio:true};
+    if(!ftpUrl && !localId)throw new Error('No media source for audio switch');
+    const switchOptions = {forceAudio:true, fallbackReason:'audio switch'};
     const plan = currentMode === 'stream'
       ? (ftpUrl
-        ? { ok:true, mode:'stream', src:ftpTranscodeSrc(ftpUrl,target), duration:_ftpDuration || 0 }
-        : { ok:true, mode:'stream', src:localTranscodeSrc(localId,target), duration:vid._apiDuration || 0 })
+        ? { ok:true, mode:'stream', src:ftpTranscodeSrc(ftpUrl,target,'audio switch'), duration:_ftpDuration || 0 }
+        : { ok:true, mode:'stream', src:localTranscodeSrc(localId,target,'audio switch'), duration:vid._apiDuration || 0 })
       : (ftpUrl
         ? await fetchFtpPlaybackPlan(ftpUrl,target,switchOptions)
         : await fetchLocalPlaybackPlan(localId,target,switchOptions));
     if(token!==vid._audioSwitchToken)return;
+    validateMediaPlaybackSource(plan.src, 'audio switch', {
+      ftpUrl:ftpUrl || '',
+      localId:ftpUrl ? null : localId,
+      mode:plan.mode || 'audio',
+      fallbackReason:'audio switch'
+    });
     if(ftpUrl){
       _currentFtpPlaybackPlan=plan;
       _ftpNeedsTranscode=true;
@@ -3833,7 +4146,7 @@ async function switchAudioWithServer(idx){
     vid._sourceSeekRequired=true;
     vid._mediaSourceSeekRequired=true;
     canPlay=waitForSwitchCanPlay(token);
-    const attached=await attachPlayerSource(plan.src,plan.mode||'audio');
+    const attached=await attachPlayerSource(plan.src,plan.mode||'audio', {playbackType:'media', fallbackReason:'audio switch'});
     if(!attached)throw new Error('Audio stream could not be attached');
     await canPlay;
     if(token!==vid._audioSwitchToken)return;
@@ -4119,6 +4432,8 @@ async function playFtpMedia(streamUrl, name, year){
       showToast('Playback error: missing source URL');
       return;
     }
+    svBeginMediaPlayback('ftp', requestedStreamUrl, name || '');
+    if(!svAssertNoLiveSourceForMedia(requestedStreamUrl, {fallbackReason:'FTP media startup'}))return;
     const mobilePlayback = isMobilePlaybackClient();
     mediaFixLog('selected FTP media URL',{url:requestedStreamUrl,name,year,mobilePlayback});
     console.log('[Playback] FTP proxy URL', ftpProxySrc(requestedStreamUrl));
@@ -4189,6 +4504,7 @@ async function playFtpMedia(streamUrl, name, year){
     const startupAudio = await prepareFtpStartupAudio(requestedStreamUrl);
     const startupInfo = startupAudio.info;
     startupOptions = startupAudio.options || {};
+    if(!startupOptions.fallbackReason)startupOptions.fallbackReason = startupAudio.reason || 'FTP startup';
     if(startupOptions.blockPlayback){
       delete startupOptions.blockPlayback;
       startupOptions.forceAudio = true;
@@ -4207,7 +4523,7 @@ async function playFtpMedia(streamUrl, name, year){
     if(!mobilePlayback && !needsServerStart){
       // Never redirect an HTTPS desktop page to the private/HTTP media origin.
       // The same-origin proxy preserves Range/206 responses and encoded names.
-      playInfo = localFtpPlaybackPlan(requestedStreamUrl, {forceProxy:true});
+      playInfo = localFtpPlaybackPlan(requestedStreamUrl, {forceProxy:true, fallbackReason:startupOptions.fallbackReason});
     }else{
       try{
         playInfo = await fetchFtpPlaybackPlan(requestedStreamUrl,0,startupOptions);
@@ -4215,18 +4531,18 @@ async function playFtpMedia(streamUrl, name, year){
         if(needsServerStart){
           resetToOriginalAudioFallback('FTP mapped startup fallback');
           mediaFixLog('FTP mapped startup plan failed; using original proxy', {url:requestedStreamUrl,message:e.message});
-          playInfo = localFtpPlaybackPlan(requestedStreamUrl, {forceProxy:true});
+          playInfo = localFtpPlaybackPlan(requestedStreamUrl, {forceProxy:true, fallbackReason:'FTP mapped startup fallback'});
           vid._ftpFallbackStepsTried.add('audio');
           vid._ftpFallbackStepsTried.add('remux');
         }else{
           if(playToken !== vid._durationToken)return;
           console.warn('[Playback] FTP plan failed, trying direct route:', e.message);
-          playInfo = localFtpPlaybackPlan(requestedStreamUrl);
+          playInfo = localFtpPlaybackPlan(requestedStreamUrl, {fallbackReason:'FTP direct startup fallback'});
         }
       }
       if(!playInfo){
         if(playToken !== vid._durationToken)return;
-        playInfo = localFtpPlaybackPlan(requestedStreamUrl);
+        playInfo = localFtpPlaybackPlan(requestedStreamUrl, {fallbackReason:'FTP empty plan fallback'});
       }
     }
     if(playToken !== vid._durationToken)return;
@@ -4234,13 +4550,14 @@ async function playFtpMedia(streamUrl, name, year){
     const resolvedStreamUrl = playInfo.decodedUrl || requestedStreamUrl;
     const playbackMode = playInfo.mode || (playInfo.directPlayable ? 'direct' : 'remux');
     const directPlayable = playbackMode === 'direct';
-    const finalPlayUrl = playInfo.src || playInfo.finalPlayUrl || playInfo.playUrl || (directPlayable ? ftpProxySrc(resolvedStreamUrl) : ftpTranscodeSrc(resolvedStreamUrl));
+    const finalPlayUrl = playInfo.src || playInfo.finalPlayUrl || playInfo.playUrl || (directPlayable ? ftpProxySrc(resolvedStreamUrl) : ftpTranscodeSrc(resolvedStreamUrl, 0, startupOptions.fallbackReason));
     const transcodeUrl = '';
     if(!finalPlayUrl){
       document.getElementById('playerSpinner').classList.remove('on');
       showToast('Playback error: no source URL returned');
       return;
     }
+    validateMediaPlaybackSource(finalPlayUrl, 'FTP startup', {ftpUrl:resolvedStreamUrl, mode:playbackMode, fallbackReason:startupOptions.fallbackReason});
 
     _ftpStreamUrl = resolvedStreamUrl;
     _currentFtpPlaybackPlan = playInfo;
@@ -4283,7 +4600,7 @@ async function playFtpMedia(streamUrl, name, year){
       reason:startupAudio.reason || '',
       selectedAudio:audioDebugSummary(selectedAudioTrack(),currentAudioIdx)
     });
-    const attachPromise = attachPlayerSource(finalPlayUrl, playbackMode);
+    const attachPromise = attachPlayerSource(finalPlayUrl, playbackMode, {playbackType:'media', fallbackReason:startupOptions.fallbackReason});
     const initialPlay = !mobilePlayback
       ? vid.play().catch(e=>handleInitialPlayRejection(e, ()=>{
           playbackDebug('ftp initial play rejected', {message:e.message});
@@ -4325,9 +4642,9 @@ async function playFtpMedia(streamUrl, name, year){
     if(requestedStreamUrl){
       try{
         resetToOriginalAudioFallback('FTP startup error proxy fallback');
-        const fallback = localFtpPlaybackPlan(requestedStreamUrl, {forceProxy:true});
+        const fallback = localFtpPlaybackPlan(requestedStreamUrl, {forceProxy:true, fallbackReason:'FTP startup error proxy fallback'});
         const fallbackUrl = fallback.src || fallback.finalPlayUrl || fallback.playUrl;
-        validateFallbackPlaybackSource(fallbackUrl, 'proxy');
+        validateMediaPlaybackSource(fallbackUrl, 'proxy', {ftpUrl:requestedStreamUrl, mode:fallback.mode || 'proxy', fallbackReason:'FTP startup error proxy fallback'});
         _ftpStreamUrl = fallback.decodedUrl || requestedStreamUrl;
         _currentFtpPlaybackPlan = fallback;
         _ftpNeedsTranscode = false;
@@ -4343,7 +4660,7 @@ async function playFtpMedia(streamUrl, name, year){
           showVlcPlaybackNotice(requestedStreamUrl, name);
         }, {once:true});
         document.getElementById('playerSpinner').classList.add('on');
-        if(await attachPlayerSource(fallbackUrl, fallback.mode || 'proxy')){
+        if(await attachPlayerSource(fallbackUrl, fallback.mode || 'proxy', {playbackType:'media', fallbackReason:'FTP startup error proxy fallback'})){
           vid.play().catch(err=>handleInitialPlayRejection(err,()=>showVlcPlaybackNotice(requestedStreamUrl,name)));
           return;
         }
@@ -4389,10 +4706,12 @@ async function ftpSeekTo(seconds){
   }, {once: true});
   try{
     const currentMode = _currentFtpPlaybackPlan?.mode || 'direct';
+    const fallbackReason='FTP seek';
     const plan = currentMode === 'stream'
-      ? { ok:true, mode:'stream', src:ftpTranscodeSrc(_ftpStreamUrl, target), duration:_ftpDuration || 0 }
-      : await fetchFtpPlaybackPlan(_ftpStreamUrl, target, playbackOptionsForStep(currentMode));
+      ? { ok:true, mode:'stream', src:ftpTranscodeSrc(_ftpStreamUrl, target, fallbackReason), duration:_ftpDuration || 0 }
+      : await fetchFtpPlaybackPlan(_ftpStreamUrl, target, playbackOptionsForStep(currentMode, fallbackReason));
     if(token !== vid._seekToken)return;
+    validateMediaPlaybackSource(plan.src, fallbackReason, {ftpUrl:_ftpStreamUrl, mode:plan.mode, fallbackReason});
     _currentFtpPlaybackPlan = plan;
     _ftpNeedsTranscode = planNeedsSourceSeek(plan);
     vid._sourceSeekRequired = _ftpNeedsTranscode;
@@ -4401,7 +4720,7 @@ async function ftpSeekTo(seconds){
       _ftpDuration = Number(plan.duration);
       setPlayerDuration(_ftpDuration,'api');
     }
-    const attached = await attachPlayerSource(plan.src, plan.mode);
+    const attached = await attachPlayerSource(plan.src, plan.mode, {playbackType:'media', fallbackReason});
     if(!attached)throw new Error('HLS not supported');
     if(wasPlaying)vid.play().catch(()=>{});
   }catch(e){
@@ -4425,6 +4744,12 @@ async function ftpSeekTo(seconds){
 
 
 function closePlayer(){
+  svStopLivePlaybackForMedia('player close');
+  svActivePlaybackType='idle';
+  svMediaPlayerState.playbackType='idle';
+  svMediaPlayerState.selectedSourceUrl='';
+  svMediaPlayerState.recoverySourceUrl='';
+  svMediaPlayerState.fallbackReason='';
   clearInterval(vid._pi);clearTimeout(uiHideTimer);
   stopPlayerUiClock();
   if(playerProgressRaf){
@@ -4507,7 +4832,11 @@ function setQuality(q){
   vid._sourceOffset = sourceSeek ? t : 0;
   vid.addEventListener('loadedmetadata',()=>{if(!sourceSeek)vid.currentTime=t;if(!paused)vid.play().catch(()=>{});},{once:true});
   if(sourceSeek)sourceSeekTo(t);
-  else attachPlayerSource(streamUrlFor(currentStreamId, 0),'direct');
+  else {
+    const src=streamUrlFor(currentStreamId, 0);
+    validateMediaPlaybackSource(src, 'quality change', {localId:currentStreamId, mode:'direct', fallbackReason:'quality change'});
+    attachPlayerSource(src,'direct', {playbackType:'media', fallbackReason:'quality change'});
+  }
   document.querySelectorAll('#qualList .pd-item').forEach(el=>{el.classList.toggle('active',el.textContent.trim().startsWith(q==='auto'?'Auto':q));});
   closeAllDropdowns();showToast(`Quality: ${q==='auto'?'Auto':q}`);
 }

@@ -1,6 +1,6 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260624-laggy-english-playback1';
+const SV_ASSET_VERSION = '20260624-restore-media-playback3';
 function svDebugLoggingEnabled(){
   try{
     return new URLSearchParams(location.search).has('debug')
@@ -464,7 +464,60 @@ function updateWatchProgress(id, currentTime, duration){}
 let availableAudio = [];
 let currentAudioIdx = 0;
 const SV_STARTUP_AUDIO_TIMEOUT_MS = 9000;
-const SV_STARTUP_MULTI_AUDIO_TIMEOUT_MS = 30000;
+const SV_STARTUP_MULTI_AUDIO_TIMEOUT_MS = 9000;
+const SV_MEDIA_SOURCE_STARTUP_TIMEOUT_MS = 12000;
+const SV_MEDIA_TRANSCODE_STARTUP_TIMEOUT_MS = 25000;
+
+function clearMediaStartupWatchdog(){
+  const cleanup=vid?._mediaStartupWatchdogCleanup;
+  vid._mediaStartupWatchdogCleanup=null;
+  if(typeof cleanup === 'function')cleanup();
+}
+
+function armMediaStartupWatchdog(src, context, isCurrent, onTimeout, timeoutMs=SV_MEDIA_SOURCE_STARTUP_TIMEOUT_MS){
+  clearMediaStartupWatchdog();
+  const expected=(()=>{try{return new URL(src, window.location.href).href;}catch{return String(src||'');}})();
+  const events=['loadeddata','canplay','playing'];
+  let timer=0;
+  let settled=false;
+  const sourceMatches=()=>{
+    const current=vid.currentSrc || vid.src || '';
+    if(!current)return false;
+    try{return new URL(current, window.location.href).href === expected;}catch{return current === expected;}
+  };
+  const cleanup=()=>{
+    clearTimeout(timer);
+    events.forEach(event=>vid.removeEventListener(event,onReady));
+    if(vid._mediaStartupWatchdogCleanup === cleanup)vid._mediaStartupWatchdogCleanup=null;
+  };
+  const finish=()=>{
+    if(settled)return;
+    settled=true;
+    cleanup();
+  };
+  const onReady=()=>{
+    if(!isCurrent() || !sourceMatches())return;
+    if(vid.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && vid.videoWidth > 0 && vid.videoHeight > 0)finish();
+  };
+  events.forEach(event=>vid.addEventListener(event,onReady));
+  timer=setTimeout(()=>{
+    if(settled || !isCurrent() || !sourceMatches())return finish();
+    if(vid.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && vid.videoWidth > 0 && vid.videoHeight > 0)return finish();
+    finish();
+    playbackDebug('media source startup timeout', {
+      context,
+      src,
+      readyState:vid.readyState,
+      videoWidth:vid.videoWidth,
+      videoHeight:vid.videoHeight,
+      error:videoErrorInfo()
+    });
+    Promise.resolve(onTimeout()).catch(error=>{
+      playbackDebug('media startup timeout fallback failed', {context,message:error?.message || String(error)});
+    });
+  }, timeoutMs);
+  vid._mediaStartupWatchdogCleanup=cleanup;
+}
 
 function appliedAudioIndex(){
   return Number.isInteger(vid?._appliedAudioIdx) ? vid._appliedAudioIdx : currentAudioIdx;
@@ -2558,6 +2611,34 @@ function mediaInfoHasUnsupportedVideo(info){
   return ['hevc','h265','vp9','vp8','av1','vc1'].some(c=>codec.includes(c));
 }
 
+function browserCanPlayVideoCodec(info){
+  const codec=String(info?.videoCodec || '').toLowerCase();
+  if(codec.includes('hevc') || codec.includes('h265')){
+    return !!(vid.canPlayType('video/mp4; codecs="hvc1"') || vid.canPlayType('video/mp4; codecs="hev1"'));
+  }
+  if(codec.includes('vp9')){
+    return !!(vid.canPlayType('video/webm; codecs="vp9"') || vid.canPlayType('video/mp4; codecs="vp09.00.10.08"'));
+  }
+  if(codec.includes('vp8'))return !!vid.canPlayType('video/webm; codecs="vp8"');
+  if(codec.includes('av1'))return !!vid.canPlayType('video/mp4; codecs="av01.0.05M.08"');
+  if(codec.includes('vc1'))return false;
+  return true;
+}
+
+function mediaNeedsBrowserVideoTranscode(info, sourceUrl=''){
+  let codec=String(info?.videoCodec || '').toLowerCase();
+  if(!codec){
+    const source=(()=>{try{return decodeURIComponent(String(sourceUrl || ''));}catch{return String(sourceUrl || '');}})().toLowerCase();
+    if(/\b(?:x265|h265|hevc)\b/.test(source))codec='hevc';
+    else if(/\bvp9\b/.test(source))codec='vp9';
+    else if(/\bvp8\b/.test(source))codec='vp8';
+    else if(/\bav1\b/.test(source))codec='av1';
+    else if(/\bvc-?1\b/.test(source))codec='vc1';
+  }
+  const codecInfo=codec ? {...(info || {}), videoCodec:codec} : info;
+  return mediaInfoHasUnsupportedVideo(codecInfo) && !browserCanPlayVideoCodec(codecInfo);
+}
+
 function mediaInfoHasRemuxContainer(info){
   const container = String(info?.container || '').toLowerCase();
   return ['matroska','webm','avi','flv','mpegts'].some(c=>container.includes(c));
@@ -2582,18 +2663,6 @@ function playerDuration(){
   if(validDurationSeconds(vid._stableDuration))return vid._stableDuration;
   if(vid._sourceSeekRequired)return 0;
   if(!vid._durationPending&&validDurationSeconds(vid.duration))return vid.duration;
-  return 0;
-}
-
-function playerBufferHealthSeconds(){
-  try{
-    const local = Number.isFinite(vid.currentTime) ? vid.currentTime : 0;
-    for(let i=0;i<vid.buffered.length;i++){
-      if(vid.buffered.start(i) <= local && vid.buffered.end(i) >= local){
-        return Math.max(0, vid.buffered.end(i) - local);
-      }
-    }
-  }catch(_){}
   return 0;
 }
 
@@ -3205,7 +3274,6 @@ function validPlaybackSourceUrl(src){
     return url.pathname.startsWith('/stream/')
       || url.pathname.startsWith('/api/playback/local/')
       || url.pathname === '/api/playback/ftp'
-      || url.pathname === '/api/playback/ftp/cache'
       || url.pathname === '/api/ftp/proxy'
       || url.pathname === '/api/ftp/stream'
       || url.pathname.startsWith('/api/mobile-hls/');
@@ -3533,14 +3601,10 @@ async function sourceSeekTo(seconds){
     _currentPlaybackPlan = plan;
     vid._sourceSeekRequired = planNeedsSourceSeek(plan);
     vid._mediaSourceSeekRequired = vid._sourceSeekRequired;
-    vid._sourceOffset = vid._sourceSeekRequired ? target : 0;
     if(validDurationSeconds(Number(plan.duration)))setPlayerDuration(Number(plan.duration),'api');
     vid.addEventListener('loadedmetadata', function onSourceSeekMeta(){
       if(token !== vid._seekToken)return;
       vid.removeEventListener('loadedmetadata', onSourceSeekMeta);
-      if(!vid._sourceSeekRequired && target > 0){
-        try{vid.currentTime = target;}catch(_){}
-      }
       clearTimeout(seekTimer);
       document.getElementById('playerSpinner').classList.remove('on');
       if(wasPlaying)vid.play().catch(()=>{});
@@ -3658,16 +3722,18 @@ function fallbackOrderForRemote(url, plan={}){
   const unsupported = plan?.unsupportedVideoHint || urlHasUnsupportedVideoHint(url);
   const selected=selectedAudioTrack();
   const explicitAudio=availableAudio.length > 1 || currentAudioIdx > 0 || Number.isFinite(selected?.streamIndex ?? selected?.sourceIndex);
-  if((plan?.mode === 'audio' || plan?.transport === 'audio') && selected && !audioCodecIsBrowserSafe(selected))return ['audio','proxy'];
-  if(englishStartupRequiresMappedSource() || explicitAudio)return ['audio','remux','proxy'];
-  if(!isMobilePlaybackClient())return ['proxy','remux','audio'];
-  if(unsupported || explicitAudio)return ['audio','remux','proxy'];
-  return ['proxy','remux','audio'];
+  if(unsupported)return ['transcode','audio','remux','proxy'];
+  if((plan?.mode === 'audio' || plan?.transport === 'audio') && selected && !audioCodecIsBrowserSafe(selected))return ['audio','transcode','proxy'];
+  if(englishStartupRequiresMappedSource() || explicitAudio)return ['audio','remux','transcode','proxy'];
+  if(!isMobilePlaybackClient())return ['proxy','remux','audio','transcode'];
+  if(explicitAudio)return ['audio','remux','transcode','proxy'];
+  return ['proxy','remux','audio','transcode'];
 }
 
 function fallbackOrderForLocal(plan={}){
-  if(englishStartupRequiresMappedSource())return ['audio','remux','direct'];
-  return ['remux','audio','direct'];
+  if(plan?.unsupportedVideoHint || plan?.unsupportedVideoCodec)return ['transcode','audio','remux','direct'];
+  if(englishStartupRequiresMappedSource())return ['audio','remux','transcode','direct'];
+  return ['remux','audio','transcode','direct'];
 }
 
 function resetToOriginalAudioFallback(context='original source fallback'){
@@ -3769,7 +3835,15 @@ async function prepareLocalStartupAudio(id, movie={}, scope=null){
     if(scope && !isCurrentPlaybackScope(scope))throw new DOMException('Stale playback request', 'AbortError');
     return applyStartupAudioInfo(info, sourceUrl, 'local startup');
   }catch(e){
-    if(e?.name === 'AbortError')throw e;
+    if(e?.name === 'AbortError' && scope && !isCurrentPlaybackScope(scope))throw e;
+    if(seedAudioTracksFromFilename(sourceUrl, 'local startup metadata fallback')){
+      return {
+        info:null,
+        options:{forceAudio:true, preferEnglishServer:true},
+        selected:selectedAudioTrack(),
+        reason:e.message || 'startup metadata timeout'
+      };
+    }
     resetUncertainStartupAudio('local startup', e.message);
     return {info:null, options:{}, selected:null, reason:e.message};
   }
@@ -3793,7 +3867,15 @@ async function prepareFtpStartupAudio(streamUrl, scope=null){
     if(scope && !isCurrentPlaybackScope(scope))throw new DOMException('Stale playback request', 'AbortError');
     return applyStartupAudioInfo(info, streamUrl, 'FTP startup');
   }catch(e){
-    if(e?.name === 'AbortError')throw e;
+    if(e?.name === 'AbortError' && scope && !isCurrentPlaybackScope(scope))throw e;
+    if(seedAudioTracksFromFilename(streamUrl, 'FTP startup metadata fallback')){
+      return {
+        info:null,
+        options:{forceAudio:true, preferEnglishServer:true},
+        selected:selectedAudioTrack(),
+        reason:e.message || 'startup metadata timeout'
+      };
+    }
     resetUncertainStartupAudio('FTP startup', e.message);
     return {info:null, options:{}, selected:null, reason:e.message};
   }
@@ -3826,11 +3908,19 @@ async function attachFtpFallbackStep(resolvedStreamUrl, name, step, failedAt){
   }, {once:true});
   vid.addEventListener('error', function onFtpFallbackError(){
     if(_ftpStreamUrl !== resolvedStreamUrl)return;
+    clearMediaStartupWatchdog();
     playbackDebug('ftp fallback video error', {step, error:videoErrorInfo()});
     tryFtpAdaptiveFallback(resolvedStreamUrl, name, playbackTime()).catch(()=>showVlcPlaybackNotice(resolvedStreamUrl, name));
   }, {once:true});
   playbackDebug('ftp fallback attach', {playbackType:'media', step, fallbackReason, mode:fallbackMode, src:fallback.src});
   if(!await attachPlayerSource(fallback.src, fallbackMode, {playbackType:'media', fallbackReason}))throw new Error(`Could not attach ${step} source`);
+  armMediaStartupWatchdog(
+    fallback.src,
+    fallbackReason,
+    ()=>_ftpStreamUrl === resolvedStreamUrl,
+    ()=>tryFtpAdaptiveFallback(resolvedStreamUrl, name, playbackTime()),
+    step === 'transcode' ? SV_MEDIA_TRANSCODE_STARTUP_TIMEOUT_MS : SV_MEDIA_SOURCE_STARTUP_TIMEOUT_MS
+  );
   if(shouldPlay)vid.play().catch(e=>{
     if(e?.name === 'NotAllowedError'){
       updatePlayIcons(true);
@@ -3886,11 +3976,19 @@ async function attachLocalFallbackStep(id, step, failedAt){
   }, {once:true});
   vid.addEventListener('error', function onLocalFallbackError(){
     if(String(currentStreamId) !== String(id) || _ftpStreamUrl)return;
+    clearMediaStartupWatchdog();
     playbackDebug('local fallback video error', {id, step, error:videoErrorInfo()});
     tryLocalAdaptiveFallback(id, playbackTime()).catch(()=>showPlayerNotice(DESKTOP_UNSUPPORTED_MESSAGE));
   }, {once:true});
   playbackDebug('local fallback attach', {playbackType:'media', id, step, fallbackReason, mode:fallbackMode, src:fallback.src});
   if(!await attachPlayerSource(fallback.src, fallbackMode, {playbackType:'media', fallbackReason}))throw new Error(`Could not attach ${step} source`);
+  armMediaStartupWatchdog(
+    fallback.src,
+    fallbackReason,
+    ()=>String(currentStreamId) === String(id) && !_ftpStreamUrl,
+    ()=>tryLocalAdaptiveFallback(id, playbackTime()),
+    step === 'transcode' ? SV_MEDIA_TRANSCODE_STARTUP_TIMEOUT_MS : SV_MEDIA_SOURCE_STARTUP_TIMEOUT_MS
+  );
   if(shouldPlay)vid.play().catch(e=>{
     if(e?.name === 'NotAllowedError'){
       updatePlayIcons(true);
@@ -3934,6 +4032,7 @@ async function playMedia(id, name, year){
   }
   trackView(id);
   const playbackScope = beginPlaybackRequestScope('local media startup');
+  clearMediaStartupWatchdog();
   svBeginMediaPlayback('local', id, name || movie.name || '');
   isLiveMode = false;
   if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
@@ -4050,7 +4149,20 @@ async function playMedia(id, name, year){
     // play() call remains inside the card/episode click's user activation.
     const needsServerStart = !!(startupOptions.forceAudio || startupOptions.forceRemux || startupOptions.forceHls || startupOptions.mode);
     let plan;
-    if(mobilePlayback || needsServerStart){
+    if(mediaNeedsBrowserVideoTranscode(startupInfo, sourceFile)){
+      const fallbackReason='browser video codec transcode';
+      plan={
+        ok:true,
+        id:String(id),
+        mode:'stream',
+        transport:'stream',
+        src:localTranscodeSrc(id,0,fallbackReason),
+        duration:0,
+        unsupportedVideoHint:true
+      };
+      vid._localFallbackStepsTried.add('transcode');
+      mediaFixLog('local startup using browser-compatible video transcode', {id,codec:startupInfo?.videoCodec || ''});
+    }else if(mobilePlayback || needsServerStart){
       try{
         plan = await fetchLocalPlaybackPlan(id,0,{...startupOptions, signal:playbackScope.signal});
       }catch(e){
@@ -4078,6 +4190,7 @@ async function playMedia(id, name, year){
     }
     vid.addEventListener('error', async function onLocalPlaybackError(){
       if(String(currentStreamId) !== String(id) || _ftpStreamUrl || vid._localFallbackTried)return;
+      clearMediaStartupWatchdog();
       vid._localFallbackTried = true;
       playbackDebug('local direct video error', {id, error:videoErrorInfo()});
       tryLocalAdaptiveFallback(id, playbackTime()).catch(()=>showPlayerNotice(DESKTOP_UNSUPPORTED_MESSAGE));
@@ -4104,6 +4217,16 @@ async function playMedia(id, name, year){
       await tryLocalAdaptiveFallback(id, playbackTime());
       return;
     }
+    armMediaStartupWatchdog(
+      plan.src,
+      'local startup',
+      ()=>String(currentStreamId) === String(id) && !_ftpStreamUrl && isCurrentPlaybackScope(playbackScope),
+      ()=>{
+        vid._localFallbackTried=true;
+        return tryLocalAdaptiveFallback(id, playbackTime());
+      },
+      plan.mode === 'stream' ? SV_MEDIA_TRANSCODE_STARTUP_TIMEOUT_MS : SV_MEDIA_SOURCE_STARTUP_TIMEOUT_MS
+    );
     if(validDurationSeconds(playerDuration()))maybeResumeProgress(id, playerDuration());
     if(mobilePlayback){
       vid.play().catch(e=>{
@@ -4267,22 +4390,18 @@ async function switchAudioWithServer(idx){
     });
     if(ftpUrl){
       _currentFtpPlaybackPlan=plan;
-      _ftpNeedsTranscode=planNeedsSourceSeek(plan);
+      _ftpNeedsTranscode=true;
       _ftpCurrentTime=target;
     }else{
       _currentPlaybackPlan=plan;
     }
-    vid._sourceSeekRequired=planNeedsSourceSeek(plan);
-    vid._mediaSourceSeekRequired=vid._sourceSeekRequired;
-    vid._sourceOffset=vid._sourceSeekRequired ? target : 0;
+    vid._sourceSeekRequired=true;
+    vid._mediaSourceSeekRequired=true;
     canPlay=waitForSwitchCanPlay(token);
     const attached=await attachPlayerSource(plan.src,plan.mode||'audio', {playbackType:'media', fallbackReason:'audio switch'});
     if(!attached)throw new Error('Audio stream could not be attached');
     await canPlay;
     if(token!==vid._audioSwitchToken)return;
-    if(!vid._sourceSeekRequired && target > 0){
-      try{vid.currentTime=target;}catch(_){}
-    }
     setAppliedAudioIndex(idx,'server audio switch');
     if(!previous.paused)vid.play().catch(()=>{});
     showToast(`Audio: ${selected.title||audioTrackTitle(selected,idx)}`);
@@ -4567,6 +4686,7 @@ async function playFtpMedia(streamUrl, name, year){
       return;
     }
     const playbackScope = beginPlaybackRequestScope('FTP media startup');
+    clearMediaStartupWatchdog();
     svBeginMediaPlayback('ftp', requestedStreamUrl, name || '');
     if(!svAssertNoLiveSourceForMedia(requestedStreamUrl, {fallbackReason:'FTP media startup'}))return;
     const mobilePlayback = isMobilePlaybackClient();
@@ -4659,7 +4779,12 @@ async function playFtpMedia(streamUrl, name, year){
       metadataLoaded:!!startupInfo
     });
     const needsServerStart = !!(startupOptions.forceAudio || startupOptions.forceRemux || startupOptions.forceHls || startupOptions.mode);
-    if(!mobilePlayback && !needsServerStart){
+    if(mediaNeedsBrowserVideoTranscode(startupInfo, requestedStreamUrl)){
+      const fallbackReason='browser video codec transcode';
+      playInfo=ftpStreamPlaybackPlan(requestedStreamUrl,0,fallbackReason);
+      vid._ftpFallbackStepsTried.add('transcode');
+      mediaFixLog('FTP startup using browser-compatible video transcode', {url:requestedStreamUrl,codec:startupInfo?.videoCodec || ''});
+    }else if(!mobilePlayback && !needsServerStart){
       // Never redirect an HTTPS desktop page to the private/HTTP media origin.
       // The same-origin proxy preserves Range/206 responses and encoded names.
       playInfo = localFtpPlaybackPlan(requestedStreamUrl, {forceProxy:true, fallbackReason:startupOptions.fallbackReason});
@@ -4718,8 +4843,6 @@ async function playFtpMedia(streamUrl, name, year){
     // ── Attach spinner‑hiding & play listener BEFORE setting src ──
     vid.addEventListener('canplay', function onFtpCanPlay() {
       vid.removeEventListener('canplay', onFtpCanPlay);
-      clearTimeout(vid._ftpFallbackTimer);
-      vid._ftpFallbackTimer = null;
       applyPreferredNativeAudioIfSafe('FTP canplay');
       document.getElementById('playerSpinner').classList.remove('on');
     }, { once: true });
@@ -4727,6 +4850,7 @@ async function playFtpMedia(streamUrl, name, year){
     vid.addEventListener('error', function onFtpPlaybackError() {
       if (_ftpStreamUrl !== resolvedStreamUrl) return;
       if (vid._ftpPlaybackFallbackTried) return;
+      clearMediaStartupWatchdog();
       vid._ftpPlaybackFallbackTried = true;
       playbackDebug('ftp initial video error', {mode:playbackMode, error:videoErrorInfo()});
       tryFtpAdaptiveFallback(resolvedStreamUrl, name, playbackTime()).catch(()=>showVlcPlaybackNotice(resolvedStreamUrl, name));
@@ -4754,6 +4878,16 @@ async function playFtpMedia(streamUrl, name, year){
       await tryFtpAdaptiveFallback(resolvedStreamUrl, name, playbackTime());
       return;
     }
+    armMediaStartupWatchdog(
+      finalPlayUrl,
+      'FTP startup',
+      ()=>_ftpStreamUrl === resolvedStreamUrl && isCurrentPlaybackScope(playbackScope),
+      ()=>{
+        vid._ftpPlaybackFallbackTried=true;
+        return tryFtpAdaptiveFallback(resolvedStreamUrl, name, playbackTime());
+      },
+      playbackMode === 'stream' ? SV_MEDIA_TRANSCODE_STARTUP_TIMEOUT_MS : SV_MEDIA_SOURCE_STARTUP_TIMEOUT_MS
+    );
 
     setTimeout(()=>{
       if(_ftpStreamUrl !== resolvedStreamUrl)return;
@@ -4800,10 +4934,17 @@ async function playFtpMedia(streamUrl, name, year){
         }, {once:true});
         vid.addEventListener('error', function onStartupProxyFallbackError(){
           if(_ftpStreamUrl !== (fallback.decodedUrl || requestedStreamUrl))return;
+          clearMediaStartupWatchdog();
           showVlcPlaybackNotice(requestedStreamUrl, name);
         }, {once:true});
         document.getElementById('playerSpinner').classList.add('on');
         if(await attachPlayerSource(fallbackUrl, fallback.mode || 'proxy', {playbackType:'media', fallbackReason:'FTP startup error proxy fallback'})){
+          armMediaStartupWatchdog(
+            fallbackUrl,
+            'FTP startup proxy fallback',
+            ()=>_ftpStreamUrl === (fallback.decodedUrl || requestedStreamUrl),
+            ()=>showVlcPlaybackNotice(requestedStreamUrl, name)
+          );
           vid.play().catch(err=>handleInitialPlayRejection(err,()=>showVlcPlaybackNotice(requestedStreamUrl,name)));
           return;
         }
@@ -4859,18 +5000,10 @@ async function ftpSeekTo(seconds){
     _ftpNeedsTranscode = planNeedsSourceSeek(plan);
     vid._sourceSeekRequired = _ftpNeedsTranscode;
     vid._mediaSourceSeekRequired = _ftpNeedsTranscode;
-    vid._sourceOffset = _ftpNeedsTranscode ? target : 0;
     if(validDurationSeconds(Number(plan.duration))){
       _ftpDuration = Number(plan.duration);
       setPlayerDuration(_ftpDuration,'api');
     }
-    vid.addEventListener('loadedmetadata', function onFtpCachedSeekMeta(){
-      if(token !== vid._seekToken)return;
-      vid.removeEventListener('loadedmetadata', onFtpCachedSeekMeta);
-      if(!_ftpNeedsTranscode && target > 0){
-        try{vid.currentTime = target;}catch(_){}
-      }
-    }, {once:true});
     const attached = await attachPlayerSource(plan.src, plan.mode, {playbackType:'media', fallbackReason});
     if(!attached)throw new Error('HLS not supported');
     if(wasPlaying)vid.play().catch(()=>{});
@@ -4897,6 +5030,7 @@ async function ftpSeekTo(seconds){
 
 function closePlayer(){
   abortPlaybackRequestScope('player close');
+  clearMediaStartupWatchdog();
   svStopLivePlaybackForMedia('player close');
   svActivePlaybackType='idle';
   svMediaPlayerState.playbackType='idle';
@@ -6412,9 +6546,9 @@ vid._mdH = () => {
     updatePlayIcons(true);
     if(currentStreamId&&!_ftpStreamUrl){watchProgress[currentStreamId]={progress:0.99,updatedAt:Date.now()};try{localStorage.setItem('sv_progress',JSON.stringify(watchProgress));}catch(_){}}
   };
-  vid._waH=()=>{playbackDebug('video waiting',{mode:_currentPlaybackPlan?.mode || _currentFtpPlaybackPlan?.mode || '',transport:_currentPlaybackPlan?.transport || _currentFtpPlaybackPlan?.transport || '',bufferHealth:playerBufferHealthSeconds(),time:playbackTime()});document.getElementById('playerSpinner').classList.add('on');showUI();};
-  vid._plH=()=>{playbackDebug('video playing',{mode:_currentPlaybackPlan?.mode || _currentFtpPlaybackPlan?.mode || '',transport:_currentPlaybackPlan?.transport || _currentFtpPlaybackPlan?.transport || '',bufferHealth:playerBufferHealthSeconds(),time:playbackTime()});document.getElementById('playerSpinner').classList.remove('on');startPlayerUiClock();schedulePlayerProgressRender(playbackTime(),dur());scheduleHideUI();};
-  vid._cpH=()=>{playbackDebug('video canplay',{mode:_currentPlaybackPlan?.mode || _currentFtpPlaybackPlan?.mode || '',transport:_currentPlaybackPlan?.transport || _currentFtpPlaybackPlan?.transport || '',bufferHealth:playerBufferHealthSeconds(),time:playbackTime()});document.getElementById('playerSpinner').classList.remove('on');};
+  vid._waH=()=>{document.getElementById('playerSpinner').classList.add('on');showUI();};
+  vid._plH=()=>{document.getElementById('playerSpinner').classList.remove('on');startPlayerUiClock();schedulePlayerProgressRender(playbackTime(),dur());scheduleHideUI();};
+  vid._cpH=()=>{document.getElementById('playerSpinner').classList.remove('on');};
   vid._paH=()=>{updatePlayIcons(false);startPlayerUiClock();scheduleHideUI();};
   vid._puH=()=>{stopPlayerUiClock();updatePlayIcons(true);schedulePlayerProgressRender(playbackTime(),dur(),{force:true});showUI();};
   vid._skH=()=>setTimeout(scheduleSubtitleOverlayUpdate,60);
@@ -6747,28 +6881,20 @@ function svStartPosterObserver(){
 }
 if(document.readyState === 'loading')document.addEventListener('DOMContentLoaded', svStartPosterObserver, { once:true });
 else svStartPosterObserver();
-function svRefreshStaleAssetCaches(){
-  if(!('caches' in window))return;
-  caches.keys()
-    .then(keys=>Promise.all(keys
-      .filter(key=>/^streamvault-assets-/.test(key) && !key.includes(SV_ASSET_VERSION))
-      .map(key=>caches.delete(key))))
-    .then(deleted=>{
-      if(deleted?.some(Boolean))mediaFixLog('cleared stale asset caches',{assetVersion:SV_ASSET_VERSION});
-    })
-    .catch(()=>{});
+async function svClearServiceWorkersAndCaches(){
+  try{
+    if('serviceWorker' in navigator){
+      const registrations=await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map(registration=>registration.unregister()));
+    }
+    if('caches' in window){
+      const keys=await caches.keys();
+      await Promise.all(keys.filter(key=>key.startsWith('streamvault-')).map(key=>caches.delete(key)));
+    }
+    mediaFixLog('cleared service workers and caches',{assetVersion:SV_ASSET_VERSION});
+  }catch(_){}
 }
-if('serviceWorker' in navigator){
-  window.addEventListener('load', ()=>{
-    svRefreshStaleAssetCaches();
-    navigator.serviceWorker.register(`/sw.js?v=${SV_ASSET_VERSION}`)
-      .then(reg=>{
-        reg.update?.();
-        navigator.serviceWorker.controller?.postMessage?.({type:'SV_CLEAR_ASSET_CACHE',version:SV_ASSET_VERSION});
-      })
-      .catch(()=>{});
-  }, { once:true });
-}
+window.addEventListener('load', svClearServiceWorkersAndCaches, { once:true });
 function svChannelColor(ch={}){
   const direct = ch.color || ch.brandColor || ch.primaryColor;
   if(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(String(direct||'')))return direct;

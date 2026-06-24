@@ -1,4 +1,4 @@
-const SV_CACHE_VERSION = '20260624-laggy-english-playback1';
+const SV_CACHE_VERSION = '20260624-restore-media-playback3';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
 const SV_POSTER_CACHE = `streamvault-posters-${SV_CACHE_VERSION}`;
 const SV_ASSET_CACHE = `streamvault-assets-${SV_CACHE_VERSION}`;
@@ -12,10 +12,9 @@ self.addEventListener('install', event => {
 
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
-    const keep = new Set([SV_POSTER_CACHE, SV_ASSET_CACHE, SV_API_CACHE]);
     const keys = await caches.keys();
-    await Promise.all(keys.filter(key => key.startsWith('streamvault-') && !keep.has(key)).map(key => caches.delete(key)));
-    await self.clients.claim();
+    await Promise.all(keys.filter(key => key.startsWith('streamvault-')).map(key => caches.delete(key)));
+    await self.registration.unregister();
   })());
 });
 

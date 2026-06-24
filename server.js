@@ -27,7 +27,6 @@ const MASSIVE_CATALOG_FILE = path.join(__dirname, 'scan-output', 'clean-catalog.
 const SV_CACHE_DIR = path.join(__dirname, 'cache');
 const SV_BOOT_SEARCH_FILE = path.join(SV_CACHE_DIR, 'boot-search-index.json');
 const MOBILE_HLS_DIR = path.join(__dirname, 'cache', 'mobile-hls');
-const MEDIA_READY_CACHE_DIR = path.join(SV_CACHE_DIR, 'media-ready');
 const MOBILE_HLS_IDLE_MS = Number(process.env.MOBILE_HLS_IDLE_MS || 45000);
 const MOBILE_HLS_MAX_SESSIONS = Number(process.env.MOBILE_HLS_MAX_SESSIONS || 2);
 const MOBILE_HLS_FFMPEG_THREADS = String(process.env.MOBILE_HLS_FFMPEG_THREADS || 1);
@@ -42,11 +41,7 @@ const MEDIA_FFMPEG_STARTUP_MS = Number(process.env.MEDIA_FFMPEG_STARTUP_MS || 15
 const MEDIA_AUDIO_OFFSET_THRESHOLD_SEC = Number(process.env.MEDIA_AUDIO_OFFSET_THRESHOLD_SEC || 0.05);
 const MEDIA_PACKET_PROBE_WINDOW_SEC = Number(process.env.MEDIA_PACKET_PROBE_WINDOW_SEC || 20);
 const MEDIA_PACKET_PROBE_TIMEOUT_MS = Number(process.env.MEDIA_PACKET_PROBE_TIMEOUT_MS || 12000);
-const MEDIA_PACKET_SYNC_BACKGROUND = process.env.MEDIA_PACKET_SYNC_BACKGROUND === '1';
-const MEDIA_READY_CACHE_ENABLED = process.env.MEDIA_READY_CACHE !== '0';
-const MEDIA_READY_CACHE_TTL_MS = Number(process.env.MEDIA_READY_CACHE_TTL_MS || 10 * 24 * 60 * 60 * 1000);
-const MEDIA_READY_CACHE_MAX_BYTES = Number(process.env.MEDIA_READY_CACHE_MAX_BYTES || 80 * 1024 * 1024 * 1024);
-const MEDIA_READY_CACHE_BUILD_TIMEOUT_MS = Number(process.env.MEDIA_READY_CACHE_BUILD_TIMEOUT_MS || 90 * 60 * 1000);
+const MEDIA_PACKET_SYNC_BACKGROUND = process.env.MEDIA_PACKET_SYNC_BACKGROUND !== '0';
 const SV_PLAYBACK_VERBOSE = process.env.SV_PLAYBACK_VERBOSE === '1';
 let activeMediaFfmpegStreams = 0;
 
@@ -151,7 +146,6 @@ const mediaInfoCache = new Map();
 const mediaAudioInfoCache = new Map();
 const mediaDurationInfoCache = new Map();
 const playbackAudioSelectionCache = new Map();
-const mediaReadyCacheJobs = new Map();
 
 function getAudioOnlyMediaInfo(filePath) {
   return new Promise((resolve, reject) => {
@@ -6114,498 +6108,6 @@ function ffmpegMp4Args({
   return args;
 }
 
-function mediaReadyCacheSafeHash(value) {
-  return crypto.createHash('sha256').update(String(value || '')).digest('hex').slice(0, 32);
-}
-
-function mediaReadySourceIdentity(input, remote = false) {
-  if (remote) return `remote:${input}`;
-  try {
-    const stat = fs.statSync(input);
-    return `local:${input}:${stat.size}:${stat.mtimeMs}`;
-  } catch {
-    return `local:${input}`;
-  }
-}
-
-function mediaReadyCacheDescriptor(options, sync) {
-  const selectedAudioStreamIdx = Number(options.audioStreamIdx);
-  if (!Number.isFinite(selectedAudioStreamIdx) || selectedAudioStreamIdx < 0) return null;
-  const mode = options.mode === 'audio' ? 'audio' : 'remux';
-  const sourceIdentity = mediaReadySourceIdentity(options.input, !!options.remote);
-  const correctionAppliedSec = Number(sync?.correctionAppliedSec || 0);
-  const keyPayload = {
-    v: 3,
-    sourceIdentity,
-    remote: !!options.remote,
-    mode,
-    audioStreamIdx: selectedAudioStreamIdx,
-    videoStreamIdx: Number(options.videoStreamIdx ?? 0) || 0,
-    correctionAppliedSec: roundedSeconds(correctionAppliedSec),
-    hevcTag: !!options.hevcTag,
-  };
-  const key = mediaReadyCacheSafeHash(JSON.stringify(keyPayload));
-  const dir = path.join(MEDIA_READY_CACHE_DIR, key.slice(0, 2));
-  return {
-    key,
-    dir,
-    finalPath: path.join(dir, `${key}.mp4`),
-    tempPath: path.join(dir, `${key}.tmp.mp4`),
-    metaPath: path.join(dir, `${key}.json`),
-    mode,
-    sourceIdentity,
-    correctionAppliedSec: keyPayload.correctionAppliedSec,
-    keyPayload,
-  };
-}
-
-function mediaReadyCacheExists(descriptor) {
-  if (!descriptor) return false;
-  try {
-    const stat = fs.statSync(descriptor.finalPath);
-    return stat.isFile() && stat.size > 1024 * 256;
-  } catch {
-    return false;
-  }
-}
-
-function mediaReadyCacheUrlForLocal(id, req, mode) {
-  return `/api/playback/local/${encodeURIComponent(id)}/cache${playbackQueryFromReq(req, { mode, start: req.query.start || '' })}`;
-}
-
-function mediaReadyCacheUrlForFtp(srcUrl, req, mode) {
-  const params = new URLSearchParams();
-  params.set('url', srcUrl);
-  params.set('mode', mode);
-  if (req.query.playbackType) params.set('playbackType', String(req.query.playbackType));
-  if (req.query.fallbackReason) params.set('fallbackReason', String(req.query.fallbackReason));
-  if (req.query.start) params.set('start', String(Math.floor(playbackStartFromReq(req))));
-  if (req.query.audio) params.set('audio', String(req.query.audio));
-  if (req.query.audioStream) params.set('audioStream', String(req.query.audioStream));
-  if (req.query.english) params.set('english', String(req.query.english));
-  if (req.query.preferEnglish) params.set('preferEnglish', String(req.query.preferEnglish));
-  if (req.query.quality) params.set('quality', String(req.query.quality));
-  return `/api/playback/ftp/cache?${params.toString()}`;
-}
-
-function mediaReadyCachedPlan(basePlan, cacheUrl, duration = 0) {
-  return {
-    ...basePlan,
-    mode: 'direct',
-    transport: 'cached',
-    cachedEnglishReady: true,
-    src: cacheUrl,
-    playUrl: cacheUrl,
-    finalPlayUrl: cacheUrl,
-    duration: Number(duration) || Number(basePlan.duration) || 0,
-  };
-}
-
-function ffmpegCachedMp4Args(options, sync) {
-  const mode = options.mode === 'audio' ? 'audio' : 'remux';
-  const args = ['-hide_banner', '-loglevel', 'warning', '-nostdin', '-y'];
-  args.push(...mappedMp4InputArgs(!!options.remote), '-i', options.input);
-
-  const selectedAudioStreamIdx = Number(options.audioStreamIdx);
-  const correctionAppliedSec = Number(sync?.correctionAppliedSec || 0);
-  const useOffsetAudioInput = Number.isFinite(selectedAudioStreamIdx)
-    && selectedAudioStreamIdx >= 0
-    && Number.isFinite(correctionAppliedSec)
-    && Math.abs(correctionAppliedSec) >= MEDIA_AUDIO_OFFSET_THRESHOLD_SEC;
-  const mappedAudio = useOffsetAudioInput ? `1:${selectedAudioStreamIdx}` : (options.audioMap || '0:a:0?');
-
-  if (useOffsetAudioInput) {
-    args.push('-itsoffset', ffmpegSeconds(correctionAppliedSec), ...mappedMp4InputArgs(!!options.remote), '-i', options.input);
-  }
-
-  args.push('-map', '0:v:0', '-map', mappedAudio, '-sn', '-dn');
-  const encodeAudio = mode === 'audio' || useOffsetAudioInput;
-  if (encodeAudio) {
-    args.push('-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2');
-    if (useOffsetAudioInput) args.push('-af', 'aresample=async=1:first_pts=0');
-  } else {
-    args.push('-c', 'copy');
-  }
-  if (options.hevcTag) args.push('-tag:v', 'hvc1');
-  args.push(
-    '-copyts',
-    '-start_at_zero',
-    '-avoid_negative_ts', 'disabled',
-    '-max_interleave_delta', '0',
-    '-muxdelay', '0',
-    '-muxpreload', '0',
-    '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
-    '-f', 'mp4',
-    'pipe:1'
-  );
-  return args;
-}
-
-function writeMediaReadyMeta(descriptor, options, sync, stats = {}) {
-  try {
-    const payload = {
-      key: descriptor.key,
-      createdAt: Date.now(),
-      sourceIdentity: descriptor.sourceIdentity,
-      mode: descriptor.mode,
-      input: options.remote ? options.input : path.basename(options.input || ''),
-      remote: !!options.remote,
-      label: options.label || '',
-      audioStreamIdx: options.audioStreamIdx ?? null,
-      videoStreamIdx: options.videoStreamIdx ?? 0,
-      audioMap: options.audioMap || '',
-      videoFirstPts: sync?.videoFirstPts ?? null,
-      audioFirstPts: sync?.audioFirstPts ?? null,
-      calculatedOffsetSec: sync?.calculatedOffsetSec ?? 0,
-      correctionAppliedSec: sync?.correctionAppliedSec ?? 0,
-      size: stats.size || 0,
-      buildMs: stats.buildMs || 0,
-    };
-    fs.writeFileSync(descriptor.metaPath, JSON.stringify(payload, null, 2));
-  } catch (e) {
-    console.warn(`[Media Ready Cache] meta write failed ${descriptor.key}:`, e.message);
-  }
-}
-
-function mediaReadyBuildPressure() {
-  return {
-    activeFfmpeg: activeMediaFfmpegStreams,
-    activeReadyBuilds: mediaReadyCacheJobs.size,
-  };
-}
-
-function startMediaReadyCacheBuild(descriptor, options, sync, streamResponse = null) {
-  const existing = mediaReadyCacheJobs.get(descriptor.key);
-  if (existing) return existing;
-
-  fs.mkdirSync(descriptor.dir, { recursive: true });
-  try { fs.unlinkSync(descriptor.tempPath); } catch {}
-  const startedAt = Date.now();
-  const args = ffmpegCachedMp4Args(options, sync);
-  const playbackType = streamResponse?.playbackType || 'media';
-  const fallbackReason = streamResponse?.fallbackReason || 'cache-build';
-  console.log(`[Media Ready Cache] build start playbackType=${playbackType} route=${descriptor.mode}-cache selected source URL=${options.input} fallback reason=${fallbackReason} title="${options.label || options.input}" audioStream=${options.audioStreamIdx ?? 'relative'} videoStream=${options.videoStreamIdx ?? 0} codec=${options.audioCodec || ''} offset=${sync?.calculatedOffsetSec ?? 0} correction=${sync?.correctionAppliedSec ?? 0} pressure=${JSON.stringify(mediaReadyBuildPressure())}`);
-
-  activeMediaFfmpegStreams += 1;
-  const ffmpeg = spawn(FFMPEG_BIN, args);
-  const fileOut = fs.createWriteStream(descriptor.tempPath);
-  let stderr = '';
-  let firstChunkAt = 0;
-  let closed = false;
-  let responseStarted = false;
-  const res = streamResponse?.res || null;
-
-  const releaseActive = () => {
-    activeMediaFfmpegStreams = Math.max(0, activeMediaFfmpegStreams - 1);
-  };
-
-  const timeout = setTimeout(() => {
-    if (closed) return;
-    console.error(`[Media Ready Cache] build timeout ${descriptor.key} title="${options.label || options.input}"`);
-    try { ffmpeg.kill('SIGKILL'); } catch {}
-  }, MEDIA_READY_CACHE_BUILD_TIMEOUT_MS);
-
-  const responseOpen = () => res && !res.destroyed && !res.writableEnded;
-  if (res) {
-    res.on('close', () => {
-      if (closed) return;
-      if (!firstChunkAt) {
-        console.warn(`[Media Ready Cache] abort stale build before first frame key=${descriptor.key} title="${options.label || options.input}"`);
-        try { ffmpeg.kill('SIGKILL'); } catch {}
-        return;
-      }
-      console.warn(`[Media Ready Cache] first client left; continuing cache build key=${descriptor.key} title="${options.label || options.input}"`);
-    });
-  }
-
-  const promise = new Promise((resolve, reject) => {
-    const fail = err => {
-      try { fileOut.destroy(); } catch {}
-      try { fs.unlinkSync(descriptor.tempPath); } catch {}
-      reject(err);
-    };
-
-    ffmpeg.stdout.on('data', chunk => {
-      if (!firstChunkAt) {
-        firstChunkAt = Date.now();
-        const firstFrameMs = firstChunkAt - startedAt;
-        console.log(`[Media Ready Cache] first frame title="${options.label || options.input}" route=${descriptor.mode}-cache firstFrameMs=${firstFrameMs} pressure=${JSON.stringify(mediaReadyBuildPressure())}`);
-        if (responseOpen() && !responseStarted) {
-          responseStarted = true;
-          res.writeHead(200, {
-            'Content-Type': 'video/mp4',
-            'Accept-Ranges': 'none',
-            'Access-Control-Allow-Origin': '*',
-            'Cache-Control': 'no-store',
-            'X-SV-Media-Cache': 'building',
-          });
-        }
-      }
-
-      const drains = [];
-      if (!fileOut.write(chunk)) drains.push(new Promise(done => fileOut.once('drain', done)));
-      if (responseOpen()) {
-        try {
-          if (!res.write(chunk)) drains.push(new Promise(done => res.once('drain', done)));
-        } catch {}
-      }
-      if (drains.length) {
-        ffmpeg.stdout.pause();
-        Promise.all(drains).finally(() => {
-          if (!closed) ffmpeg.stdout.resume();
-        });
-      }
-    });
-
-    ffmpeg.stdout.on('end', () => {
-      if (responseOpen()) res.end();
-    });
-
-    ffmpeg.stderr.on('data', data => {
-      stderr += data.toString();
-      if (stderr.length > 6000) stderr = stderr.slice(-6000);
-    });
-
-    ffmpeg.on('error', err => {
-      clearTimeout(timeout);
-      closed = true;
-      releaseActive();
-      if (responseOpen() && !responseStarted) {
-        jsonError(res, 500, 'MEDIA_READY_CACHE_SPAWN_FAILED', 'Could not start cached playback build', { details: err.message });
-      } else if (responseOpen()) {
-        res.end();
-      }
-      fail(err);
-    });
-
-    ffmpeg.on('close', code => {
-      clearTimeout(timeout);
-      closed = true;
-      releaseActive();
-      fileOut.end(() => {
-        if (code !== 0) {
-          const err = new Error(`cached playback build failed code=${code}: ${stderr.slice(-1000)}`);
-          console.error(`[Media Ready Cache] build failed key=${descriptor.key} title="${options.label || options.input}"`, stderr.slice(-1000));
-          if (responseOpen() && !responseStarted) {
-            jsonError(res, 502, 'MEDIA_READY_CACHE_FAILED', 'Cached playback build failed before playback started', { details: stderr.slice(-1000) });
-          } else if (responseOpen()) {
-            res.end();
-          }
-          fail(err);
-          return;
-        }
-
-        try {
-          fs.renameSync(descriptor.tempPath, descriptor.finalPath);
-          const stat = fs.statSync(descriptor.finalPath);
-          const buildMs = Date.now() - startedAt;
-          writeMediaReadyMeta(descriptor, options, sync, { size: stat.size, buildMs });
-          console.log(`[Media Ready Cache] build complete key=${descriptor.key} title="${options.label || options.input}" size=${stat.size} buildMs=${buildMs} firstFrameMs=${firstChunkAt ? firstChunkAt - startedAt : 0}`);
-          resolve({ path: descriptor.finalPath, size: stat.size, buildMs });
-        } catch (e) {
-          fail(e);
-        }
-      });
-    });
-  }).finally(() => {
-    mediaReadyCacheJobs.delete(descriptor.key);
-  });
-
-  const job = { key: descriptor.key, promise, ffmpeg, startedAt };
-  mediaReadyCacheJobs.set(descriptor.key, job);
-  return job;
-}
-
-async function serveMediaReadyFile(req, res, descriptor, label = 'cached media') {
-  let stat;
-  try {
-    stat = fs.statSync(descriptor.finalPath);
-    fs.utimes(descriptor.finalPath, new Date(), new Date(), () => {});
-  } catch {
-    return jsonError(res, 404, 'MEDIA_READY_CACHE_MISSING', 'Cached playback file is missing');
-  }
-
-  const fileSize = stat.size;
-  const range = req.headers.range;
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Accept-Ranges', 'bytes');
-  res.setHeader('Cache-Control', 'private, max-age=86400');
-  res.setHeader('X-SV-Media-Cache', 'hit');
-
-  if (range) {
-    const parsedRange = parseSingleByteRange(range, fileSize);
-    if (!parsedRange) {
-      res.writeHead(416, {
-        'Content-Range': `bytes */${fileSize}`,
-        'Content-Length': '0',
-        'Content-Type': 'video/mp4',
-      });
-      return res.end();
-    }
-    const { start, end } = parsedRange;
-    res.writeHead(206, {
-      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-      'Content-Length': (end - start) + 1,
-      'Content-Type': 'video/mp4',
-    });
-    if (req.method === 'HEAD') return res.end();
-    const stream = fs.createReadStream(descriptor.finalPath, { highWaterMark: 1024 * 1024, start, end });
-    res.on('close', () => stream.destroy());
-    stream.on('error', err => {
-      console.error(`[Media Ready Cache] read error ${label}:`, err.message);
-      if (!res.headersSent) res.status(500).end();
-    });
-    return stream.pipe(res);
-  }
-
-  res.writeHead(200, {
-    'Content-Length': fileSize,
-    'Content-Type': 'video/mp4',
-  });
-  if (req.method === 'HEAD') return res.end();
-  const stream = fs.createReadStream(descriptor.finalPath, { highWaterMark: 1024 * 1024 });
-  res.on('close', () => stream.destroy());
-  stream.on('error', err => {
-    console.error(`[Media Ready Cache] read error ${label}:`, err.message);
-    if (!res.headersSent) res.status(500).end();
-  });
-  return stream.pipe(res);
-}
-
-async function streamMediaReadyCachedMp4(req, res, options) {
-  const mode = options.mode === 'audio' ? 'audio' : 'remux';
-  const label = options.label || options.input;
-  let clientClosed = false;
-  res.on('close', () => { clientClosed = true; });
-  const responseClosed = () => clientClosed || res.destroyed || res.writableEnded;
-  const sync = cachedPlaybackPacketSync({
-    input: options.input,
-    remote: !!options.remote,
-    videoStreamIdx: options.videoStreamIdx ?? 0,
-    audioStreamIdx: options.audioStreamIdx,
-    audioVideoOffsetSec: options.audioVideoOffsetSec,
-    label,
-    route: `${mode}-cache`,
-  });
-  const descriptor = mediaReadyCacheDescriptor({ ...options, mode }, sync);
-  if (!MEDIA_READY_CACHE_ENABLED || !descriptor) {
-    return streamFfmpegMp4(req, res, options);
-  }
-
-  if (mediaReadyCacheExists(descriptor)) {
-    if (SV_PLAYBACK_VERBOSE) console.log(`[Media Ready Cache] hit title="${label}" key=${descriptor.key} route=${mode}-cache`);
-    return serveMediaReadyFile(req, res, descriptor, label);
-  }
-
-  const existing = mediaReadyCacheJobs.get(descriptor.key);
-  if (existing) {
-    res.setHeader('X-SV-Media-Cache', 'waiting');
-    try {
-      await existing.promise;
-      if (responseClosed()) return;
-      return serveMediaReadyFile(req, res, descriptor, label);
-    } catch (e) {
-      if (responseClosed()) return;
-      return jsonError(res, 502, 'MEDIA_READY_CACHE_FAILED', 'Cached playback build failed', { details: e.message });
-    }
-  }
-
-  if (activeMediaFfmpegStreams >= MEDIA_FFMPEG_STREAM_MAX) {
-    return jsonError(res, 429, 'MEDIA_FFMPEG_BUSY', 'Media fallback workers are busy; try again in a moment', {
-      active: activeMediaFfmpegStreams,
-      limit: MEDIA_FFMPEG_STREAM_MAX,
-      cacheBuilds: mediaReadyCacheJobs.size,
-    });
-  }
-
-  const range = req.headers.range;
-  const job = startMediaReadyCacheBuild(descriptor, { ...options, mode }, sync, range ? null : {
-    res,
-    playbackType: String(req.query.playbackType || 'media'),
-    fallbackReason: String(req.query.fallbackReason || 'cache-build'),
-  });
-
-  if (!range) {
-    try {
-      await job.promise;
-    } catch {
-      // Response handling/logging happens inside the build job.
-    }
-    return;
-  }
-
-  try {
-    await job.promise;
-    if (responseClosed()) return;
-    return serveMediaReadyFile(req, res, descriptor, label);
-  } catch (e) {
-    if (responseClosed()) return;
-    return jsonError(res, 502, 'MEDIA_READY_CACHE_FAILED', 'Cached playback build failed', { details: e.message });
-  }
-}
-
-function cleanupMediaReadyCache() {
-  if (!MEDIA_READY_CACHE_ENABLED) return;
-  const root = path.resolve(MEDIA_READY_CACHE_DIR);
-  try { fs.mkdirSync(root, { recursive: true }); } catch { return; }
-  const now = Date.now();
-  const files = [];
-
-  function walk(dir) {
-    let entries = [];
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const entry of entries) {
-      const full = path.join(dir, entry.name);
-      const resolved = path.resolve(full);
-      if (!resolved.startsWith(root)) continue;
-      if (entry.isDirectory()) {
-        walk(full);
-        continue;
-      }
-      let stat;
-      try { stat = fs.statSync(full); } catch { continue; }
-      if (entry.name.endsWith('.tmp.mp4') && now - stat.mtimeMs > 4 * 60 * 60 * 1000) {
-        try { fs.unlinkSync(full); } catch {}
-        continue;
-      }
-      if (!entry.name.endsWith('.mp4')) continue;
-      files.push({ path: full, size: stat.size, mtimeMs: stat.mtimeMs });
-    }
-  }
-
-  walk(root);
-  let total = files.reduce((sum, file) => sum + file.size, 0);
-  let removed = 0;
-  for (const file of files) {
-    if (now - file.mtimeMs <= MEDIA_READY_CACHE_TTL_MS) continue;
-    try {
-      fs.unlinkSync(file.path);
-      try { fs.unlinkSync(file.path.replace(/\.mp4$/i, '.json')); } catch {}
-      total -= file.size;
-      removed++;
-    } catch {}
-  }
-
-  if (total > MEDIA_READY_CACHE_MAX_BYTES) {
-    const remaining = files
-      .filter(file => {
-        try { return fs.existsSync(file.path); } catch { return false; }
-      })
-      .sort((a, b) => a.mtimeMs - b.mtimeMs);
-    for (const file of remaining) {
-      if (total <= MEDIA_READY_CACHE_MAX_BYTES) break;
-      try {
-        fs.unlinkSync(file.path);
-        try { fs.unlinkSync(file.path.replace(/\.mp4$/i, '.json')); } catch {}
-        total -= file.size;
-        removed++;
-      } catch {}
-    }
-  }
-
-  if (removed) console.log(`[Media Ready Cache] cleanup removed=${removed} remainingBytes=${total}`);
-}
-
 async function streamFfmpegMp4(req, res, options) {
   const mode = options.mode === 'audio' ? 'audio' : 'remux';
   const label = options.label || options.input;
@@ -8330,27 +7832,19 @@ app.get('/api/refresh-poster/:id', async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // DIRECT STREAM ENDPOINT (NO HLS FOR NOW - FASTEST)
 // ═══════════════════════════════════════════════════════════════════════════════
-function localPlaybackPlan(id, req, entry, filePath, duration = 0, audioSelection = null) {
+function localPlaybackPlan(id, req, entry, filePath, duration = 0) {
   const requestedMode = req.query.forceHls === '1' ? 'hls' : normalizePlaybackMode(req.query.mode, 'direct');
   const startSec = playbackStartFromReq(req);
   const query = playbackQueryFromReq(req);
   let src;
   let mode = requestedMode;
-  let transport = mode;
 
   if (mode === 'hls') {
     src = localPlaybackHlsUrl(id, req);
   } else if (mode === 'remux' || mode === 'audio') {
-    if (MEDIA_READY_CACHE_ENABLED && audioSelection?.audioStreamIdx !== null) {
-      src = mediaReadyCacheUrlForLocal(id, req, mode);
-      transport = 'cached';
-      mode = 'direct';
-    } else {
-      src = `/api/playback/local/${encodeURIComponent(id)}/stream${playbackQueryFromReq(req, { mode })}`;
-    }
+    src = `/api/playback/local/${encodeURIComponent(id)}/stream${playbackQueryFromReq(req, { mode })}`;
   } else {
     mode = 'direct';
-    transport = 'direct';
     src = `/stream/${encodeURIComponent(id)}${query}`;
   }
 
@@ -8361,55 +7855,17 @@ function localPlaybackPlan(id, req, entry, filePath, duration = 0, audioSelectio
     directPlayable: isRemoteDirectPlayable(filePath),
     unsupportedVideoHint: playbackUrlHasUnsupportedVideoHint(entry.file),
     mode,
-    transport,
-    cachedEnglishReady: transport === 'cached',
+    transport: mode,
     src,
     playUrl: src,
     finalPlayUrl: src,
-    remuxUrl: MEDIA_READY_CACHE_ENABLED ? mediaReadyCacheUrlForLocal(id, req, 'remux') : `/api/playback/local/${encodeURIComponent(id)}/stream${playbackQueryFromReq(req, { mode: 'remux' })}`,
-    audioTranscodeUrl: MEDIA_READY_CACHE_ENABLED ? mediaReadyCacheUrlForLocal(id, req, 'audio') : `/api/playback/local/${encodeURIComponent(id)}/stream${playbackQueryFromReq(req, { mode: 'audio' })}`,
+    remuxUrl: `/api/playback/local/${encodeURIComponent(id)}/stream${playbackQueryFromReq(req, { mode: 'remux' })}`,
+    audioTranscodeUrl: `/api/playback/local/${encodeURIComponent(id)}/stream${playbackQueryFromReq(req, { mode: 'audio' })}`,
     hlsUrl: localPlaybackHlsUrl(id, req),
     duration: Number(duration) || 0,
     start: startSec,
   };
 }
-
-app.get('/api/playback/local/:id/cache', async (req, res) => {
-  const idx = parseInt(req.params.id, 10);
-  const entry = fileIndex[idx];
-  if (!entry) return jsonError(res, 404, 'LOCAL_MEDIA_NOT_FOUND', 'Local media was not found');
-  const filePath = entryPath(entry);
-  if (!fs.existsSync(filePath)) return jsonError(res, 404, 'LOCAL_MEDIA_MISSING', 'Local media file is missing');
-
-  const mode = normalizePlaybackMode(req.query.mode, 'audio');
-  if (mode !== 'remux' && mode !== 'audio') {
-    return jsonError(res, 400, 'INVALID_PLAYBACK_MODE', 'Local cache mode must be remux or audio');
-  }
-
-  let audioSelection;
-  try {
-    audioSelection = await resolvePlaybackAudioSelection(req, filePath, entry.file);
-  } catch (e) {
-    return jsonError(res, 502, 'ENGLISH_AUDIO_RESOLVE_FAILED', 'Could not resolve English audio stream', { label: entry.file, details: e.message });
-  }
-  if (!requireAbsolutePlaybackAudio(req, res, audioSelection, mode, entry.file)) return;
-  if (SV_PLAYBACK_VERBOSE || req.query.svProfile === '1') {
-    console.log(`[Local Playback Cache] playbackType=${req.query.playbackType || 'media'} selected source URL=${req.originalUrl} fallback reason=${req.query.fallbackReason || 'cache'} ${entry.file} mode=${mode} route=${mode === 'audio' ? 'audio-cache-aac' : 'remux-cache'} lang=${audioSelection.audioLanguage || ''} title=${audioSelection.audioTitle || ''} codec=${audioSelection.audioCodec || ''} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} videoStream=${audioSelection.videoStreamIdx ?? 0} offset=${audioSelection.audioVideoOffsetSec ?? 0}`);
-  }
-  return streamMediaReadyCachedMp4(req, res, {
-    input: filePath,
-    mode,
-    audioMap: audioSelection.audioMap,
-    audioStreamIdx: audioSelection.audioStreamIdx,
-    videoStreamIdx: audioSelection.videoStreamIdx,
-    audioVideoOffsetSec: audioSelection.audioVideoOffsetSec,
-    audioCodec: audioSelection.audioCodec,
-    remote: false,
-    label: entry.file,
-    hevcTag: playbackUrlHasHevcHint(entry.file),
-    fallbackOriginal: null,
-  });
-});
 
 app.get('/api/playback/local/:id', async (req, res) => {
   const idx = parseInt(req.params.id, 10);
@@ -8418,8 +7874,8 @@ app.get('/api/playback/local/:id', async (req, res) => {
   const filePath = entryPath(entry);
   if (!fs.existsSync(filePath)) return jsonError(res, 404, 'LOCAL_MEDIA_MISSING', 'Local media file is missing');
   const requestedMode = req.query.forceHls === '1' ? 'hls' : normalizePlaybackMode(req.query.mode, 'direct');
-  let audioSelection = null;
   if (requestedMode === 'remux' || requestedMode === 'audio') {
+    let audioSelection;
     try {
       audioSelection = await resolvePlaybackAudioSelection(req, filePath, entry.file);
     } catch (e) {
@@ -8434,7 +7890,7 @@ app.get('/api/playback/local/:id', async (req, res) => {
   const duration = (requestedMode === 'remux' || requestedMode === 'audio' || requestedMode === 'hls')
     ? await playbackDurationSeconds(filePath, entry.file)
     : 0;
-  const plan = localPlaybackPlan(String(idx), req, entry, filePath, duration, audioSelection);
+  const plan = localPlaybackPlan(String(idx), req, entry, filePath, duration);
   if (SV_PLAYBACK_VERBOSE) console.log(`[Media Playback] playbackType=${req.query.playbackType || 'media'} route=local-plan mode=${plan.mode} selected source URL=${plan.src} fallback reason=${req.query.fallbackReason || 'initial'}`);
   return res.json(plan);
 });
@@ -8459,21 +7915,6 @@ app.get('/api/playback/local/:id/stream', async (req, res) => {
   }
   if (!requireAbsolutePlaybackAudio(req, res, audioSelection, mode, entry.file)) return;
   if (SV_PLAYBACK_VERBOSE) console.log(`[Local Playback Stream] playbackType=${req.query.playbackType || 'media'} selected source URL=${req.originalUrl} fallback reason=${req.query.fallbackReason || 'stream'} ${entry.file} mode=${mode} route=${mode === 'audio' ? 'audio-copy' : 'remux-copy'} lang=${audioSelection.audioLanguage || ''} title=${audioSelection.audioTitle || ''} codec=${audioSelection.audioCodec || ''} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} videoStream=${audioSelection.videoStreamIdx ?? 0} map=${audioSelection.audioMap} audioStart=${audioSelection.audioStartTime ?? 0} videoStart=${audioSelection.videoStartTime ?? 0} offset=${audioSelection.audioVideoOffsetSec ?? 0}`);
-  if (MEDIA_READY_CACHE_ENABLED && audioSelection.audioStreamIdx !== null) {
-    return streamMediaReadyCachedMp4(req, res, {
-      input: filePath,
-      mode,
-      audioMap: audioSelection.audioMap,
-      audioStreamIdx: audioSelection.audioStreamIdx,
-      videoStreamIdx: audioSelection.videoStreamIdx,
-      audioVideoOffsetSec: audioSelection.audioVideoOffsetSec,
-      audioCodec: audioSelection.audioCodec,
-      remote: false,
-      label: entry.file,
-      hevcTag: playbackUrlHasHevcHint(entry.file),
-      fallbackOriginal: null,
-    });
-  }
   return streamFfmpegMp4(req, res, {
     input: filePath,
     mode,
@@ -9120,40 +8561,6 @@ function streamRemotePlaybackProxy(req, res, media, matched, srcUrl = media.deco
   proxyReq.end();
 }
 
-app.get('/api/playback/ftp/cache', async (req, res) => {
-  const trusted = readTrustedRemotePlaybackMedia(req, res, true);
-  if (!trusted) return;
-  const { srcUrl } = trusted;
-  const mode = normalizePlaybackMode(req.query.mode, 'audio');
-  if (mode !== 'remux' && mode !== 'audio') {
-    return jsonError(res, 400, 'INVALID_PLAYBACK_MODE', 'FTP cache mode must be remux or audio');
-  }
-
-  let audioSelection;
-  try {
-    audioSelection = await resolvePlaybackAudioSelection(req, srcUrl, remoteFilename(srcUrl));
-  } catch (e) {
-    return jsonError(res, 502, 'ENGLISH_AUDIO_RESOLVE_FAILED', 'Could not resolve English audio stream', { label: remoteFilename(srcUrl), details: e.message });
-  }
-  if (!requireAbsolutePlaybackAudio(req, res, audioSelection, mode, remoteFilename(srcUrl))) return;
-  if (SV_PLAYBACK_VERBOSE || req.query.svProfile === '1') {
-    console.log(`[FTP Playback Cache] playbackType=${req.query.playbackType || 'media'} selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'cache'} ${remoteFilename(srcUrl)} mode=${mode} route=${mode === 'audio' ? 'audio-cache-aac' : 'remux-cache'} lang=${audioSelection.audioLanguage || ''} title=${audioSelection.audioTitle || ''} codec=${audioSelection.audioCodec || ''} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} videoStream=${audioSelection.videoStreamIdx ?? 0} offset=${audioSelection.audioVideoOffsetSec ?? 0}`);
-  }
-  return streamMediaReadyCachedMp4(req, res, {
-    input: srcUrl,
-    mode,
-    audioMap: audioSelection.audioMap,
-    audioStreamIdx: audioSelection.audioStreamIdx,
-    videoStreamIdx: audioSelection.videoStreamIdx,
-    audioVideoOffsetSec: audioSelection.audioVideoOffsetSec,
-    audioCodec: audioSelection.audioCodec,
-    remote: true,
-    label: remoteFilename(srcUrl),
-    hevcTag: playbackUrlHasHevcHint(srcUrl),
-    fallbackOriginal: null,
-  });
-});
-
 app.get('/api/playback/ftp', async (req, res) => {
   const trusted = readTrustedRemotePlaybackMedia(req, res, true);
   if (!trusted) return;
@@ -9175,8 +8582,8 @@ app.get('/api/playback/ftp', async (req, res) => {
   }
 
   if (planRequested) {
-    let audioSelection = null;
     if ((mode === 'remux' || mode === 'audio')) {
+      let audioSelection;
       try {
         audioSelection = await resolvePlaybackAudioSelection(req, srcUrl, remoteFilename(srcUrl));
       } catch (e) {
@@ -9193,16 +8600,10 @@ app.get('/api/playback/ftp', async (req, res) => {
     let playUrl = redirectUrl;
     if (mode === 'proxy') playUrl = proxyUrl;
     else if (mode === 'remux' || mode === 'audio') {
-      playUrl = MEDIA_READY_CACHE_ENABLED && audioSelection?.audioStreamIdx !== null
-        ? mediaReadyCacheUrlForFtp(srcUrl, req, mode)
-        : remotePlaybackModeUrl(srcUrl, req, mode);
+      playUrl = remotePlaybackModeUrl(srcUrl, req, mode);
     } else if (mode === 'hls') {
       playUrl = remotePlaybackHlsUrl(srcUrl, req);
     }
-    const planMode = (MEDIA_READY_CACHE_ENABLED && (mode === 'remux' || mode === 'audio') && audioSelection?.audioStreamIdx !== null)
-      ? 'direct'
-      : (mode === 'redirect' ? 'direct' : mode);
-    const transport = planMode === 'direct' && mode !== 'redirect' && (mode === 'remux' || mode === 'audio') ? 'cached' : mode;
     if (SV_PLAYBACK_VERBOSE) console.log(`[Media Playback] playbackType=${playbackType} route=ftp-plan mode=${mode} selected source URL=${playUrl} fallback reason=${fallbackReason}`);
     const duration = (mode === 'remux' || mode === 'audio' || mode === 'hls')
       ? await playbackDurationSeconds(srcUrl, remoteFilename(srcUrl))
@@ -9214,9 +8615,8 @@ app.get('/api/playback/ftp', async (req, res) => {
       matchedCatalogItem: matched,
       directPlayable: urls.directPlayable,
       unsupportedVideoHint: playbackUrlHasUnsupportedVideoHint(srcUrl),
-      mode: planMode,
-      transport,
-      cachedEnglishReady: transport === 'cached',
+      mode: mode === 'redirect' ? 'direct' : mode,
+      transport: mode,
       src: playUrl,
       playUrl,
       finalPlayUrl: playUrl,
@@ -9224,8 +8624,8 @@ app.get('/api/playback/ftp', async (req, res) => {
       proxyUrl,
       fallbackProxyUrl: proxyUrl,
       legacyProxyUrl: urls.legacyProxyUrl,
-      remuxUrl: MEDIA_READY_CACHE_ENABLED ? mediaReadyCacheUrlForFtp(srcUrl, req, 'remux') : remotePlaybackModeUrl(srcUrl, req, 'remux'),
-      audioTranscodeUrl: MEDIA_READY_CACHE_ENABLED ? mediaReadyCacheUrlForFtp(srcUrl, req, 'audio') : remotePlaybackModeUrl(srcUrl, req, 'audio'),
+      remuxUrl: remotePlaybackModeUrl(srcUrl, req, 'remux'),
+      audioTranscodeUrl: remotePlaybackModeUrl(srcUrl, req, 'audio'),
       hlsUrl: remotePlaybackHlsUrl(srcUrl, req),
       transcodeUrl: urls.transcodeUrl,
       duration,
@@ -9246,21 +8646,6 @@ app.get('/api/playback/ftp', async (req, res) => {
     }
     if (!requireAbsolutePlaybackAudio(req, res, audioSelection, mode, remoteFilename(srcUrl))) return;
     if (SV_PLAYBACK_VERBOSE) console.log(`[FTP Playback FFmpeg] playbackType=${playbackType} selected source URL=${srcUrl} fallback reason=${fallbackReason} ${remoteFilename(srcUrl)} mode=${mode} route=${mode === 'audio' ? 'audio-copy' : 'remux-copy'} lang=${audioSelection.audioLanguage || ''} title=${audioSelection.audioTitle || ''} codec=${audioSelection.audioCodec || ''} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} videoStream=${audioSelection.videoStreamIdx ?? 0} map=${audioSelection.audioMap} audioStart=${audioSelection.audioStartTime ?? 0} videoStart=${audioSelection.videoStartTime ?? 0} offset=${audioSelection.audioVideoOffsetSec ?? 0}`);
-    if (MEDIA_READY_CACHE_ENABLED && audioSelection.audioStreamIdx !== null) {
-      return streamMediaReadyCachedMp4(req, res, {
-        input: srcUrl,
-        mode,
-        audioMap: audioSelection.audioMap,
-        audioStreamIdx: audioSelection.audioStreamIdx,
-        videoStreamIdx: audioSelection.videoStreamIdx,
-        audioVideoOffsetSec: audioSelection.audioVideoOffsetSec,
-        audioCodec: audioSelection.audioCodec,
-        remote: true,
-        label: remoteFilename(srcUrl),
-        hevcTag: playbackUrlHasHevcHint(srcUrl),
-        fallbackOriginal: null,
-      });
-    }
     return streamFfmpegMp4(req, res, {
       input: srcUrl,
       mode,
@@ -9955,9 +9340,6 @@ buildFileIndex();
 buildInstantLists();                                   // ⚡ instant — sync, ~10ms
 filterCartoonsAndAnime();                              // 🧹 remove cartoons/anime (with logging)
 svGetBootSearchIndex();                                // instant search boot payload, no massive catalog
-cleanupMediaReadyCache();                              // keep English-ready media cache bounded
-const mediaReadyCleanupTimer = setInterval(cleanupMediaReadyCache, 60 * 60 * 1000);
-try { mediaReadyCleanupTimer.unref?.(); } catch {}
 if (process.env.SV_SEARCH_WARMUP === '1') {
   const searchWarmupDelay = Math.max(30000, parseInt(process.env.SV_SEARCH_WARMUP_DELAY_MS || '120000', 10) || 120000);
   setTimeout(() => {

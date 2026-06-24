@@ -1,6 +1,6 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260624-instant-search-smooth-playback3';
+const SV_ASSET_VERSION = '20260624-laggy-english-playback1';
 function svDebugLoggingEnabled(){
   try{
     return new URLSearchParams(location.search).has('debug')
@@ -2585,6 +2585,18 @@ function playerDuration(){
   return 0;
 }
 
+function playerBufferHealthSeconds(){
+  try{
+    const local = Number.isFinite(vid.currentTime) ? vid.currentTime : 0;
+    for(let i=0;i<vid.buffered.length;i++){
+      if(vid.buffered.start(i) <= local && vid.buffered.end(i) >= local){
+        return Math.max(0, vid.buffered.end(i) - local);
+      }
+    }
+  }catch(_){}
+  return 0;
+}
+
 function playbackTime(){
   const base = Number(vid._sourceOffset || 0);
   const local = Number.isFinite(vid.currentTime) ? vid.currentTime : 0;
@@ -3193,6 +3205,7 @@ function validPlaybackSourceUrl(src){
     return url.pathname.startsWith('/stream/')
       || url.pathname.startsWith('/api/playback/local/')
       || url.pathname === '/api/playback/ftp'
+      || url.pathname === '/api/playback/ftp/cache'
       || url.pathname === '/api/ftp/proxy'
       || url.pathname === '/api/ftp/stream'
       || url.pathname.startsWith('/api/mobile-hls/');
@@ -3520,10 +3533,14 @@ async function sourceSeekTo(seconds){
     _currentPlaybackPlan = plan;
     vid._sourceSeekRequired = planNeedsSourceSeek(plan);
     vid._mediaSourceSeekRequired = vid._sourceSeekRequired;
+    vid._sourceOffset = vid._sourceSeekRequired ? target : 0;
     if(validDurationSeconds(Number(plan.duration)))setPlayerDuration(Number(plan.duration),'api');
     vid.addEventListener('loadedmetadata', function onSourceSeekMeta(){
       if(token !== vid._seekToken)return;
       vid.removeEventListener('loadedmetadata', onSourceSeekMeta);
+      if(!vid._sourceSeekRequired && target > 0){
+        try{vid.currentTime = target;}catch(_){}
+      }
       clearTimeout(seekTimer);
       document.getElementById('playerSpinner').classList.remove('on');
       if(wasPlaying)vid.play().catch(()=>{});
@@ -4250,18 +4267,22 @@ async function switchAudioWithServer(idx){
     });
     if(ftpUrl){
       _currentFtpPlaybackPlan=plan;
-      _ftpNeedsTranscode=true;
+      _ftpNeedsTranscode=planNeedsSourceSeek(plan);
       _ftpCurrentTime=target;
     }else{
       _currentPlaybackPlan=plan;
     }
-    vid._sourceSeekRequired=true;
-    vid._mediaSourceSeekRequired=true;
+    vid._sourceSeekRequired=planNeedsSourceSeek(plan);
+    vid._mediaSourceSeekRequired=vid._sourceSeekRequired;
+    vid._sourceOffset=vid._sourceSeekRequired ? target : 0;
     canPlay=waitForSwitchCanPlay(token);
     const attached=await attachPlayerSource(plan.src,plan.mode||'audio', {playbackType:'media', fallbackReason:'audio switch'});
     if(!attached)throw new Error('Audio stream could not be attached');
     await canPlay;
     if(token!==vid._audioSwitchToken)return;
+    if(!vid._sourceSeekRequired && target > 0){
+      try{vid.currentTime=target;}catch(_){}
+    }
     setAppliedAudioIndex(idx,'server audio switch');
     if(!previous.paused)vid.play().catch(()=>{});
     showToast(`Audio: ${selected.title||audioTrackTitle(selected,idx)}`);
@@ -4838,10 +4859,18 @@ async function ftpSeekTo(seconds){
     _ftpNeedsTranscode = planNeedsSourceSeek(plan);
     vid._sourceSeekRequired = _ftpNeedsTranscode;
     vid._mediaSourceSeekRequired = _ftpNeedsTranscode;
+    vid._sourceOffset = _ftpNeedsTranscode ? target : 0;
     if(validDurationSeconds(Number(plan.duration))){
       _ftpDuration = Number(plan.duration);
       setPlayerDuration(_ftpDuration,'api');
     }
+    vid.addEventListener('loadedmetadata', function onFtpCachedSeekMeta(){
+      if(token !== vid._seekToken)return;
+      vid.removeEventListener('loadedmetadata', onFtpCachedSeekMeta);
+      if(!_ftpNeedsTranscode && target > 0){
+        try{vid.currentTime = target;}catch(_){}
+      }
+    }, {once:true});
     const attached = await attachPlayerSource(plan.src, plan.mode, {playbackType:'media', fallbackReason});
     if(!attached)throw new Error('HLS not supported');
     if(wasPlaying)vid.play().catch(()=>{});
@@ -6383,9 +6412,9 @@ vid._mdH = () => {
     updatePlayIcons(true);
     if(currentStreamId&&!_ftpStreamUrl){watchProgress[currentStreamId]={progress:0.99,updatedAt:Date.now()};try{localStorage.setItem('sv_progress',JSON.stringify(watchProgress));}catch(_){}}
   };
-  vid._waH=()=>{document.getElementById('playerSpinner').classList.add('on');showUI();};
-  vid._plH=()=>{document.getElementById('playerSpinner').classList.remove('on');startPlayerUiClock();schedulePlayerProgressRender(playbackTime(),dur());scheduleHideUI();};
-  vid._cpH=()=>{document.getElementById('playerSpinner').classList.remove('on');};
+  vid._waH=()=>{playbackDebug('video waiting',{mode:_currentPlaybackPlan?.mode || _currentFtpPlaybackPlan?.mode || '',transport:_currentPlaybackPlan?.transport || _currentFtpPlaybackPlan?.transport || '',bufferHealth:playerBufferHealthSeconds(),time:playbackTime()});document.getElementById('playerSpinner').classList.add('on');showUI();};
+  vid._plH=()=>{playbackDebug('video playing',{mode:_currentPlaybackPlan?.mode || _currentFtpPlaybackPlan?.mode || '',transport:_currentPlaybackPlan?.transport || _currentFtpPlaybackPlan?.transport || '',bufferHealth:playerBufferHealthSeconds(),time:playbackTime()});document.getElementById('playerSpinner').classList.remove('on');startPlayerUiClock();schedulePlayerProgressRender(playbackTime(),dur());scheduleHideUI();};
+  vid._cpH=()=>{playbackDebug('video canplay',{mode:_currentPlaybackPlan?.mode || _currentFtpPlaybackPlan?.mode || '',transport:_currentPlaybackPlan?.transport || _currentFtpPlaybackPlan?.transport || '',bufferHealth:playerBufferHealthSeconds(),time:playbackTime()});document.getElementById('playerSpinner').classList.remove('on');};
   vid._paH=()=>{updatePlayIcons(false);startPlayerUiClock();scheduleHideUI();};
   vid._puH=()=>{stopPlayerUiClock();updatePlayIcons(true);schedulePlayerProgressRender(playbackTime(),dur(),{force:true});showUI();};
   vid._skH=()=>setTimeout(scheduleSubtitleOverlayUpdate,60);

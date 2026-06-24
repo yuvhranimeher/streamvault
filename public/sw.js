@@ -1,9 +1,10 @@
-const SV_CACHE_VERSION = '20260624-block-live-media-fallback1';
+const SV_CACHE_VERSION = '20260624-instant-search-audio-sync1';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
 const SV_POSTER_CACHE = `streamvault-posters-${SV_CACHE_VERSION}`;
 const SV_ASSET_CACHE = `streamvault-assets-${SV_CACHE_VERSION}`;
 const SV_API_CACHE = `streamvault-api-${SV_CACHE_VERSION}`;
 const SV_HOME_FEED_TTL = 60 * 1000;
+const SV_BOOT_SEARCH_TTL = 24 * 60 * 60 * 1000;
 
 self.addEventListener('install', event => {
   event.waitUntil(self.skipWaiting());
@@ -86,6 +87,31 @@ async function brieflyCachedHomeFeed(request) {
   }
 }
 
+async function cachedBootSearchIndex(request) {
+  const cache = await caches.open(SV_API_CACHE);
+  const cached = await cache.match(request);
+  const cachedAt = Number(cached?.headers.get('x-sv-cached-at') || 0);
+  if (cached && cachedAt && Date.now() - cachedAt < SV_BOOT_SEARCH_TTL) return cached;
+
+  try {
+    const fresh = await fetch(request);
+    if (fresh && fresh.ok) {
+      const headers = new Headers(fresh.headers);
+      headers.set('x-sv-cached-at', String(Date.now()));
+      const copy = new Response(await fresh.clone().blob(), {
+        status: fresh.status,
+        statusText: fresh.statusText,
+        headers
+      });
+      cache.put(request, copy.clone());
+    }
+    return fresh;
+  } catch (err) {
+    if (cached) return cached;
+    throw err;
+  }
+}
+
 async function networkOnly(request) {
   return fetch(new Request(request, { cache: 'no-store' }));
 }
@@ -128,5 +154,10 @@ self.addEventListener('fetch', event => {
 
   if (url.pathname === '/api/home-feed') {
     event.respondWith(brieflyCachedHomeFeed(request));
+    return;
+  }
+
+  if (url.pathname === '/api/boot-search-index') {
+    event.respondWith(cachedBootSearchIndex(request));
   }
 });

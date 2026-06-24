@@ -1,6 +1,6 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260624-block-live-media-fallback1';
+const SV_ASSET_VERSION = '20260624-instant-search-audio-sync1';
 function mediaFixLog(step, data={}){
   try{console.warn(`[${SV_MEDIA_FIX_MARKER}] ${step}`, data);}catch(_){}
 }
@@ -2097,7 +2097,9 @@ async function fetchOmdbEpisodeTitles(showName, season, eps){
 
 function playSeriesEpisode(showName, season, epIdx){
   console.log('[Playback] play button clicked');
-  const show=series.find(s=>s.name===showName||esc(s.name)===showName);
+  const show=(currentShow && (currentShow.name===showName||esc(currentShow.name)===showName))
+    ? currentShow
+    : series.find(s=>s.name===showName||esc(s.name)===showName);
   if(!show)return;
   const eps=show.seasons[season]||[];
   const ep=eps[epIdx];

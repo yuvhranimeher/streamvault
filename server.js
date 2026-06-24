@@ -36,6 +36,8 @@ const MOBILE_HLS_AUDIO_BITRATE = String(process.env.MOBILE_HLS_AUDIO_BITRATE || 
 const MEDIA_FFMPEG_STREAM_MAX = Number(process.env.MEDIA_FFMPEG_STREAM_MAX || 4);
 const MEDIA_FFMPEG_STARTUP_MS = Number(process.env.MEDIA_FFMPEG_STARTUP_MS || 15000);
 const MEDIA_AUDIO_OFFSET_THRESHOLD_SEC = Number(process.env.MEDIA_AUDIO_OFFSET_THRESHOLD_SEC || 0.05);
+const MEDIA_PACKET_PROBE_WINDOW_SEC = Number(process.env.MEDIA_PACKET_PROBE_WINDOW_SEC || 20);
+const MEDIA_PACKET_PROBE_TIMEOUT_MS = Number(process.env.MEDIA_PACKET_PROBE_TIMEOUT_MS || 12000);
 let activeMediaFfmpegStreams = 0;
 
 // ── FFmpeg helper for extracting media info ──────────────────────────────────
@@ -794,9 +796,14 @@ function svShouldDropSearchResult(entry, score, terms, queryNorm) {
 const SV_SEARCH_STOPWORDS = new Set(['in','on','of','to','a','an','the','and','or','for','with','by','from']);
 const SV_SEARCH_CACHE_LIMIT = Number(process.env.SV_SEARCH_CACHE_LIMIT || 160);
 const SV_SEARCH_CANDIDATE_LIMIT = Number(process.env.SV_SEARCH_CANDIDATE_LIMIT || 6000);
+const SV_BOOT_SEARCH_VERSION = '20260624-instant-search-audio-sync1';
+const SV_BOOT_SEARCH_MAX_ITEMS = Number(process.env.SV_BOOT_SEARCH_MAX_ITEMS || 14000);
 const _svQueryResultCache = new Map();
 let _svFastSearchIndex = null;
 let _svFastSearchIndexStamp = '';
+let _svBootSearchIndex = null;
+let _svBootSearchStamp = '';
+let _svBootSearchAllItems = null;
 
 function svNormalizeSearchText(value) {
   return svSafeDecode(value || '')
@@ -1188,6 +1195,191 @@ function svFilterPaged(items, req, zeroBased = true, kind = 'mixed') {
   const start = (zeroBased ? page : page - 1) * limit;
   return { list, page, limit, start, items: list.slice(start, start + limit), pages: Math.ceil(list.length / limit) || 1 };
 }
+
+function svBootSearchStamp() {
+  return [
+    (_movieList || []).length,
+    (_seriesList || []).length,
+    ftpCatalog.movies.length,
+    ftpCatalog.series.length,
+    SV_BOOT_SEARCH_MAX_ITEMS,
+    SV_BOOT_SEARCH_VERSION,
+  ].join(':');
+}
+
+function svBootSearchSeasons(seasons = {}) {
+  const out = {};
+  for (const season of Object.keys(seasons || {})) {
+    const eps = Array.isArray(seasons[season]) ? seasons[season] : [];
+    out[season] = eps.map(ep => ({
+      streamId: ep.streamId ?? null,
+      episode: ep.episode ?? ep.ep ?? 1,
+      epTitle: ep.epTitle || ep.title || `Episode ${ep.episode ?? ep.ep ?? 1}`,
+      file: ep.file || ep.filename || '',
+      streamUrl: ep.streamUrl || '',
+      isFtp: !!ep.isFtp || !!ep.streamUrl,
+    }));
+  }
+  return out;
+}
+
+function svBootSearchItem(raw, kind = 'movie', source = 'local', sourceRank = 0, index = 0) {
+  if (!raw) return null;
+  const name = String(raw.name || raw.title || raw.file || raw.filename || '').trim();
+  if (!name) return null;
+  const year = String(raw.year || svExtractYear(name || raw.file || raw.filename || raw.streamUrl || '') || '');
+  const isSeries = kind === 'series';
+  const item = {
+    id: raw.id ?? `${source}_${kind}_${index}`,
+    name,
+    title: raw.title || name,
+    year,
+    type: isSeries ? 'series' : 'movie',
+    poster: raw.poster || null,
+    backdrop: raw.backdrop || raw.poster || null,
+    rating: raw.rating || null,
+    genre: raw.genre || '',
+    file: raw.file || raw.filename || '',
+    tmdbId: raw.tmdbId || null,
+    isFtp: !!raw.isFtp || source === 'ftp',
+    streamUrl: raw.streamUrl || '',
+    category: raw.category || '',
+    _svBootSourceRank: sourceRank,
+  };
+  if (isSeries) {
+    item._isSeries = true;
+    item.seasons = svBootSearchSeasons(raw.seasons || {});
+    item.seasonCount = Object.keys(item.seasons).length;
+    item.episodeCount = Object.values(item.seasons).reduce((sum, eps) => sum + (Array.isArray(eps) ? eps.length : 0), 0);
+  }
+  const searchText = [
+    svCanonicalTitleForSearch(name, year),
+    name,
+    raw.title,
+    raw.file,
+    raw.filename,
+    year,
+    raw.genre,
+    raw.category,
+  ].filter(Boolean).join(' ');
+  item.searchText = svNormalizeSearchText(searchText);
+  item.searchTokens = svSearchTokensFromText(searchText);
+  return item;
+}
+
+function svBuildBootSearchIndex() {
+  const seen = new Set();
+  const items = [];
+  const add = (raw, kind, source, sourceRank, index) => {
+    const item = svBootSearchItem(raw, kind, source, sourceRank, index);
+    if (!item) return;
+    const key = `${item.type}|${svNormalizeSearchText(item.name)}|${item.year}|${item.streamUrl || item.id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push(item);
+  };
+
+  (_movieList || buildMovieListSync()).filter(m => !isCartoonOrAnime(m)).forEach((m, i) => add(m, 'movie', 'local', 0, i));
+  (_seriesList || buildSeriesListSync()).filter(s => !isCartoonOrAnime(s)).forEach((s, i) => add(s, 'series', 'local', 0, i));
+  getCachedMovies().filter(m => !isCartoonOrAnime(m)).forEach((m, i) => add({
+    id: `ftp_${i}`,
+    name: m.title || m.name,
+    title: m.title || m.name,
+    file: m.filename || m.file || '',
+    poster: m.poster || null,
+    backdrop: m.backdrop || m.poster || null,
+    tmdbId: m.tmdbId || null,
+    year: m.year || '',
+    rating: m.rating || null,
+    type: 'movie',
+    genre: m.genre || '',
+    category: m.category || '',
+    streamUrl: m.streamUrl,
+    isFtp: true,
+  }, 'movie', 'ftp', 1, i));
+  getCachedSeries().filter(s => !isCartoonOrAnime(s)).forEach((s, i) => add({
+    id: `ftp_series_${i}`,
+    name: s.title || s.name,
+    title: s.title || s.name,
+    file: s.title || s.name || '',
+    poster: s.poster || null,
+    backdrop: s.backdrop || s.poster || null,
+    tmdbId: s.tmdbId || null,
+    year: s.year || '',
+    rating: s.rating || null,
+    type: 'series',
+    genre: s.genre || '',
+    category: s.category || 'Series',
+    seasons: s.seasons || {},
+    isFtp: true,
+  }, 'series', 'ftp', 1, i));
+
+  items.sort((a, b) => {
+    const source = (a._svBootSourceRank || 0) - (b._svBootSourceRank || 0);
+    if (source) return source;
+    const art = Number(!!(b.poster || b.backdrop)) - Number(!!(a.poster || a.backdrop));
+    if (art) return art;
+    return String(a.name || '').localeCompare(String(b.name || ''));
+  });
+
+  const capped = items.slice(0, Math.max(1000, SV_BOOT_SEARCH_MAX_ITEMS));
+  _svBootSearchAllItems = items;
+  const tokenCount = capped.reduce((sum, item) => sum + (Array.isArray(item.searchTokens) ? item.searchTokens.length : 0), 0);
+  _svBootSearchIndex = {
+    ok: true,
+    version: SV_BOOT_SEARCH_VERSION,
+    generatedAt: Date.now(),
+    totalAvailable: items.length,
+    total: capped.length,
+    tokenCount,
+    items: capped,
+  };
+  _svBootSearchStamp = svBootSearchStamp();
+  console.log(`⚡ Boot search index ready: ${capped.length.toLocaleString()} of ${items.length.toLocaleString()} titles`);
+  return _svBootSearchIndex;
+}
+
+function svGetBootSearchIndex() {
+  const stamp = svBootSearchStamp();
+  if (!_svBootSearchIndex || _svBootSearchStamp !== stamp) return svBuildBootSearchIndex();
+  return _svBootSearchIndex;
+}
+
+function svBootSearchScore(item, terms, queryNorm, kind = 'mixed') {
+  if (!item || !terms.length) return -1;
+  if (kind === 'movie' && item.type !== 'movie') return -1;
+  if (kind === 'series' && item.type !== 'series') return -1;
+  const nameNorm = svNormalizeSearchText(item.name || item.title || '');
+  const text = item.searchText || nameNorm;
+  const tokens = Array.isArray(item.searchTokens) ? item.searchTokens : svSearchTokensFromText(text);
+  let score = 0;
+  if (nameNorm === queryNorm) score += 9000;
+  else if (nameNorm.startsWith(queryNorm + ' ')) score += 7200;
+  else if (nameNorm.includes(queryNorm)) score += 4800;
+  for (const term of terms) {
+    const best = svTermBestScore(term, tokens);
+    if (!best && !text.includes(term)) return -1;
+    score += best || 30;
+  }
+  if (item.poster || item.backdrop) score += 350;
+  if (!item.isFtp) score += 220;
+  if (item.type === 'series') score += 60;
+  return score;
+}
+
+function svQueryBootSearch(q, kind = 'mixed', limit = 72) {
+  const index = svGetBootSearchIndex();
+  const sourceItems = Array.isArray(_svBootSearchAllItems) ? _svBootSearchAllItems : index.items;
+  const terms = svSearchTokensFromText(q);
+  const queryNorm = svNormalizeSearchText(q);
+  if (!terms.length) return [];
+  return sourceItems
+    .map(item => ({ item, score: svBootSearchScore(item, terms, queryNorm, kind) }))
+    .filter(row => row.score > 0)
+    .sort((a, b) => b.score - a.score || String(a.item.name || '').localeCompare(String(b.item.name || '')))
+    .slice(0, limit)
+    .map(row => row.item);
+}
 function jsonError(res, status, code, message, details = {}) {
   return res.status(status).json({
     ok: false,
@@ -1484,7 +1676,7 @@ function serverAudioTrackAbsoluteIndex(track = {}) {
   return Number.isFinite(idx) && idx >= 0 ? idx : null;
 }
 
-function selectionFromAbsoluteAudio(req, track, source = 'server-english', videoStartTime = 0) {
+function selectionFromAbsoluteAudio(req, track, source = 'server-english', videoStartTime = 0, videoStreamIdx = 0) {
   const audioStreamIdx = serverAudioTrackAbsoluteIndex(track);
   if (audioStreamIdx === null) return playbackAudioSelectionFromReq(req);
   const relative = Number(track.relativeIndex);
@@ -1502,6 +1694,7 @@ function selectionFromAbsoluteAudio(req, track, source = 'server-english', video
     audioStartTime: selectedAudioStartTime,
     videoStartTime: selectedVideoStartTime,
     audioVideoOffsetSec,
+    videoStreamIdx: Number.isFinite(Number(videoStreamIdx)) ? Number(videoStreamIdx) : 0,
   };
 }
 
@@ -1512,10 +1705,12 @@ async function resolvePlaybackAudioSelection(req, input, label = 'media') {
 
   let tracks = [];
   let videoStartTime = 0;
+  let videoStreamIdx = 0;
   try {
     const info = await getCachedAudioOnlyMediaInfo(input);
     tracks = Array.isArray(info.audioTracks) ? info.audioTracks : [];
     videoStartTime = streamStartSeconds(info.videoStartTime);
+    videoStreamIdx = Number.isFinite(Number(info.videoIndex)) ? Number(info.videoIndex) : 0;
   } catch (e) {
     if (wantsEnglish) throw e;
   }
@@ -1526,7 +1721,7 @@ async function resolvePlaybackAudioSelection(req, input, label = 'media') {
       console.warn(`[Playback Audio] English requested but not found for ${label}`);
       return selection;
     }
-    const resolved = selectionFromAbsoluteAudio(req, english, 'server-english', videoStartTime);
+    const resolved = selectionFromAbsoluteAudio(req, english, 'server-english', videoStartTime, videoStreamIdx);
     console.log(`[Playback Audio] ${label} route=${normalizePlaybackMode(req.query.mode, 'direct')} chosen lang=${resolved.audioLanguage || ''} title=${resolved.audioTitle || ''} codec=${resolved.audioCodec || ''} stream=${resolved.audioStreamIdx} audioStart=${resolved.audioStartTime} videoStart=${resolved.videoStartTime} offset=${resolved.audioVideoOffsetSec}`);
     return resolved;
   }
@@ -1534,7 +1729,7 @@ async function resolvePlaybackAudioSelection(req, input, label = 'media') {
   if (selection.audioStreamIdx !== null) {
     const selectedTrack = tracks.find(track => serverAudioTrackAbsoluteIndex(track) === selection.audioStreamIdx);
     if (selectedTrack) {
-      const resolved = selectionFromAbsoluteAudio(req, selectedTrack, 'absolute-stream', videoStartTime);
+      const resolved = selectionFromAbsoluteAudio(req, selectedTrack, 'absolute-stream', videoStartTime, videoStreamIdx);
       console.log(`[Playback Audio] ${label} route=${normalizePlaybackMode(req.query.mode, 'direct')} requested lang=${resolved.audioLanguage || ''} title=${resolved.audioTitle || ''} codec=${resolved.audioCodec || ''} stream=${resolved.audioStreamIdx} audioStart=${resolved.audioStartTime} videoStart=${resolved.videoStartTime} offset=${resolved.audioVideoOffsetSec}`);
       return resolved;
     }
@@ -5517,6 +5712,136 @@ function ffmpegSeconds(value) {
   return Number.isFinite(n) ? String(Number(n.toFixed(6))) : '0';
 }
 
+const mediaPacketSyncCache = new Map();
+
+function mediaPacketSyncCacheKey(input, remote, videoStreamIdx, audioStreamIdx, startSec) {
+  let sourceKey = String(input || '');
+  if (!remote) {
+    try {
+      const stat = fs.statSync(input);
+      sourceKey = `${input}:${stat.size}:${stat.mtimeMs}`;
+    } catch {}
+  }
+  return `${remote ? 'remote' : 'local'}|${sourceKey}|v${videoStreamIdx}|a${audioStreamIdx}|s${Math.floor(Number(startSec) || 0)}`;
+}
+
+function packetPtsSeconds(packet = {}) {
+  const pts = Number(packet.pts_time);
+  if (Number.isFinite(pts)) return pts;
+  const dts = Number(packet.dts_time);
+  return Number.isFinite(dts) ? dts : null;
+}
+
+function probeFirstPacketPts({ input, remote = false, videoStreamIdx = 0, audioStreamIdx, startSec = 0 }) {
+  return new Promise((resolve, reject) => {
+    const start = Math.max(0, Math.floor(Number(startSec) || 0));
+    const windowSec = Math.max(4, Math.floor(MEDIA_PACKET_PROBE_WINDOW_SEC) || 20);
+    const args = [
+      '-v', 'error',
+      ...mappedMp4InputArgs(remote),
+      '-read_intervals', `${start}%+${windowSec}`,
+      '-show_packets',
+      '-show_entries', 'packet=stream_index,pts_time,dts_time',
+      '-of', 'json',
+      input,
+    ];
+
+    const ffprobe = spawn(FFPROBE_BIN, args);
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try { ffprobe.kill('SIGKILL'); } catch {}
+      reject(new Error('packet ffprobe timed out'));
+    }, MEDIA_PACKET_PROBE_TIMEOUT_MS);
+
+    ffprobe.stdout.on('data', data => stdout += data);
+    ffprobe.stderr.on('data', data => stderr += data);
+
+    ffprobe.on('close', code => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (code !== 0) return reject(new Error(`packet ffprobe failed: ${stderr}`));
+      try {
+        const parsed = JSON.parse(stdout || '{}');
+        const packets = Array.isArray(parsed.packets) ? parsed.packets : [];
+        let videoFirstPts = null;
+        let audioFirstPts = null;
+        for (const packet of packets) {
+          const streamIndex = Number(packet.stream_index);
+          if (!Number.isFinite(streamIndex)) continue;
+          if (videoFirstPts === null && streamIndex === Number(videoStreamIdx)) videoFirstPts = packetPtsSeconds(packet);
+          if (audioFirstPts === null && streamIndex === Number(audioStreamIdx)) audioFirstPts = packetPtsSeconds(packet);
+          if (videoFirstPts !== null && audioFirstPts !== null) break;
+        }
+        if (videoFirstPts === null || audioFirstPts === null) {
+          return reject(new Error(`packet pts missing video=${videoFirstPts} audio=${audioFirstPts}`));
+        }
+        resolve({ videoFirstPts, audioFirstPts });
+      } catch (e) {
+        reject(e);
+      }
+    });
+
+    ffprobe.on('error', err => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      reject(err);
+    });
+  });
+}
+
+async function measurePlaybackPacketSync({
+  input,
+  remote = false,
+  videoStreamIdx = 0,
+  audioStreamIdx = null,
+  startSec = 0,
+  label = 'media',
+  route = 'remux',
+}) {
+  const selectedAudioStreamIdx = Number(audioStreamIdx);
+  const selectedVideoStreamIdx = Number(videoStreamIdx);
+  if (!Number.isFinite(selectedAudioStreamIdx) || selectedAudioStreamIdx < 0) {
+    return { videoFirstPts:null, audioFirstPts:null, calculatedOffsetSec:0, correctionAppliedSec:0, measured:false };
+  }
+  const safeVideoStreamIdx = Number.isFinite(selectedVideoStreamIdx) && selectedVideoStreamIdx >= 0 ? selectedVideoStreamIdx : 0;
+  const cacheKey = mediaPacketSyncCacheKey(input, remote, safeVideoStreamIdx, selectedAudioStreamIdx, startSec);
+  if (mediaPacketSyncCache.has(cacheKey)) return mediaPacketSyncCache.get(cacheKey);
+
+  try {
+    const pts = await probeFirstPacketPts({
+      input,
+      remote,
+      videoStreamIdx: safeVideoStreamIdx,
+      audioStreamIdx: selectedAudioStreamIdx,
+      startSec,
+    });
+    const calculatedOffsetSec = roundedSeconds(pts.audioFirstPts - pts.videoFirstPts);
+    const correctionAppliedSec = Math.abs(calculatedOffsetSec) >= MEDIA_AUDIO_OFFSET_THRESHOLD_SEC
+      ? roundedSeconds(-calculatedOffsetSec)
+      : 0;
+    const result = {
+      videoFirstPts: roundedSeconds(pts.videoFirstPts),
+      audioFirstPts: roundedSeconds(pts.audioFirstPts),
+      calculatedOffsetSec,
+      correctionAppliedSec,
+      measured: true,
+    };
+    mediaPacketSyncCache.set(cacheKey, result);
+    if (mediaPacketSyncCache.size > 120) mediaPacketSyncCache.delete(mediaPacketSyncCache.keys().next().value);
+    console.log(`[Media Sync] title="${label}" route=${route} videoFirstPts=${result.videoFirstPts} audioFirstPts=${result.audioFirstPts} calculatedOffset=${result.calculatedOffsetSec} correctionApplied=${result.correctionAppliedSec}`);
+    return result;
+  } catch (e) {
+    console.warn(`[Media Sync] title="${label}" route=${route} packet probe failed: ${e.message}`);
+    return { videoFirstPts:null, audioFirstPts:null, calculatedOffsetSec:0, correctionAppliedSec:0, measured:false };
+  }
+}
+
 function ffmpegMp4Args({
   input,
   mode = 'remux',
@@ -5524,6 +5849,7 @@ function ffmpegMp4Args({
   audioMap = '0:a:0?',
   audioStreamIdx = null,
   audioVideoOffsetSec = 0,
+  audioCorrectionSec = 0,
   remote = false,
   hevcTag = false,
 }) {
@@ -5532,21 +5858,23 @@ function ffmpegMp4Args({
   args.push(...mappedMp4InputArgs(remote), '-i', input);
 
   const selectedAudioStreamIdx = Number(audioStreamIdx);
-  const selectedAudioOffsetSec = Number(audioVideoOffsetSec);
+  const selectedAudioCorrectionSec = Number(audioCorrectionSec);
   const useOffsetAudioInput = Number.isFinite(selectedAudioStreamIdx)
     && selectedAudioStreamIdx >= 0
-    && Number.isFinite(selectedAudioOffsetSec)
-    && selectedAudioOffsetSec >= MEDIA_AUDIO_OFFSET_THRESHOLD_SEC;
+    && Number.isFinite(selectedAudioCorrectionSec)
+    && Math.abs(selectedAudioCorrectionSec) >= MEDIA_AUDIO_OFFSET_THRESHOLD_SEC;
   const mappedAudio = useOffsetAudioInput ? `1:${selectedAudioStreamIdx}` : audioMap;
 
   if (useOffsetAudioInput) {
     if (startSec > 0) args.push('-ss', String(Math.floor(startSec)));
-    args.push('-itsoffset', ffmpegSeconds(selectedAudioOffsetSec), ...mappedMp4InputArgs(remote), '-i', input);
+    args.push('-itsoffset', ffmpegSeconds(selectedAudioCorrectionSec), ...mappedMp4InputArgs(remote), '-i', input);
   }
 
   args.push('-map', '0:v:0', '-map', mappedAudio, '-sn', '-dn');
-  if (mode === 'audio') {
+  const encodeAudio = mode === 'audio' || useOffsetAudioInput;
+  if (encodeAudio) {
     args.push('-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2');
+    if (useOffsetAudioInput) args.push('-af', 'aresample=async=1:first_pts=0');
   } else {
     args.push('-c', 'copy');
   }
@@ -5566,7 +5894,7 @@ function ffmpegMp4Args({
   return args;
 }
 
-function streamFfmpegMp4(req, res, options) {
+async function streamFfmpegMp4(req, res, options) {
   const mode = options.mode === 'audio' ? 'audio' : 'remux';
   const label = options.label || options.input;
   const playbackType = String(req.query.playbackType || 'media');
@@ -5578,8 +5906,21 @@ function streamFfmpegMp4(req, res, options) {
     });
   }
 
-  const args = ffmpegMp4Args({ ...options, mode });
-  console.log(`[Media FFmpeg] playbackType=${playbackType} selected source URL=${options.input} fallback reason=${fallbackReason || 'ffmpeg-start'} ${mode} start ${label} audioMap=${options.audioMap || '0:a:0?'} audioStream=${options.audioStreamIdx ?? 'relative'} avOffset=${options.audioVideoOffsetSec ?? 0}`);
+  const sync = await measurePlaybackPacketSync({
+    input: options.input,
+    remote: !!options.remote,
+    videoStreamIdx: options.videoStreamIdx ?? 0,
+    audioStreamIdx: options.audioStreamIdx,
+    startSec: options.startSec || 0,
+    label,
+    route: mode,
+  });
+  const args = ffmpegMp4Args({
+    ...options,
+    mode,
+    audioCorrectionSec: sync.correctionAppliedSec,
+  });
+  console.log(`[Media FFmpeg] playbackType=${playbackType} selected source URL=${options.input} fallback reason=${fallbackReason || 'ffmpeg-start'} ${mode} start ${label} audioMap=${options.audioMap || '0:a:0?'} audioStream=${options.audioStreamIdx ?? 'relative'} avOffset=${options.audioVideoOffsetSec ?? 0} videoFirstPts=${sync.videoFirstPts ?? 'n/a'} audioFirstPts=${sync.audioFirstPts ?? 'n/a'} packetOffset=${sync.calculatedOffsetSec ?? 0} correctionApplied=${sync.correctionAppliedSec ?? 0}`);
   activeMediaFfmpegStreams += 1;
   const ffmpeg = spawn(FFMPEG_BIN, args);
   let started = false;
@@ -6246,6 +6587,41 @@ app.get('/api/search', (req, res) => {
   } catch (e) {
     console.error('/api/search error:', e.message);
     res.json({ items: [], total: 0, page: 1, pages: 0, instant: false, error: e.message });
+  }
+});
+
+app.get('/api/boot-search-index', (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    const limit = Math.min(120, Math.max(1, parseInt(req.query.limit || '72', 10) || 72));
+    const kindRaw = String(req.query.kind || req.query.type || 'mixed').toLowerCase();
+    const kind = kindRaw === 'movie' || kindRaw === 'movies' ? 'movie' : (kindRaw === 'series' || kindRaw === 'tv' || kindRaw === 'show' || kindRaw === 'shows' ? 'series' : 'mixed');
+    res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=3600');
+    res.setHeader('X-StreamVault-Search-Version', SV_BOOT_SEARCH_VERSION);
+    if (q.length >= 2) {
+      const items = svQueryBootSearch(q, kind, limit);
+      return res.json({
+        ok: true,
+        version: SV_BOOT_SEARCH_VERSION,
+        boot: true,
+        query: q,
+        items,
+        total: items.length,
+        page: 1,
+        pages: 1,
+      });
+    }
+    return res.json(svGetBootSearchIndex());
+  } catch (e) {
+    console.error('/api/boot-search-index error:', e.message);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({
+      ok: false,
+      version: SV_BOOT_SEARCH_VERSION,
+      items: [],
+      total: 0,
+      error: e.message,
+    });
   }
 });
 
@@ -7279,13 +7655,14 @@ app.get('/api/playback/local/:id/stream', async (req, res) => {
     return jsonError(res, 502, 'ENGLISH_AUDIO_RESOLVE_FAILED', 'Could not resolve English audio stream', { label: entry.file, details: e.message });
   }
   if (!requireAbsolutePlaybackAudio(req, res, audioSelection, mode, entry.file)) return;
-  console.log(`[Local Playback Stream] playbackType=${req.query.playbackType || 'media'} selected source URL=${req.originalUrl} fallback reason=${req.query.fallbackReason || 'stream'} ${entry.file} mode=${mode} route=${mode === 'audio' ? 'audio-copy' : 'remux-copy'} lang=${audioSelection.audioLanguage || ''} title=${audioSelection.audioTitle || ''} codec=${audioSelection.audioCodec || ''} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap} audioStart=${audioSelection.audioStartTime ?? 0} videoStart=${audioSelection.videoStartTime ?? 0} offset=${audioSelection.audioVideoOffsetSec ?? 0}`);
+  console.log(`[Local Playback Stream] playbackType=${req.query.playbackType || 'media'} selected source URL=${req.originalUrl} fallback reason=${req.query.fallbackReason || 'stream'} ${entry.file} mode=${mode} route=${mode === 'audio' ? 'audio-copy' : 'remux-copy'} lang=${audioSelection.audioLanguage || ''} title=${audioSelection.audioTitle || ''} codec=${audioSelection.audioCodec || ''} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} videoStream=${audioSelection.videoStreamIdx ?? 0} map=${audioSelection.audioMap} audioStart=${audioSelection.audioStartTime ?? 0} videoStart=${audioSelection.videoStartTime ?? 0} offset=${audioSelection.audioVideoOffsetSec ?? 0}`);
   return streamFfmpegMp4(req, res, {
     input: filePath,
     mode,
     startSec: playbackStartFromReq(req),
     audioMap: audioSelection.audioMap,
     audioStreamIdx: audioSelection.audioStreamIdx,
+    videoStreamIdx: audioSelection.videoStreamIdx,
     audioVideoOffsetSec: audioSelection.audioVideoOffsetSec,
     remote: false,
     label: entry.file,
@@ -8007,13 +8384,14 @@ app.get('/api/playback/ftp', async (req, res) => {
       return jsonError(res, 502, 'ENGLISH_AUDIO_RESOLVE_FAILED', 'Could not resolve English audio stream', { label: remoteFilename(srcUrl), details: e.message });
     }
     if (!requireAbsolutePlaybackAudio(req, res, audioSelection, mode, remoteFilename(srcUrl))) return;
-    console.log(`[FTP Playback FFmpeg] playbackType=${playbackType} selected source URL=${srcUrl} fallback reason=${fallbackReason} ${remoteFilename(srcUrl)} mode=${mode} route=${mode === 'audio' ? 'audio-copy' : 'remux-copy'} lang=${audioSelection.audioLanguage || ''} title=${audioSelection.audioTitle || ''} codec=${audioSelection.audioCodec || ''} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap} audioStart=${audioSelection.audioStartTime ?? 0} videoStart=${audioSelection.videoStartTime ?? 0} offset=${audioSelection.audioVideoOffsetSec ?? 0}`);
+    console.log(`[FTP Playback FFmpeg] playbackType=${playbackType} selected source URL=${srcUrl} fallback reason=${fallbackReason} ${remoteFilename(srcUrl)} mode=${mode} route=${mode === 'audio' ? 'audio-copy' : 'remux-copy'} lang=${audioSelection.audioLanguage || ''} title=${audioSelection.audioTitle || ''} codec=${audioSelection.audioCodec || ''} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} videoStream=${audioSelection.videoStreamIdx ?? 0} map=${audioSelection.audioMap} audioStart=${audioSelection.audioStartTime ?? 0} videoStart=${audioSelection.videoStartTime ?? 0} offset=${audioSelection.audioVideoOffsetSec ?? 0}`);
     return streamFfmpegMp4(req, res, {
       input: srcUrl,
       mode,
       startSec: playbackStartFromReq(req),
       audioMap: audioSelection.audioMap,
       audioStreamIdx: audioSelection.audioStreamIdx,
+      videoStreamIdx: audioSelection.videoStreamIdx,
       audioVideoOffsetSec: audioSelection.audioVideoOffsetSec,
       remote: true,
       label: remoteFilename(srcUrl),
@@ -8700,6 +9078,7 @@ app.use((err, req, res, next) => { console.error('Unhandled error:', err.message
 buildFileIndex();
 buildInstantLists();                                   // ⚡ instant — sync, ~10ms
 filterCartoonsAndAnime();                              // 🧹 remove cartoons/anime (with logging)
+svGetBootSearchIndex();                                // instant search boot payload, no massive catalog
 if (process.env.SV_SEARCH_WARMUP === '1') {
   const searchWarmupDelay = Math.max(30000, parseInt(process.env.SV_SEARCH_WARMUP_DELAY_MS || '120000', 10) || 120000);
   setTimeout(() => {

@@ -9,7 +9,7 @@
 <title>StreamVault</title>
 <link rel="preconnect" href="https://image.tmdb.org" crossorigin>
 <link rel="dns-prefetch" href="//image.tmdb.org">
-<link rel="preload" href="/boot-search-index.json?v=20260624-instant-search-smooth-playback3" as="fetch" crossorigin="anonymous">
+<link rel="preload" href="/boot-search-index.json?v=20260624-playable-only-search1" as="fetch" crossorigin="anonymous">
 <script>
 (function(){
   var key = 'streamvault:fifa-live:last-real:v1';
@@ -45,7 +45,7 @@
 </script>
 <script>
 (function(){
-  var version = '20260624-instant-search-smooth-playback3';
+  var version = '20260624-playable-only-search1';
   if(window.__svBootSearchIndexPromise)return;
   window.__svBootSearchIndexPromise = fetch('/boot-search-index.json?v=' + version, {
     cache:'force-cache',
@@ -74,7 +74,7 @@
     });
 })();
 </script>
-<link rel="stylesheet" href="/styles.css?v=20260623-single-detail-english-audio1">
+<link rel="stylesheet" href="/styles.css?v=20260624-lite-ui-preview-cleanup2">
 </head>
 <body>
 
@@ -910,11 +910,11 @@
 
 <div class="toast" id="toast"></div>
 
-<script defer src="/app.js?v=20260624-restore-media-playback3"></script>
-<script defer src="/details.js?v=20260623-english-seek-overflow1"></script>
-<script defer src="/home.js?v=20260623-english-seek-overflow1"></script>
+<script defer src="/app.js?v=20260624-lite-ui-preview-cleanup2"></script>
+<script defer src="/details.js?v=20260624-lite-ui-preview-cleanup2"></script>
+<script defer src="/home.js?v=20260624-lite-ui-preview-cleanup2"></script>
 <script defer src="/downloads.js?v=20260621-real-browser-track-loading1"></script>
-<script defer src="/search.js?v=20260624-instant-search-smooth-playback3"></script>
+<script defer src="/search.js?v=20260624-playable-only-search1"></script>
 <script defer src="/livetv.js?v=20260621-real-browser-track-loading1"></script>
 <script defer src="/player.js?v=20260621-real-browser-track-loading1"></script>
 <script defer src="/live-fast.js?v=20260624-block-live-media-fallback1"></script>

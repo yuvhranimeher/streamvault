@@ -1,5 +1,5 @@
 (function(){
-  const BOOT_SEARCH_VERSION = '20260624-instant-search-smooth-playback3';
+  const BOOT_SEARCH_VERSION = '20260624-playable-only-search1';
   const BOOT_INDEX_URL = `/boot-search-index.json?v=${BOOT_SEARCH_VERSION}`;
   const BOOT_INDEX_API_URL = `/api/boot-search-index?v=${BOOT_SEARCH_VERSION}`;
   const SEARCH_DELAY = 90;
@@ -66,6 +66,7 @@
   }
 
   function resultHTML(item){
+    if(typeof isPlayableMediaItem === 'function' && !isPlayableMediaItem(item))return '';
     try{return isSeriesItem(item) ? sCardHTML(item) : cardHTML(item);}catch(err){console.warn('[Search] card render failed:', err);return '';}
   }
 
@@ -112,7 +113,8 @@
     const items = Array.isArray(data.fields)
       ? data.items.map(row=>expandBootSearchItem(row, data.fields))
       : data.items;
-    bootIndex = { ...data, items };
+    const playableItems=typeof filterPlayableMediaItems === 'function' ? filterPlayableMediaItems(items) : items;
+    bootIndex = { ...data, items:playableItems, total:playableItems.length };
     return bootIndex;
   }
 
@@ -190,6 +192,7 @@
     const terms = searchTokens(q);
     if(!terms.length)return {items:[], total:0};
     const scored = bootIndex.items
+      .filter(item=>typeof isPlayableMediaItem !== 'function' || isPlayableMediaItem(item))
       .map(item=>({item, score:bootSearchScore(item, terms, queryNorm, kind)}))
       .filter(row=>row.score > 0)
       .sort((a,b)=>b.score-a.score || String(a.item.name || '').localeCompare(String(b.item.name || '')));
@@ -288,7 +291,8 @@
   }
 
   function renderItems(grid, items, append, expectedQuery=''){
-    const html = (items || []).map(resultHTML).join('');
+    const visibleItems=typeof filterPlayableMediaItems === 'function' ? filterPlayableMediaItems(items) : (items || []);
+    const html = visibleItems.map(resultHTML).join('');
     const seq = searchSeq;
     requestAnimationFrame(()=>{
       if(expectedQuery && (expectedQuery !== activeQuery || seq !== searchSeq))return;
@@ -313,7 +317,8 @@
     try{
       const data = await fetchResults(query, page, limit, kind);
       if(seq !== searchSeq || query !== activeQuery)return;
-      const items = Array.isArray(data?.items) ? data.items : [];
+      const rawItems = Array.isArray(data?.items) ? data.items : [];
+      const items = typeof filterPlayableMediaItems === 'function' ? filterPlayableMediaItems(rawItems) : rawItems;
       const total = Number(data?.total || items.length || 0);
       activePage = Number(data?.page || page) || page;
       activePages = Number(data?.pages || Math.ceil(total / limit) || 1) || 1;
@@ -450,20 +455,30 @@
   window.updateGlobalSearchControls = updateSearchControls;
   window.focusGlobalSearchInput = focusGlobalSearchInput;
 
+  let desktopScrollRaf=0;
   document.addEventListener('scroll', ()=>{
-    if(currentTab !== 'search' || loading || lastTarget !== 'desktop')return;
-    if(!activeQuery || activePage >= activePages)return;
-    const nearBottom = window.innerHeight + window.scrollY > document.body.offsetHeight - 800;
-    if(nearBottom)runSearch(activeQuery, { mobile:false, append:true });
+    if(desktopScrollRaf)return;
+    desktopScrollRaf=requestAnimationFrame(()=>{
+      desktopScrollRaf=0;
+      if(currentTab !== 'search' || loading || lastTarget !== 'desktop')return;
+      if(!activeQuery || activePage >= activePages)return;
+      const nearBottom = window.innerHeight + window.scrollY > document.body.offsetHeight - 800;
+      if(nearBottom)runSearch(activeQuery, { mobile:false, append:true });
+    });
   }, { passive:true });
 
   const mobileResults = document.getElementById('mobileSearchGrid');
+  let mobileScrollRaf=0;
   mobileResults?.addEventListener('scroll', ()=>{
-    if(loading || lastTarget !== 'mobile')return;
-    if(!activeQuery || activePage >= activePages)return;
-    if(mobileResults.scrollTop + mobileResults.clientHeight > mobileResults.scrollHeight - 500){
-      runSearch(activeQuery, { mobile:true, append:true });
-    }
+    if(mobileScrollRaf)return;
+    mobileScrollRaf=requestAnimationFrame(()=>{
+      mobileScrollRaf=0;
+      if(loading || lastTarget !== 'mobile')return;
+      if(!activeQuery || activePage >= activePages)return;
+      if(mobileResults.scrollTop + mobileResults.clientHeight > mobileResults.scrollHeight - 500){
+        runSearch(activeQuery, { mobile:true, append:true });
+      }
+    });
   }, { passive:true });
 
   document.addEventListener('input', event=>{

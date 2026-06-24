@@ -349,6 +349,8 @@
       svHomeObserver = new IntersectionObserver(entries=>{
         entries.forEach(entry=>{
           if(entry.isIntersecting || entry.intersectionRatio > 0){
+            const main=document.getElementById('mainSection');
+            if(!main || main.offsetParent === null || entry.target.offsetParent === null)return;
             svHomeObserver.unobserve(entry.target);
             entry.target._svObserved = false;
             const meta = SV_PERF_HOME_BY_ID[entry.target.id];
@@ -360,7 +362,7 @@
             }
           }
         });
-      }, { root:null, rootMargin:svWeakDevice ? '420px 0px 560px 0px' : '850px 0px 850px 0px', threshold:.01 });
+      }, { root:null, rootMargin:svWeakDevice ? '180px 0px 260px 0px' : '360px 0px 420px 0px', threshold:.01 });
     }
     row._svObserved = true;
     svHomeObserver.observe(row);
@@ -370,7 +372,8 @@
     const meta = SV_PERF_HOME_BY_ID[rowId];
     const row = svEnsureHomeRow(rowId);
     if(!row || !meta)return;
-    const items = Array.isArray(rowData?.items) ? rowData.items : [];
+    const rawItems = Array.isArray(rowData?.items) ? rowData.items : [];
+    const items = typeof filterPlayableMediaItems === 'function' ? filterPlayableMediaItems(rawItems) : rawItems;
     const track = document.getElementById(meta.trackId);
     if(rowData && svShouldRefillHomeRow(rowId, items, rowData) && !row._svRefillStarted){
       row._svRefillStarted = true;
@@ -547,7 +550,8 @@
 
   window.svRenderVirtualTrackElement = function(track, items, renderItem, opts={}){
     if(!track)return;
-    const list = (items || []).slice(0, opts.limit || items.length || 0);
+    const playable = typeof filterPlayableMediaItems === 'function' ? filterPlayableMediaItems(items) : (items || []);
+    const list = playable.slice(0, opts.limit || playable.length || 0);
     const rowId = opts.rowId || track.closest('.row')?.id || '';
     const nextKeys = svRowItemKeys(list);
     const existingCards = svTrackCards(track);
@@ -628,7 +632,8 @@
     if(!track){ hide(rowId); return; }
     const limit = opts.limit || (SV_PERF_HOME_BY_ID[rowId] ? SV_HOME_ROW_LIMIT : 50);
     const shouldClaim = !!(rowId && (SV_PERF_HOME_BY_ID[rowId] || ['continueRow','becauseRow'].includes(rowId)));
-    const list = shouldClaim ? svClaimHomeItems(rowId, items || [], limit) : (items || []).slice(0, limit);
+    const playable = typeof filterPlayableMediaItems === 'function' ? filterPlayableMediaItems(items) : (items || []);
+    const list = shouldClaim ? svClaimHomeItems(rowId, playable, limit) : playable.slice(0, limit);
     if(opts.fresh && SV_PERF_HOME_BY_ID[rowId])svLogShortHomeRow(rowId, list.length, 'section');
     if(!list.length){
       if(track.querySelector('.card,.live-ch-card')){
@@ -742,7 +747,11 @@
   function svExclusiveHeroDedup(items){
     const seen = new Set();
     return (items || [])
-      .filter(item=>item && !svExclusiveHeroBlocked(item) && (item.poster || item.backdrop) && (item.name || item.title))
+      .filter(item=>item
+        && (typeof isPlayableMediaItem !== 'function' || isPlayableMediaItem(item))
+        && !svExclusiveHeroBlocked(item)
+        && (item.poster || item.backdrop)
+        && (item.name || item.title))
       .sort((a,b)=>svExclusiveHeroScore(b) - svExclusiveHeroScore(a))
       .filter(item=>{
         const keys = svExclusiveHeroGroupKeys(item);
@@ -3006,18 +3015,12 @@
       const normalized = svDedupItems(list.map(svNormalizeOnlineItem).filter(Boolean)).slice(0,SV_HOME_ROW_LIMIT);
       if(!normalized.length)return;
       const track = document.getElementById(meta.trackId);
-      if(row._svLoaded && track?.querySelector('.card,.live-ch-card')){
-        svRenderLazyTrack(meta.trackId,rowId,normalized,item=>item._isSeries?sCardHTML(item):cardHTML(item),{limit:SV_HOME_ROW_LIMIT});
-        row._svItems = track._svItems || row._svItems || normalized;
-        row.classList.remove('sv-row-pending');
-        row.classList.add('sv-row-loaded');
-        return;
-      }
-      row._svItems = normalized;
-      svRenderLazyTrack(meta.trackId,rowId,normalized,item=>item._isSeries?sCardHTML(item):cardHTML(item),{limit:SV_HOME_ROW_LIMIT});
-      row._svLoaded = !!track?.querySelector('.card,.live-ch-card');
-      row.classList.remove('sv-row-pending');
-      row.classList.add('sv-row-loaded');
+      const alreadyMounted = !!(row._svLoaded && track?.querySelector('.card,.live-ch-card'));
+      svPrepareHomeRow(rowId, {
+        items: normalized,
+        total: normalized.length,
+        _svFresh: true
+      }, alreadyMounted || SV_PERF_HOME_MAIN.slice(0,3).some(item=>item.rowId === rowId));
     });
   };
 
@@ -3043,7 +3046,7 @@
 
   window.svRenderGridProgressive = function(grid, items, renderer, pageSize=48){
     if(!grid)return;
-    grid._svItems = items || [];
+    grid._svItems = typeof filterPlayableMediaItems === 'function' ? filterPlayableMediaItems(items) : (items || []);
     grid._svRenderer = renderer;
     grid._svPageSize = pageSize;
     grid._svRendered = 0;

@@ -43,6 +43,7 @@ const MEDIA_PACKET_PROBE_WINDOW_SEC = Number(process.env.MEDIA_PACKET_PROBE_WIND
 const MEDIA_PACKET_PROBE_TIMEOUT_MS = Number(process.env.MEDIA_PACKET_PROBE_TIMEOUT_MS || 12000);
 const MEDIA_PACKET_SYNC_BACKGROUND = process.env.MEDIA_PACKET_SYNC_BACKGROUND !== '0';
 const SV_PLAYBACK_VERBOSE = process.env.SV_PLAYBACK_VERBOSE === '1';
+const SV_DETAIL_VERBOSE = process.env.SV_DETAIL_VERBOSE === '1';
 let activeMediaFfmpegStreams = 0;
 
 // ── FFmpeg helper for extracting media info ──────────────────────────────────
@@ -840,7 +841,7 @@ function svShouldDropSearchResult(entry, score, terms, queryNorm) {
 const SV_SEARCH_STOPWORDS = new Set(['in','on','of','to','a','an','the','and','or','for','with','by','from']);
 const SV_SEARCH_CACHE_LIMIT = Number(process.env.SV_SEARCH_CACHE_LIMIT || 160);
 const SV_SEARCH_CANDIDATE_LIMIT = Number(process.env.SV_SEARCH_CANDIDATE_LIMIT || 6000);
-const SV_BOOT_SEARCH_VERSION = '20260624-instant-search-smooth-playback3';
+const SV_BOOT_SEARCH_VERSION = '20260624-playable-only-search1';
 const SV_BOOT_SEARCH_MAX_ITEMS = Number(process.env.SV_BOOT_SEARCH_MAX_ITEMS || 50000);
 const _svQueryResultCache = new Map();
 let _svFastSearchIndex = null;
@@ -1336,7 +1337,7 @@ function svCompactBootSearchItem(item) {
     rating: item?.rating || null,
     isFtp: !!item?.isFtp,
   };
-  if (item?.streamUrl || item?.id != null) compact.hasStream = true;
+  if (svServerPlayableItem(item, compact.type)) compact.hasStream = true;
   if (compact.type === 'series') {
     compact._isSeries = true;
     compact.isSummary = true;
@@ -1408,7 +1409,7 @@ function svBuildBootSearchIndex() {
   const items = [];
   const add = (raw, kind, source, sourceRank, index) => {
     const item = svBootSearchItem(raw, kind, source, sourceRank, index);
-    if (!item) return;
+    if (!item || !svServerPlayableItem(item, item.type)) return;
     const key = `${item.type}|${svNormalizeSearchText(item.name)}|${item.year}|${item.streamUrl || item.id}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -1511,6 +1512,7 @@ function svBootSearchRows(q, kind = 'mixed') {
   const queryNorm = svNormalizeSearchText(q);
   if (!terms.length) return [];
   return sourceItems
+    .filter(item => svServerPlayableItem(item, item.type))
     .map(item => ({ item, score: svBootSearchScore(item, terms, queryNorm, kind) }))
     .filter(row => row.score > 0)
     .sort((a, b) => b.score - a.score || String(a.item.name || '').localeCompare(String(b.item.name || '')));
@@ -5367,7 +5369,7 @@ app.get('/api/mobile-hls/local/:id/index.m3u8', (req, res) => {
 
 function allApiMoviesForDetails() {
   const localMovies = _movieList || buildMovieListSync();
-  const ftpMovies = (ftpCatalog.movies || [])
+  const ftpMovies = getCachedMovies()
     .filter(m => !isCartoonOrAnime(m))
     .map((m, i) => ({
       id: `ftp_${i}`,
@@ -5396,9 +5398,10 @@ function allApiMoviesForDetails() {
 
 function allApiSeriesForDetails() {
   const localSeries = _seriesList || buildSeriesListSync();
-  const ftpSeries = (ftpCatalog.series || [])
+  const ftpSeries = getCachedSeries()
     .filter(s => !isCartoonOrAnime(s))
-    .map(s => ({
+    .map((s, i) => ({
+      id: `ftp_series_${i}`,
       name: s.title,
       poster: s.poster || null,
       backdrop: s.backdrop || s.poster || null,
@@ -5466,7 +5469,7 @@ function normalizeDetailTitle(title, fallbackYear = '') {
 }
 
 function normalizedTitleKey(value) {
-  return normalizeDetailTitle(value).title.toLowerCase();
+  return svNormalizeSearchText(normalizeDetailTitle(value).title);
 }
 
 function looseTitleScore(a, b) {
@@ -5476,6 +5479,220 @@ function looseTitleScore(a, b) {
   let overlap = 0;
   aw.forEach(w => { if (bw.has(w)) overlap++; });
   return overlap / Math.max(aw.size, bw.size);
+}
+
+function svServerPlayableItem(item, mediaType = '') {
+  if (!item || item.streamAvailable === false || item.hasStream === false) return false;
+  const type = mediaType === 'tv' || mediaType === 'series' || item.type === 'tv' || item.type === 'series' || item.seasons
+    ? 'tv'
+    : 'movie';
+  const id = String(item.id ?? '');
+  if (/^tmdb(?:_tv)?_/i.test(id) && !item.streamUrl) return false;
+  if (type === 'tv') {
+    return Object.values(item.seasons || {}).some(eps =>
+      Array.isArray(eps) && eps.some(ep => ep && (ep.streamUrl || ep.streamId !== null && ep.streamId !== undefined))
+    ) || item.hasStream === true || item.streamAvailable === true || (!!item.isFtp && !!(item.id ?? item.name));
+  }
+  return !!item.streamUrl
+    || item.hasStream === true
+    || item.streamAvailable === true
+    || (item.id !== null && item.id !== undefined && !/^tmdb_/i.test(id));
+}
+
+let _svDetailCatalogIndex = null;
+function svDetailCatalogIndex() {
+  if (_svDetailCatalogIndex) return _svDetailCatalogIndex;
+  const build = (items, type) => {
+    const playable = items.filter(item => svServerPlayableItem(item, type));
+    const exact = new Map();
+    const tokenMap = new Map();
+    const genreMap = new Map();
+    const categoryMap = new Map();
+    const languageMap = new Map();
+    const yearMap = new Map();
+    const addToMap = (map, key, row) => {
+      if (!key) return;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(row);
+    };
+    const rows = playable.map(item => {
+      const title = normalizedTitleKey(item.name || item.title || item.file || '');
+      const year = playbackTitleYear(item.year || item.name || item.title || '');
+      const row = {
+        item,
+        title,
+        year: Number(year) || 0,
+        genres: splitDetailGenres(item.genre),
+        tokens: svDetailTitleTokens(item.name || item.title || ''),
+        category: String(item.category || '').trim().toLowerCase(),
+        language: String(item.language || '').trim().toLowerCase(),
+        rating: Math.min(Number(item.rating || 0) || 0, 10),
+      };
+      row.tokens.forEach(token => addToMap(tokenMap, token, row));
+      row.genres.forEach(genre => addToMap(genreMap, genre, row));
+      addToMap(categoryMap, row.category, row);
+      addToMap(languageMap, row.language, row);
+      addToMap(yearMap, String(row.year || ''), row);
+      return row;
+    });
+    for (const row of rows) {
+      const { item, title } = row;
+      const year = row.year ? String(row.year) : '';
+      if (!title) continue;
+      const exactKey = `${title}|${year}`;
+      if (!exact.has(exactKey)) exact.set(exactKey, item);
+      if (!exact.has(title)) exact.set(title, item);
+    }
+    const top = rows
+      .slice()
+      .sort((a, b) => b.rating - a.rating)
+      .slice(0, 300);
+    return { playable, rows, exact, tokenMap, genreMap, categoryMap, languageMap, yearMap, top };
+  };
+  const bootItems = (_svBootSearchAllItems?.length
+    ? _svBootSearchAllItems
+    : svGetBootSearchIndex().items) || [];
+  _svDetailCatalogIndex = {
+    movie: build(bootItems.filter(item => item.type !== 'series'), 'movie'),
+    tv: build(bootItems.filter(item => item.type === 'series'), 'tv'),
+  };
+  return _svDetailCatalogIndex;
+}
+
+function svDetailItemIdentity(item, type) {
+  return [
+    type,
+    item?.tmdbId || '',
+    item?.id ?? '',
+    normalizedTitleKey(item?.name || item?.title || item?.file || ''),
+    playbackTitleYear(item?.year || item?.name || item?.title || '')
+  ].join('|');
+}
+
+function svDetailTitleTokens(value) {
+  const stop = new Set(['the','and','for','from','with','part','movie','series','season','episode','one','two','three','last']);
+  return normalizedTitleKey(value).split(/\s+/).filter(token => token.length > 2 && !stop.has(token));
+}
+
+function svDetailComparableTitle(value) {
+  return normalizedTitleKey(value)
+    .replace(/\b(?:tv|mini|web)?\s*series\b/g, ' ')
+    .replace(/\b(?:19|20)\d{2}\b/g, ' ')
+    .replace(/\b(?:2160p|1080p|720p|540p|480p|4k|uhd|dual|multi|audio|hindi|english)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const SV_DETAIL_FRANCHISE_TOKENS = new Set([
+  'avengers','batman','superman','spiderman','spider','thor','hulk','marvel','dune','witcher',
+  'matrix','hobbit','potter','jurassic','avatar','deadpool','wolverine','terminator','alien',
+  'predator','conjuring','transformers','godzilla','kong','bourne','bond','creed',
+  'rocky','furious','pirates','starwars','trek'
+]);
+
+function svResolvePlayableDetailRecommendations(seed, mediaType, externalItems = [], limit = 18) {
+  const type = mediaType === 'tv' ? 'tv' : 'movie';
+  const index = svDetailCatalogIndex()[type];
+  const currentIdentity = svDetailItemIdentity(seed, type);
+  const currentTitle = normalizedTitleKey(seed?.name || seed?.title || '');
+  const currentYear = playbackTitleYear(seed?.year || seed?.name || seed?.title || '');
+  const currentComparableTitle = svDetailComparableTitle(seed?.name || seed?.title || '');
+  const seedGenres = splitDetailGenres(seed?.genre || seed?.genres);
+  const seedYear = Number(currentYear) || 0;
+  const seedCategory = String(seed?.category || '').trim().toLowerCase();
+  const seedLanguage = String(seed?.language || '').trim().toLowerCase();
+  const seedTokens = new Set(svDetailTitleTokens(seed?.name || seed?.title || ''));
+  const seen = new Set([currentIdentity]);
+  const resolved = [];
+  const add = item => {
+    if (!svServerPlayableItem(item, type)) return;
+    const itemTitle = normalizedTitleKey(item?.name || item?.title || item?.file || '');
+    const itemYear = playbackTitleYear(item?.year || item?.name || item?.title || '');
+    const itemComparableTitle = svDetailComparableTitle(item?.name || item?.title || item?.file || '');
+    if (
+      (itemTitle === currentTitle || (currentComparableTitle && itemComparableTitle === currentComparableTitle))
+      && (!currentYear || !itemYear || itemYear === currentYear)
+    ) return;
+    const key = svDetailItemIdentity(item, type);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    resolved.push(item);
+  };
+
+  const franchiseTokens=[...seedTokens].filter(token=>SV_DETAIL_FRANCHISE_TOKENS.has(token));
+  if(franchiseTokens.length){
+    const franchiseRows = new Set(franchiseTokens.flatMap(token=>index.tokenMap.get(token) || []));
+    [...franchiseRows]
+      .map(row=>({item:row.item,score:row.tokens.filter(token=>franchiseTokens.includes(token)).length}))
+      .filter(row=>row.score>0)
+      .sort((a,b)=>b.score-a.score || Number(b.item.rating || 0)-Number(a.item.rating || 0))
+      .slice(0,8)
+      .forEach(row=>add(row.item));
+  }
+
+  const externalResolved = [];
+  for (const [position, candidate] of (externalItems || []).entries()) {
+    const title = normalizedTitleKey(candidate?.name || candidate?.title || '');
+    const year = playbackTitleYear(candidate?.year || candidate?.release_date || candidate?.first_air_date || '');
+    const match = index.exact.get(`${title}|${year}`) || index.exact.get(title);
+    if (!match) continue;
+    const candidateGenres = splitDetailGenres(candidate?.genre || match.genre);
+    const candidateTokens = svDetailTitleTokens(candidate?.name || candidate?.title || '');
+    const candidateYear = Number(year) || 0;
+    let score = Math.max(0, 8 - position * 0.25);
+    score += candidateGenres.filter(genre => seedGenres.some(seedGenre => genre.includes(seedGenre) || seedGenre.includes(genre))).length * 12;
+    score += candidateTokens.filter(token => seedTokens.has(token)).length * 25;
+    if (seedYear && candidateYear) {
+      const delta = Math.abs(seedYear - candidateYear);
+      if (delta <= 2) score += 5;
+      else if (delta <= 5) score += 3;
+    }
+    score += Math.min(Number(match.rating || 0) || 0, 10) / 10;
+    externalResolved.push({match,score});
+  }
+  externalResolved.sort((a,b)=>b.score-a.score).slice(0,12).forEach(row=>add(row.match));
+  if (resolved.length >= limit) return resolved.slice(0,limit);
+  const candidateRows = new Set();
+  seedGenres.forEach(genre => (index.genreMap.get(genre) || []).slice(0, 200).forEach(row => candidateRows.add(row)));
+  seedTokens.forEach(token => (index.tokenMap.get(token) || []).slice(0, 120).forEach(row => candidateRows.add(row)));
+  if (seedYear) {
+    for (let year = seedYear - 10; year <= seedYear + 10; year++) {
+      (index.yearMap.get(String(year)) || []).slice(0, 35).forEach(row => candidateRows.add(row));
+    }
+  }
+  if (candidateRows.size < limit * 3) {
+    (index.categoryMap.get(seedCategory) || []).slice(0, 180).forEach(row => candidateRows.add(row));
+    (index.languageMap.get(seedLanguage) || []).slice(0, 120).forEach(row => candidateRows.add(row));
+  }
+  if (candidateRows.size < limit * 2) index.top.forEach(row => candidateRows.add(row));
+  const scored = [...candidateRows]
+    .filter(row => !seen.has(svDetailItemIdentity(row.item, type)))
+    .map(row => {
+      const { item, genres, year, tokens } = row;
+      let score = 0;
+      score += genres.filter(genre => seedGenres.some(seedGenre => genre.includes(seedGenre) || seedGenre.includes(genre))).length * 12;
+      score += tokens.filter(token => seedTokens.has(token)).length * 10;
+      if (seedYear && year) {
+        const delta = Math.abs(seedYear - year);
+        if (delta <= 2) score += 5;
+        else if (delta <= 5) score += 3;
+        else if (delta <= 10) score += 1;
+      }
+      if (seedCategory && String(item.category || '').trim().toLowerCase() === seedCategory) score += 3;
+      if (seedLanguage && String(item.language || '').trim().toLowerCase() === seedLanguage) score += 2;
+      const relationScore = score;
+      score += row.rating / 10;
+      if (item.poster || item.backdrop) score += 0.5;
+      return { item, score, relationScore };
+    })
+    .filter(row => row.relationScore > 0)
+    .sort((a, b) => b.score - a.score || Number(b.item.rating || 0) - Number(a.item.rating || 0));
+
+  for (const row of scored) {
+    add(row.item);
+    if (resolved.length >= limit) break;
+  }
+  return resolved;
 }
 
 function playbackTitleYear(value) {
@@ -5561,40 +5778,27 @@ app.get('/api/series/detail', (req, res) => {
 });
 
 function localSimilarForDetails(item, mediaType) {
-  const genres = splitDetailGenres(item?.genre);
-  const source = mediaType === 'tv' ? allApiSeriesForDetails() : allApiMoviesForDetails();
-  const current = String(mediaType === 'tv' ? (item?.name || item?.id || '') : (item?.id || item?.name || ''));
-  const year = Number(String(item?.year || '').match(/(?:19|20)\d{2}/)?.[0] || 0);
-  const category = String(item?.category || '').toLowerCase();
-  const scored = source
-    .filter(other => String(mediaType === 'tv' ? (other.name || other.id || '') : (other.id || other.name || '')) !== current)
-    .map(other => {
-      const otherGenres = splitDetailGenres(other.genre);
-      const otherYear = Number(String(other.year || '').match(/(?:19|20)\d{2}/)?.[0] || 0);
-      let score = genres.length ? otherGenres.filter(g => genres.some(seed => g.includes(seed) || seed.includes(g))).length * 4 : 0;
-      if (category && String(other.category || '').toLowerCase() === category) score += 3;
-      if (year && otherYear && Math.abs(year - otherYear) <= 5) score += 2;
-      if (other.poster) score += 0.5;
-      score += Math.min(Number(other.rating || 0) || 0, 10) / 10;
-      return { other, score };
-    })
-    .filter(x => x.score > 0)
-    .sort((a, b) => b.score - a.score || Number(b.other.rating || 0) - Number(a.other.rating || 0))
-    .slice(0, 18)
-    .map(x => x.other);
-  return scored;
+  return svResolvePlayableDetailRecommendations(item, mediaType, [], 18);
 }
 
 function localDirectorForDetails(item) {
   const director = String(item?.director || '').trim().toLowerCase();
   if (!director) return [];
-  return allApiMoviesForDetails().filter(m => m !== item && String(m.director || '').trim().toLowerCase() === director).slice(0, 18);
+  return allApiMoviesForDetails()
+    .filter(m => m !== item && svServerPlayableItem(m, 'movie') && String(m.director || '').trim().toLowerCase() === director)
+    .slice(0, 18);
 }
 
 function localDetailsObject(item, mediaType, title = '', options = {}) {
   const generateFallbacks = options.generateFallbacks !== false;
   const companies = Array.isArray(item?.productionCompanies)
     ? item.productionCompanies.map((c, i) => typeof c === 'string' ? { id: i, name: c, logo: null } : c).filter(c => c?.name)
+    : [];
+  const similar = generateFallbacks
+    ? svResolvePlayableDetailRecommendations(item, mediaType, Array.isArray(item?.similar) ? item.similar : [], 18)
+    : [];
+  const moreByDirector = generateFallbacks
+    ? svResolvePlayableDetailRecommendations(item, mediaType, localDirectorForDetails(item), 18)
     : [];
   return {
     ok: true,
@@ -5617,12 +5821,31 @@ function localDetailsObject(item, mediaType, title = '', options = {}) {
     cast: Array.isArray(item?.cast) ? item.cast : [],
     crew: Array.isArray(item?.crew) ? item.crew : [],
     productionCompanies: companies,
-    similar: Array.isArray(item?.similar) && item.similar.length ? item.similar : (generateFallbacks ? localSimilarForDetails(item, mediaType) : []),
-    moreByDirector: Array.isArray(item?.moreByDirector) && item.moreByDirector.length ? item.moreByDirector : (generateFallbacks ? localDirectorForDetails(item) : []),
+    similar,
+    moreByDirector,
     director: item?.director || null,
     episodes: mediaType === 'tv' ? item?.seasons || {} : [],
     about: [],
     playbackInfo: [],
+  };
+}
+
+function svMergePlayableDetailData(item, mediaType, title, detailData, localOnly = false) {
+  const local = localDetailsObject(item, mediaType, title, { generateFallbacks: true });
+  if (!detailData || typeof detailData !== 'object') return local;
+  const seed = {
+    ...item,
+    name: detailData.title || local.title || item?.name || title,
+    year: detailData.year || local.year || item?.year || '',
+    genre: detailData.genres || local.genres || item?.genre || '',
+    language: detailData.language || local.language || item?.language || '',
+  };
+  return {
+    ...local,
+    ...detailData,
+    similar: svResolvePlayableDetailRecommendations(seed, mediaType, detailData.similar || local.similar, 18),
+    moreByDirector: svResolvePlayableDetailRecommendations(seed, mediaType, detailData.moreByDirector || local.moreByDirector, 18),
+    localOnly,
   };
 }
 
@@ -5723,72 +5946,58 @@ app.get('/api/details/:type/:id', async (req, res) => {
   const normalizedTitle = normalizeDetailTitle(req.query.title || req.query.name || req.params.id || '', req.query.year || '');
   const item = findLocalDetailItem(mediaType, req.params.id, normalizedTitle.title);
   const tmdbId = tmdbIdFromRequest({ ...req.query, id: req.params.id }, mediaType) || (/^\d+$/.test(String(item.tmdbId || '')) ? item.tmdbId : '');
-  console.log('[DETAIL REQUEST]', req.params, req.query);
-  console.log('[DETAIL ITEM]', item);
-  console.log('[DETAIL TMDB ID]', tmdbId);
-  console.log('[Details] request', { mediaType, id: req.params.id, title: req.query.title, year: req.query.year, tmdbId });
-  console.log('[Details] matched local item', item?.name || item?.title, item?.tmdbId);
+  if (SV_DETAIL_VERBOSE) {
+    console.log('[DETAIL REQUEST]', req.params, req.query);
+    console.log('[DETAIL ITEM]', item);
+    console.log('[DETAIL TMDB ID]', tmdbId);
+    console.log('[Details] request', { mediaType, id: req.params.id, title: req.query.title, year: req.query.year, tmdbId });
+    console.log('[Details] matched local item', item?.name || item?.title, item?.tmdbId);
+  }
   const cacheKey = `${mediaType}:${tmdbId || normalizedTitle.title || item.name || req.params.id}:${normalizedTitle.year || item.year || ''}`;
   const memoryCached = titleDetailsCache.get(cacheKey);
-  const skipDiskCache = true;
-  const diskCached = skipDiskCache ? null : diskDetailCache[cacheKey];
+  const diskCached = diskDetailCache[cacheKey];
+  const cached = memoryCached?.data?.ok ? memoryCached : (diskCached?.data?.ok ? diskCached : null);
+  const cacheAge = cached ? Date.now() - Number(cached.time || 0) : Infinity;
+  const cacheFresh = cacheAge < TITLE_DETAILS_CACHE_MS;
 
-  if (memoryCached && hasExtendedDetail(memoryCached.data) && Date.now() - memoryCached.time < TITLE_DETAILS_CACHE_MS) {
-    const local = localDetailsObject(item, mediaType, normalizedTitle.title, { generateFallbacks: false });
-    console.log('[DETAIL LOCAL]', local);
-    console.log('[DETAIL FRESH]', memoryCached.data);
-    res.setHeader('Cache-Control', 'public, max-age=900');
-    return res.json({ ...local, ...memoryCached.data, localOnly: false });
-  }
-
-  if (diskCached && hasExtendedDetail(diskCached.data) && Date.now() - Number(diskCached.time || 0) < TITLE_DETAILS_CACHE_MS) {
-    const local = localDetailsObject(item, mediaType, normalizedTitle.title, { generateFallbacks: false });
-    titleDetailsCache.set(cacheKey, { time: diskCached.time, data: diskCached.data });
-    res.setHeader('Cache-Control', 'public, max-age=900');
-    return res.json({ ...local, ...diskCached.data, localOnly: false });
-  }
-
-  try {
-    const fresh = await withTimeout(
-      buildTmdbExtendedDetails(mediaType, tmdbId, normalizedTitle.title || item.name, normalizedTitle.year || item.year),
-      15000,
-      null
-    );
-    console.log('[DETAIL FRESH]', fresh);
-    if (fresh && fresh.ok) {
-      const local = localDetailsObject(item, mediaType, normalizedTitle.title, { generateFallbacks: true });
-      console.log('[DETAIL LOCAL]', local);
-      const data = { ...local, ...fresh, localOnly: false };
-      console.log('[Details] result counts', {
-        trailers: data.trailers?.length,
-        cast: data.cast?.length,
-        crew: data.crew?.length,
-        companies: data.productionCompanies?.length,
-        similar: data.similar?.length,
-      });
-      titleDetailsCache.set(cacheKey, { time: Date.now(), data: fresh });
-      diskDetailCache[cacheKey] = { time: Date.now(), data: fresh };
-      saveDetailCache();
-      res.setHeader('Cache-Control', 'public, max-age=900');
-      return res.json(data);
+  if (cached) {
+    titleDetailsCache.set(cacheKey, cached);
+    const data = svMergePlayableDetailData(item, mediaType, normalizedTitle.title, cached.data, false);
+    if (!cacheFresh) {
+      setImmediate(() => svQueueDetailRefresh(
+        cacheKey,
+        mediaType,
+        tmdbId,
+        normalizedTitle.title || item.name,
+        normalizedTitle.year || item.year
+      ));
     }
-    console.warn(`[Details] Empty TMDB details for ${mediaType}:${normalizedTitle.title || item.name || req.params.id}`);
-  } catch (e) {
-    console.warn(`[Details] Fetch failed for ${mediaType}:${normalizedTitle.title || item.name || req.params.id}:`, e.message);
+    res.setHeader('Cache-Control', cacheFresh
+      ? 'public, max-age=900'
+      : 'public, max-age=120, stale-while-revalidate=900');
+    return res.json(data);
   }
 
-  const local = localDetailsObject(item, mediaType, normalizedTitle.title, { generateFallbacks: true });
-  console.log('[DETAIL LOCAL]', local);
-  console.log('[DETAIL FRESH]', null);
-  console.log('[Details] result counts', {
-    trailers: local.trailers?.length,
-    cast: local.cast?.length,
-    crew: local.crew?.length,
-    companies: local.productionCompanies?.length,
-    similar: local.similar?.length,
-  });
-  res.setHeader('Cache-Control', 'public, max-age=120');
+  const local = svMergePlayableDetailData(item, mediaType, normalizedTitle.title, null, true);
+  if (SV_DETAIL_VERBOSE) {
+    console.log('[DETAIL LOCAL]', local);
+    console.log('[Details] result counts', {
+      trailers: local.trailers?.length,
+      cast: local.cast?.length,
+      crew: local.crew?.length,
+      companies: local.productionCompanies?.length,
+      similar: local.similar?.length,
+    });
+  }
+  res.setHeader('Cache-Control', 'public, max-age=120, stale-while-revalidate=900');
   res.json(local);
+  setImmediate(() => svQueueDetailRefresh(
+    cacheKey,
+    mediaType,
+    tmdbId,
+    normalizedTitle.title || item.name,
+    normalizedTitle.year || item.year
+  ));
 });
 
 app.post('/api/details/cache/clear', (req, res) => {
@@ -7032,6 +7241,7 @@ function tmdbGet(path) {
 
 const TITLE_DETAILS_CACHE_MS = 6 * 60 * 60 * 1000;
 const titleDetailsCache = new Map();
+const titleDetailRefreshJobs = new Map();
 const DETAIL_CACHE_FILE = path.join(__dirname, 'detail-cache.json');
 let diskDetailCache = {};
 try {
@@ -7046,9 +7256,22 @@ try {
   diskDetailCache = {};
 }
 
+let detailCacheSaveTimer = null;
 function saveDetailCache() {
-  try { fs.writeFileSync(DETAIL_CACHE_FILE, JSON.stringify(diskDetailCache, null, 2)); }
-  catch (e) { console.warn('Could not save detail-cache.json:', e.message); }
+  if (detailCacheSaveTimer) clearTimeout(detailCacheSaveTimer);
+  detailCacheSaveTimer = setTimeout(() => {
+    detailCacheSaveTimer = null;
+    let payload;
+    try { payload = JSON.stringify(diskDetailCache, null, 2); }
+    catch (e) {
+      console.warn('Could not serialize detail-cache.json:', e.message);
+      return;
+    }
+    fs.writeFile(DETAIL_CACHE_FILE, payload, err => {
+      if (err) console.warn('Could not save detail-cache.json:', err.message);
+    });
+  }, 150);
+  try { detailCacheSaveTimer.unref?.(); } catch {}
 }
 
 function withTimeout(promise, ms, fallback) {
@@ -7059,6 +7282,29 @@ function withTimeout(promise, ms, fallback) {
       timer = setTimeout(() => resolve(fallback), ms);
     }),
   ]).finally(() => clearTimeout(timer));
+}
+
+function svQueueDetailRefresh(cacheKey, mediaType, tmdbId, title, year) {
+  if (titleDetailRefreshJobs.has(cacheKey)) return titleDetailRefreshJobs.get(cacheKey);
+  const refresh = withTimeout(
+    buildTmdbExtendedDetails(mediaType, tmdbId, title, year),
+    6500,
+    null
+  ).then(fresh => {
+    if (!fresh?.ok) return null;
+    const entry = { time: Date.now(), data: fresh };
+    titleDetailsCache.set(cacheKey, entry);
+    diskDetailCache[cacheKey] = entry;
+    saveDetailCache();
+    return fresh;
+  }).catch(error => {
+    if (SV_DETAIL_VERBOSE) console.warn(`[Details] Background refresh failed for ${mediaType}:${title}:`, error.message);
+    return null;
+  }).finally(() => {
+    titleDetailRefreshJobs.delete(cacheKey);
+  });
+  titleDetailRefreshJobs.set(cacheKey, refresh);
+  return refresh;
 }
 
 function tmdbImage(size, imgPath) {
@@ -7146,7 +7392,7 @@ async function searchTmdbMedia(title, year, mediaType) {
     data = await tmdbGet(`${endpoint}?query=${encodeURIComponent(clean)}&include_adult=false&language=en-US&page=1`);
     picked = pickTmdbResult(data?.results || [], clean, searchYear, mediaType);
   }
-  if (picked) console.log('[Details] TMDB matched', picked.id, resultTitle(picked, mediaType), resultYear(picked, mediaType));
+  if (picked && SV_DETAIL_VERBOSE) console.log('[Details] TMDB matched', picked.id, resultTitle(picked, mediaType), resultYear(picked, mediaType));
   return picked;
 }
 
@@ -7438,7 +7684,7 @@ async function buildTmdbExtendedDetails(mediaType, tmdbId, title, year) {
     searchResult = await searchTmdbMedia(title, year, mediaType);
     resolvedId = searchResult?.id;
   }
-  console.log(`[Details] TMDB id: ${resolvedId || 'none'} (${mediaType}${title ? `: ${title}` : ''})`);
+  if (SV_DETAIL_VERBOSE) console.log(`[Details] TMDB id: ${resolvedId || 'none'} (${mediaType}${title ? `: ${title}` : ''})`);
   if (!resolvedId) return emptyTitleDetails(mediaType, title);
 
   const [
@@ -7474,7 +7720,7 @@ async function buildTmdbExtendedDetails(mediaType, tmdbId, title, year) {
     status: '',
   };
   if (!detail?.id) return emptyTitleDetails(mediaType, title);
-  console.log('[Details] TMDB matched', detail.id, mediaType === 'tv' ? detail.name : detail.title, resultYear(detail, mediaType));
+  if (SV_DETAIL_VERBOSE) console.log('[Details] TMDB matched', detail.id, mediaType === 'tv' ? detail.name : detail.title, resultYear(detail, mediaType));
 
   const credits = creditsRaw || {};
   const externalIds = externalIdsRaw || {};
@@ -7489,7 +7735,7 @@ async function buildTmdbExtendedDetails(mediaType, tmdbId, title, year) {
   const productionCompanies = mapCompanies(
     detail.production_companies?.length ? detail.production_companies : detail.networks
   );
-  const similar = mapUniqueMedia([
+  const mappedSimilar = mapUniqueMedia([
     ...(similarRaw?.results || []),
     ...(recommendationsRaw?.results || []),
   ], mediaType, detail.id);
@@ -7502,14 +7748,24 @@ async function buildTmdbExtendedDetails(mediaType, tmdbId, title, year) {
 
   if (mediaType === 'tv') detail.content_ratings = ratingsMetaRaw || null;
   else detail.release_dates = ratingsMetaRaw || null;
+  const relatedSeed = {
+    name: mediaType === 'tv' ? detail.name : detail.title,
+    year: resultYear(detail, mediaType),
+    genre: (detail.genres || []).map(g => g.name).join(', '),
+    language: languageLabel(detail),
+  };
+  const similar = svResolvePlayableDetailRecommendations(relatedSeed, mediaType, mappedSimilar, 18);
+  directorBundle.items = svResolvePlayableDetailRecommendations(relatedSeed, mediaType, directorBundle.items, 18);
 
-  console.log('[Details] result counts', {
-    trailers: trailers.length,
-    cast: cast.length,
-    crew: crew.length,
-    companies: productionCompanies.length,
-    similar: similar.length,
-  });
+  if (SV_DETAIL_VERBOSE) {
+    console.log('[Details] result counts', {
+      trailers: trailers.length,
+      cast: cast.length,
+      crew: crew.length,
+      companies: productionCompanies.length,
+      similar: similar.length,
+    });
+  }
 
   return {
     ok: true,
@@ -7546,7 +7802,7 @@ async function buildTitleDetails(mediaType, tmdbId, title, year) {
     searchResult = await searchTmdbMedia(title, year, mediaType);
     resolvedId = searchResult?.id;
   }
-  console.log(`[TitleDetails] tmdbId found: ${resolvedId || 'none'} (${mediaType}${title ? `: ${title}` : ''})`);
+  if (SV_DETAIL_VERBOSE) console.log(`[TitleDetails] tmdbId found: ${resolvedId || 'none'} (${mediaType}${title ? `: ${title}` : ''})`);
   if (!resolvedId) return emptyTitleDetails(mediaType, title);
 
   const [
@@ -7597,7 +7853,7 @@ async function buildTitleDetails(mediaType, tmdbId, title, year) {
   const productionCompanies = mapCompanies(
     detail.production_companies?.length ? detail.production_companies : detail.networks
   );
-  const similar = mapUniqueMedia([
+  const mappedSimilar = mapUniqueMedia([
     ...(similarRaw?.results || []),
     ...(recommendationsRaw?.results || []),
   ], mediaType, detail.id);
@@ -7610,13 +7866,23 @@ async function buildTitleDetails(mediaType, tmdbId, title, year) {
 
   if (mediaType === 'tv') detail.content_ratings = ratingsMetaRaw || null;
   else detail.release_dates = ratingsMetaRaw || null;
+  const relatedSeed = {
+    name: mediaType === 'tv' ? detail.name : detail.title,
+    year: resultYear(detail, mediaType),
+    genre: (detail.genres || []).map(g => g.name).join(', '),
+    language: languageLabel(detail),
+  };
+  const similar = svResolvePlayableDetailRecommendations(relatedSeed, mediaType, mappedSimilar, 18);
+  directorBundle.items = svResolvePlayableDetailRecommendations(relatedSeed, mediaType, directorBundle.items, 18);
 
-  console.log(`[TitleDetails] external imdb_id found: ${externalIds.imdb_id || 'none'}`);
-  console.log(`[TitleDetails] videos count: ${trailers.length}`);
-  console.log(`[TitleDetails] cast count: ${cast.length}`);
-  console.log(`[TitleDetails] crew count: ${crew.length}`);
-  console.log(`[TitleDetails] production companies count: ${productionCompanies.length}`);
-  console.log(`[TitleDetails] similar count: ${similar.length}`);
+  if (SV_DETAIL_VERBOSE) {
+    console.log(`[TitleDetails] external imdb_id found: ${externalIds.imdb_id || 'none'}`);
+    console.log(`[TitleDetails] videos count: ${trailers.length}`);
+    console.log(`[TitleDetails] cast count: ${cast.length}`);
+    console.log(`[TitleDetails] crew count: ${crew.length}`);
+    console.log(`[TitleDetails] production companies count: ${productionCompanies.length}`);
+    console.log(`[TitleDetails] similar count: ${similar.length}`);
+  }
 
   return {
     ok: true,
@@ -7670,7 +7936,12 @@ app.get('/api/title-details', async (req, res) => {
 });
 
 app.get('/api/version', (req, res) => {
-  res.json({ ok: true, version: 'title-details-route-active', time: new Date().toISOString() });
+  res.json({
+    ok: true,
+    version: 'title-details-route-active',
+    build: '20260624-lite-ui-preview-cleanup2',
+    time: new Date().toISOString()
+  });
 });
 
 app.get('/api/episode-titles', async (req, res) => {
@@ -9340,6 +9611,8 @@ buildFileIndex();
 buildInstantLists();                                   // ⚡ instant — sync, ~10ms
 filterCartoonsAndAnime();                              // 🧹 remove cartoons/anime (with logging)
 svGetBootSearchIndex();                                // instant search boot payload, no massive catalog
+try { svDetailCatalogIndex(); }                        // warm playable recommendations before first detail click
+catch (e) { console.warn('Detail recommendation warmup failed:', e.message); }
 if (process.env.SV_SEARCH_WARMUP === '1') {
   const searchWarmupDelay = Math.max(30000, parseInt(process.env.SV_SEARCH_WARMUP_DELAY_MS || '120000', 10) || 120000);
   setTimeout(() => {

@@ -61,6 +61,7 @@
   }
 
   sCardHTML = function(s){
+    if(typeof isPlayableMediaItem === 'function' && !isPlayableMediaItem(s))return '';
     const seasons = s?.seasons || {};
     const sc = s?.seasonCount ?? Object.keys(seasons).length;
     const ep = s?.episodeCount ?? Object.values(seasons).reduce((a,b)=>a+(Array.isArray(b)?b.length:0),0);
@@ -73,6 +74,7 @@
   };
 
   cardHTML = function(m, sp=false){
+    if(typeof isPlayableMediaItem === 'function' && !isPlayableMediaItem(m))return '';
     const wide = !!m?._wideStudio;
     const src = svMediaArt(m, wide);
     const img = src
@@ -80,10 +82,8 @@
       : `<div class="card-placeholder"><div class="icon">${svPlaceholderIcon('movie')}</div><div class="pname">${esc(m?.name || '')}</div></div>`;
     const prog = watchProgress[m?.id];
     const bar = sp && prog ? `<div class="card-progress"><div class="card-progress-fill" style="width:${Math.round(prog.progress*100)}%"></div></div>` : '';
-    const isUnplayable = isMovieUnavailable(m);
     const detailKey = registerMovieForDetail(m);
-    const unavailableOverlay = isUnplayable ? `<div style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.62);border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:4px 8px;font-size:.52rem;font-weight:800;color:rgba(255,255,255,.72);z-index:8">LIBRARY ONLY</div>` : '';
-    return `<div class="card${wide?' studio-wide-card':''}" role="button" tabindex="0" onclick="openMovieDetail('${detailKey}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMovieDetail('${detailKey}')}">${img}${unavailableOverlay}<div class="card-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div><div class="card-overlay"><div class="card-title">${esc(m?.name || '')}</div><div class="card-meta">${m?.rating?`<span class="card-rating">&#9733; ${esc(m.rating)}</span>`:''} ${m?.year?`<span>${esc(m.year)}</span>`:''}</div></div>${bar}</div>`;
+    return `<div class="card${wide?' studio-wide-card':''}" role="button" tabindex="0" onclick="openMovieDetail('${detailKey}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMovieDetail('${detailKey}')}">${img}<div class="card-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div><div class="card-overlay"><div class="card-title">${esc(m?.name || '')}</div><div class="card-meta">${m?.rating?`<span class="card-rating">&#9733; ${esc(m.rating)}</span>`:''} ${m?.year?`<span>${esc(m.year)}</span>`:''}</div></div>${bar}</div>`;
   };
 
   const svOriginalOpenSeriesDetail = openSeriesDetail;
@@ -95,28 +95,31 @@
       showSeriesDetail(show);
       return;
     }
+    showSeriesDetail(show);
     try{
-      showToast('Loading episodes...');
       const params = new URLSearchParams();
       params.set('name', show.name || '');
       if(show.id != null)params.set('id', show.id);
       if(show.year)params.set('year', show.year);
-      const r = await fetch(`/api/series/detail?${params.toString()}`);
+      const r = await fetch(`/api/series/detail?${params.toString()}`, {
+        signal:detailRequestController?.signal
+      });
       if(r.ok){
         const full = await r.json();
-        if(full && full.name){
-          _seriesDetailRegistry.set(key, full);
+        if(full && full.name && document.getElementById('seriesModal')?.classList.contains('open') && currentShow === show){
+          Object.assign(show, full, {isSummary:false});
+          _seriesDetailRegistry.set(key, show);
           const idx = series.findIndex(s=>String(s.name||'') === String(full.name||''));
-          if(idx >= 0)series[idx] = full;
-          else series.push(full);
-          showSeriesDetail(full);
+          if(idx >= 0)series[idx] = show;
+          else series.push(show);
+          hydrateOpenSeriesDetail(show);
           return;
         }
       }
     }catch(e){
+      if(e?.name === 'AbortError')return;
       console.warn('[Series] detail load failed:', e.message);
     }
-    showSeriesDetail(show);
   };
 
   const svOriginalCloseMovieDetail = closeMovieDetail;
@@ -143,11 +146,16 @@
     const el = document.getElementById(id);
     if(!el)return;
     const limit = window.innerWidth < 760 ? 8 : 16;
-    const visibleItems = Array.isArray(items) ? items.slice(0, limit) : [];
+    const visibleItems = typeof filterPlayableMediaItems === 'function'
+      ? filterPlayableMediaItems(items).slice(0, limit)
+      : (Array.isArray(items) ? items.slice(0, limit) : []);
+    const section=el.closest('.detail-section,.sm-related');
     if(!visibleItems.length){
-      el.innerHTML = noDataHTML();
+      el.innerHTML = '';
+      if(section)section.style.display='none';
       return;
     }
+    if(section)section.style.display='';
     const render = item => (item.type === 'tv' || item.seasons) ? sCardHTML(item) : cardHTML(item);
     el.innerHTML = visibleItems.map(render).join('');
   };

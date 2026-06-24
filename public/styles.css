@@ -7838,7 +7838,7 @@ html[data-theme="light"] .fifa-live-section :is(.fifa-headline-item:hover,.fifa-
   object-fit:cover;
 }
 .progress-preview.frame-ok .progress-preview-canvas{
-  display:block;
+  display:none;
 }
 .progress-preview-time{
   padding:6px 4px 2px;
@@ -8356,4 +8356,48 @@ html[data-theme="light"] .fifa-live-section :is(.fifa-headline-item:hover,.fifa-
   .series-modal .sm-tabs-row{
     padding-top:20px!important;
   }
+}
+
+/* Lightweight, single-scroll media details. The modal is the only vertical scroller. */
+.detail-modal,
+.series-modal{
+  display:none;
+  overflow-x:hidden!important;
+  overflow-y:auto!important;
+  height:100dvh!important;
+  max-height:100dvh!important;
+  overscroll-behavior-y:contain!important;
+  -webkit-overflow-scrolling:touch!important;
+}
+.detail-modal.open,
+.series-modal.open{
+  display:block!important;
+}
+.detail-modal :is(.detail-hero,.detail-body,.detail-section,.metadata-grid,.detail-related-track),
+.series-modal :is(.sm-hero,.series-modal-inner,.sm-tabs-row,.ep-grid,.detail-section,.metadata-grid,.detail-related-track){
+  max-height:none!important;
+  overflow-y:visible!important;
+}
+.detail-modal .detail-body,
+.series-modal .series-modal-inner{
+  display:block!important;
+  position:relative!important;
+  overflow:visible!important;
+}
+.detail-modal .detail-section,
+.series-modal .detail-section,
+.detail-modal .metadata-grid,
+.series-modal .metadata-grid,
+.series-modal .sm-tabs-row,
+.series-modal .ep-grid{
+  overflow:visible!important;
+}
+.detail-modal .detail-section,
+.series-modal .detail-section{
+  content-visibility:auto;
+  contain-intrinsic-size:1px 360px;
+}
+.detail-modal .detail-hero,
+.series-modal .sm-hero{
+  content-visibility:visible!important;
 }

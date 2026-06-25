@@ -1,6 +1,6 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260626-real-seek-single-detail1';
+const SV_ASSET_VERSION = '20260626-direct-seek-preview1';
 function svDebugLoggingEnabled(){
   try{
     return new URLSearchParams(location.search).has('debug')
@@ -2975,19 +2975,15 @@ function seekPreviewDuration(){
   return validDurationSeconds(duration) ? duration : 0;
 }
 
-function seekPreviewRatioFromEvent(e,pw){
-  const rect=pw.getBoundingClientRect();
-  const width=Math.max(rect.width,1);
-  return Math.max(0,Math.min(1,(e.clientX-rect.left)/width));
-}
-
 function updateSeekPreviewFromPointer(e,pw){
   if(!pw || isLiveMode || (e.pointerType && e.pointerType!=='mouse'))return;
-  const ratio=seekPreviewRatioFromEvent(e,pw);
+  const rect=pw.getBoundingClientRect();
+  const ratio=Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width));
   const controlsWereHidden=playerEls().ui?.classList.contains('hidden');
   showUI();
-  if(controlsWereHidden)requestAnimationFrame(()=>updateSeekPreview(ratio));
-  else updateSeekPreview(ratio);
+  const anchor={clientX:e.clientX,top:rect.top};
+  if(controlsWereHidden)requestAnimationFrame(()=>updateSeekPreview(ratio,anchor));
+  else updateSeekPreview(ratio,anchor);
 }
 
 function hideSeekPreviewFromLeave(e,pw){
@@ -3002,7 +2998,22 @@ function hideSeekPreviewFromLeave(e,pw){
 }
 
 function bindSeekPreview(pw){
-  if(!pw || pw.dataset.seekPreviewBound==='1')return;
+  if(!pw)return;
+  let preview=pw.querySelector(':scope > #progressPreview');
+  if(!preview){
+    preview=document.createElement('div');
+    preview.className='progress-preview';
+    preview.id='progressPreview';
+    preview.setAttribute('aria-hidden','true');
+    const time=document.createElement('div');
+    time.className='progress-preview-time';
+    time.id='progressPreviewTime';
+    time.textContent='0:00';
+    preview.appendChild(time);
+    pw.appendChild(preview);
+    playerDomCache=null;
+  }
+  if(pw.dataset.seekPreviewBound==='1')return;
   pw.dataset.seekPreviewBound='1';
   pw.addEventListener('pointermove',e=>updateSeekPreviewFromPointer(e,pw),{passive:true});
   pw.addEventListener('mousemove',e=>updateSeekPreviewFromPointer(e,pw),{passive:true});
@@ -3013,11 +3024,9 @@ function bindSeekPreview(pw){
 function measureSeekPreviewMetrics(){
   const els=playerEls();
   const preview=els.progressPreview;
-  const pw=els.progressWrap;
-  if(!preview || !pw)return {previewWidth:168,wrapWidth:1};
+  if(!preview)return {previewWidth:74};
   return {
-    previewWidth:preview.offsetWidth || 168,
-    wrapWidth:pw.offsetWidth || pw.getBoundingClientRect().width || 1
+    previewWidth:preview.offsetWidth || 74
   };
 }
 
@@ -3043,23 +3052,26 @@ function flushSeekPreview(){
   const target=clamped*d;
   setTextIfChanged(timeEl,fmtTime(target));
   preview.classList.add('show');
+  preview.setAttribute('aria-hidden','false');
   seekPreviewVisible=true;
   if(!seekPreviewMetrics)seekPreviewMetrics=measureSeekPreviewMetrics();
   const previewWidth=seekPreviewMetrics.previewWidth;
-  const wrapWidth=seekPreviewMetrics.wrapWidth;
-  const minLeft=wrapWidth > previewWidth ? previewWidth/2 : wrapWidth/2;
-  const maxLeft=wrapWidth > previewWidth ? wrapWidth-previewWidth/2 : wrapWidth/2;
-  const left=Math.max(minLeft,Math.min(maxLeft,clamped*wrapWidth));
+  const rect=pw.getBoundingClientRect();
+  const anchorX=Number.isFinite(pending.clientX) ? pending.clientX : rect.left+(clamped*rect.width);
+  const anchorTop=Number.isFinite(pending.top) ? pending.top : rect.top;
+  const left=Math.max(previewWidth/2+8,Math.min(window.innerWidth-previewWidth/2-8,anchorX));
+  const top=Math.max(8,anchorTop-preview.offsetHeight-10);
   setStyleIfChanged(preview,'left',left.toFixed(1)+'px');
+  setStyleIfChanged(preview,'top',top.toFixed(1)+'px');
 }
 
-function updateSeekPreview(p){
+function updateSeekPreview(p,anchor={}){
   const duration=seekPreviewDuration();
   if(!duration){
     hideSeekPreview();
     return;
   }
-  seekPreviewPending={p,duration};
+  seekPreviewPending={p,duration,clientX:anchor.clientX,top:anchor.top};
   if(!seekPreviewRaf)seekPreviewRaf=requestAnimationFrame(flushSeekPreview);
 }
 
@@ -3078,6 +3090,7 @@ function hideSeekPreview(delay=0){
   }
   const hide=()=>{
     preview.classList.remove('show');
+    preview.setAttribute('aria-hidden','true');
     seekPreviewVisible=false;
   };
   if(delay)seekPreviewHideTimer=setTimeout(hide,delay);

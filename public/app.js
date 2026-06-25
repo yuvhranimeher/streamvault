@@ -1,6 +1,6 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260626-visible-seek-preview1';
+const SV_ASSET_VERSION = '20260626-real-seek-single-detail1';
 function svDebugLoggingEnabled(){
   try{
     return new URLSearchParams(location.search).has('debug')
@@ -1984,15 +1984,31 @@ function openSeriesDetail(key){
 
 function setDetailPageScrollLock(locked){
   if(locked){
-    document.body.classList.add('modal-open');
-    document.body.style.overflow = 'hidden';
+    if(!document.body.classList.contains('detail-page-open')){
+      document.body.dataset.detailReturnScrollY = String(window.scrollY || 0);
+    }
+    document.body.classList.remove('modal-open');
+    document.body.classList.add('detail-page-open');
+    document.body.style.overflow = '';
+    const root=document.documentElement;
+    const previousBehavior=root.style.scrollBehavior;
+    root.style.scrollBehavior='auto';
+    window.scrollTo(0,0);
+    root.style.scrollBehavior=previousBehavior;
     return;
   }
   const detailOpen = document.getElementById('movieDetailModal')?.classList.contains('open');
   const seriesOpen = document.getElementById('seriesModal')?.classList.contains('open');
   if(!detailOpen && !seriesOpen){
-    document.body.classList.remove('modal-open');
+    const returnScrollY=Number(document.body.dataset.detailReturnScrollY) || 0;
+    delete document.body.dataset.detailReturnScrollY;
+    document.body.classList.remove('modal-open','detail-page-open');
     document.body.style.overflow = '';
+    const root=document.documentElement;
+    const previousBehavior=root.style.scrollBehavior;
+    root.style.scrollBehavior='auto';
+    window.scrollTo(0,returnScrollY);
+    root.style.scrollBehavior=previousBehavior;
   }
 }
 
@@ -2955,7 +2971,7 @@ function resetSeekPreview(){
 }
 
 function seekPreviewDuration(){
-  const duration=Number(playerDuration());
+  const duration=Number(vid.duration);
   return validDurationSeconds(duration) ? duration : 0;
 }
 
@@ -2965,25 +2981,33 @@ function seekPreviewRatioFromEvent(e,pw){
   return Math.max(0,Math.min(1,(e.clientX-rect.left)/width));
 }
 
-function updateSeekPreviewFromPointer(e,pw,requireInside=false){
+function updateSeekPreviewFromPointer(e,pw){
   if(!pw || isLiveMode || (e.pointerType && e.pointerType!=='mouse'))return;
+  const ratio=seekPreviewRatioFromEvent(e,pw);
+  const controlsWereHidden=playerEls().ui?.classList.contains('hidden');
+  showUI();
+  if(controlsWereHidden)requestAnimationFrame(()=>updateSeekPreview(ratio));
+  else updateSeekPreview(ratio);
+}
+
+function hideSeekPreviewFromLeave(e,pw){
   const rect=pw.getBoundingClientRect();
-  if(requireInside && (
-    e.clientX<rect.left ||
-    e.clientX>rect.right ||
-    e.clientY<rect.top ||
-    e.clientY>rect.bottom
-  ))return;
-  updateSeekPreview(seekPreviewRatioFromEvent(e,pw));
+  if(
+    e.clientX>=rect.left &&
+    e.clientX<=rect.right &&
+    e.clientY>=rect.top &&
+    e.clientY<=rect.bottom
+  )return;
+  hideSeekPreview();
 }
 
 function bindSeekPreview(pw){
   if(!pw || pw.dataset.seekPreviewBound==='1')return;
   pw.dataset.seekPreviewBound='1';
-  const moveEvent=window.PointerEvent ? 'pointermove' : 'mousemove';
-  pw.addEventListener(moveEvent,e=>updateSeekPreviewFromPointer(e,pw),{passive:true});
+  pw.addEventListener('pointermove',e=>updateSeekPreviewFromPointer(e,pw),{passive:true});
+  pw.addEventListener('mousemove',e=>updateSeekPreviewFromPointer(e,pw),{passive:true});
   pw.addEventListener('mouseenter',()=>{seekPreviewMetrics=null;});
-  pw.addEventListener('mouseleave',hideSeekPreview);
+  pw.addEventListener('mouseleave',e=>hideSeekPreviewFromLeave(e,pw));
 }
 
 function measureSeekPreviewMetrics(){
@@ -6738,10 +6762,7 @@ vid._mdH = () => {
   if(!wrap._bound){
     wrap._bound=true;
     wrap.addEventListener('mouseenter',()=>notePlayerPointerActivity(wrap));
-    wrap.addEventListener('mousemove',e=>{
-      notePlayerPointerActivity(wrap);
-      updateSeekPreviewFromPointer(e,pw,true);
-    },{passive:true});
+    wrap.addEventListener('mousemove',()=>notePlayerPointerActivity(wrap),{passive:true});
     wrap.addEventListener('mouseleave',()=>{playerHovering=false;hideSeekPreview();scheduleHideUI();});
     wrap.addEventListener('focusin',showUI);
     wrap.addEventListener('focusout',()=>setTimeout(scheduleHideUI,0));

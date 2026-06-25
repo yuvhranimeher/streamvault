@@ -7810,7 +7810,16 @@ html[data-theme="light"] .fifa-live-section :is(.fifa-headline-item:hover,.fifa-
 .player-wrap.premium-player .progress-tooltip{
   display:none;
 }
+.player-wrap.premium-player .player-ui.hidden .player-bottom{
+  visibility:visible;
+  pointer-events:none;
+}
+.player-wrap.premium-player .player-ui.hidden .progress-wrap{
+  visibility:visible;
+  pointer-events:auto;
+}
 .progress-preview{
+  display:block;
   position:absolute;
   bottom:calc(100% + 14px);
   left:0;
@@ -7827,7 +7836,7 @@ html[data-theme="light"] .fifa-live-section :is(.fifa-headline-item:hover,.fifa-
   transform-origin:center bottom;
   pointer-events:none;
   transition:none;
-  z-index:30;
+  z-index:100;
   backdrop-filter:none;
   -webkit-backdrop-filter:none;
 }
@@ -8396,4 +8405,36 @@ html[data-theme="light"] .fifa-live-section :is(.fifa-headline-item:hover,.fifa-
 .detail-modal .detail-hero,
 .series-modal .sm-hero{
   content-visibility:visible!important;
+}
+
+/* Media details are document pages: window scrolls, inner wrappers never do. */
+body.detail-page-open{
+  overflow-x:hidden!important;
+  overflow-y:auto!important;
+}
+.detail-modal,
+.series-modal{
+  position:absolute!important;
+  inset:0 0 auto 0!important;
+  width:100%!important;
+  height:auto!important;
+  min-height:100dvh!important;
+  max-height:none!important;
+  overflow:visible!important;
+  overscroll-behavior:auto!important;
+  touch-action:auto!important;
+}
+.detail-modal .detail-hero,
+.series-modal .sm-hero{
+  height:auto!important;
+  max-height:none!important;
+  overflow:hidden!important;
+}
+.detail-modal .detail-body,
+.series-modal .series-modal-inner,
+.detail-modal .detail-hero-content,
+.series-modal .sm-info{
+  height:auto!important;
+  max-height:none!important;
+  overflow:visible!important;
 }

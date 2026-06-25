@@ -7809,39 +7809,28 @@ html[data-theme="light"] .fifa-live-section :is(.fifa-headline-item:hover,.fifa-
   position:absolute;
   bottom:calc(100% + 14px);
   left:0;
-  width:176px;
-  padding:7px;
+  min-width:74px;
+  padding:6px 10px;
   border-radius:12px;
   border:1px solid rgba(255,255,255,.16);
   background:rgba(9,11,15,.94);
   box-shadow:none;
   color:#fff;
   opacity:0;
-  transform:translate(-50%,8px) scale(.98);
+  transform:translate(-50%,0);
   transform-origin:center bottom;
   pointer-events:none;
-  transition:opacity .14s ease,transform .14s ease;
+  transition:none;
   z-index:8;
   backdrop-filter:none;
   -webkit-backdrop-filter:none;
 }
 .progress-preview.show{
   opacity:1;
-  transform:translate(-50%,0) scale(1);
-}
-.progress-preview-canvas{
-  display:none;
-  width:100%;
-  aspect-ratio:16/9;
-  border-radius:8px;
-  background:#050608;
-  object-fit:cover;
-}
-.progress-preview.frame-ok .progress-preview-canvas{
-  display:none;
+  transform:translate(-50%,0);
 }
 .progress-preview-time{
-  padding:6px 4px 2px;
+  padding:0;
   text-align:center;
   font-size:.76rem;
   font-weight:800;
@@ -8061,7 +8050,7 @@ html[data-theme="light"] .fifa-live-section :is(.fifa-headline-item:hover,.fifa-
     margin-bottom:6px;
   }
   .progress-preview{
-    width:150px;
+    min-width:70px;
     bottom:calc(100% + 10px);
   }
   .player-wrap.premium-player #subLabel,
@@ -8103,7 +8092,7 @@ html[data-theme="light"] .fifa-live-section :is(.fifa-headline-item:hover,.fifa-
     max-width:44px;
   }
   .progress-preview{
-    width:136px;
+    min-width:66px;
   }
 }
 

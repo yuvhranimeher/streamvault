@@ -1,6 +1,6 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260624-lite-ui-preview-cleanup2';
+const SV_ASSET_VERSION = '20260625-lightweight-seek-preview1';
 function svDebugLoggingEnabled(){
   try{
     return new URLSearchParams(location.search).has('debug')
@@ -79,8 +79,6 @@ let isDragging=false,lastTapTime=0,lastTapX=0;
 let progressDragging=false,progressDragTime=0;
 let playerHovering=false;
 let seekPreviewVisible=false;
-let seekPreviewFrameBlocked=false;
-let seekPreviewLastCaptureAt=0;
 let seekPreviewRaf=0;
 let seekPreviewPending=null;
 let seekPreviewMetrics=null;
@@ -2781,7 +2779,6 @@ function playerEls(){
     progressThumb:document.getElementById('progressThumb'),
     progressTooltip:document.getElementById('progressTooltip'),
     progressPreview:document.getElementById('progressPreview'),
-    progressPreviewCanvas:document.getElementById('progressPreviewCanvas'),
     progressPreviewTime:document.getElementById('progressPreviewTime'),
     timeNow:document.getElementById('timeNow'),
     timeSep:document.getElementById('timeSep'),
@@ -2954,65 +2951,12 @@ function refreshPlayerControlVisibility(){
 
 function resetSeekPreview(){
   hideSeekPreview();
-  seekPreviewFrameBlocked=false;
-  seekPreviewLastCaptureAt=0;
   seekPreviewMetrics=null;
-  const preview=playerEls().progressPreview;
-  if(preview)preview.classList.remove('frame-ok');
 }
 
-function seekPreviewThumbnailEnabled(){
-  return false;
-}
-
-function seekPreviewCaptureAllowed(){
-  const src=vid.currentSrc || vid.getAttribute('src') || '';
-  if(!src)return false;
-  try{
-    const url=new URL(src,window.location.href);
-    return url.origin === window.location.origin || url.protocol === 'blob:' || url.protocol === 'data:';
-  }catch(_){
-    return false;
-  }
-}
-
-function captureSeekPreviewFrame(force=false){
-  const els=playerEls();
-  const preview=els.progressPreview;
-  const canvas=els.progressPreviewCanvas;
-  if(!preview || !canvas || seekPreviewFrameBlocked)return false;
-  if(!seekPreviewThumbnailEnabled()){
-    preview.classList.remove('frame-ok');
-    return false;
-  }
-  if(!seekPreviewVisible && !force)return false;
-  if(!seekPreviewCaptureAllowed())return false;
-  if(vid.readyState < 2 || !vid.videoWidth || !vid.videoHeight)return false;
-  const now=Date.now();
-  if(!force && now-seekPreviewLastCaptureAt < 900)return preview.classList.contains('frame-ok');
-  seekPreviewLastCaptureAt=now;
-  try{
-    const ctx=canvas.getContext('2d',{alpha:false});
-    if(!ctx)return false;
-    const vw=vid.videoWidth,vh=vid.videoHeight;
-    const targetRatio=canvas.width/canvas.height;
-    const sourceRatio=vw/vh;
-    let sx=0,sy=0,sw=vw,sh=vh;
-    if(sourceRatio > targetRatio){
-      sw=vh*targetRatio;
-      sx=(vw-sw)/2;
-    }else if(sourceRatio < targetRatio){
-      sh=vw/targetRatio;
-      sy=(vh-sh)/2;
-    }
-    ctx.drawImage(vid,sx,sy,sw,sh,0,0,canvas.width,canvas.height);
-    preview.classList.add('frame-ok');
-    return true;
-  }catch(_){
-    seekPreviewFrameBlocked=true;
-    preview.classList.remove('frame-ok');
-    return false;
-  }
+function seekPreviewDuration(){
+  const duration=Number(vid.duration);
+  return validDurationSeconds(duration) ? duration : 0;
 }
 
 function measureSeekPreviewMetrics(){
@@ -3035,7 +2979,7 @@ function flushSeekPreview(){
   const preview=els.progressPreview;
   const timeEl=els.progressPreviewTime;
   const pw=els.progressWrap;
-  const d=pending.d;
+  const d=pending.duration;
   if(!preview || !timeEl || !pw || isLiveMode || !validDurationSeconds(d)){
     hideSeekPreview();
     return;
@@ -3049,8 +2993,6 @@ function flushSeekPreview(){
   setTextIfChanged(timeEl,fmtTime(target));
   preview.classList.add('show');
   seekPreviewVisible=true;
-  if(seekPreviewThumbnailEnabled())captureSeekPreviewFrame();
-  else preview.classList.remove('frame-ok');
   if(!seekPreviewMetrics)seekPreviewMetrics=measureSeekPreviewMetrics();
   const previewWidth=seekPreviewMetrics.previewWidth;
   const wrapWidth=seekPreviewMetrics.wrapWidth;
@@ -3060,8 +3002,13 @@ function flushSeekPreview(){
   setStyleIfChanged(preview,'left',left.toFixed(1)+'px');
 }
 
-function updateSeekPreview(p,d){
-  seekPreviewPending={p,d};
+function updateSeekPreview(p){
+  const duration=seekPreviewDuration();
+  if(!duration){
+    hideSeekPreview();
+    return;
+  }
+  seekPreviewPending={p,duration};
   if(!seekPreviewRaf)seekPreviewRaf=requestAnimationFrame(flushSeekPreview);
 }
 
@@ -6710,7 +6657,7 @@ vid._mdH = () => {
       setStyleIfChanged(els.progressPlayed,'width',pctText);
       setStyleIfChanged(els.progressThumb,'left',pctText);
       setTextIfChanged(els.timeNow,fmtTime(dragT));
-      updateSeekPreview(p,d);
+      updateSeekPreview(p);
       showUI();
     }
     function commit(){
@@ -6729,9 +6676,9 @@ vid._mdH = () => {
       const d=dur(); if(!d)return;
       const p=getP(e);
       if(progressDragging){visual(p,d);return;}
-      updateSeekPreview(p,d);
+      updateSeekPreview(p);
     });
-    pw.addEventListener('mouseleave',()=>{if(!progressDragging)hideSeekPreview();});
+    pw.addEventListener('mouseleave',hideSeekPreview);
     document.addEventListener('mouseup',()=>{if(progressDragging)commit();});
     pw.addEventListener('touchstart',e=>{
       if(isLiveMode)return; const d=dur(); if(!d)return;
@@ -6741,7 +6688,13 @@ vid._mdH = () => {
       if(!progressDragging)return; e.preventDefault();
       const d=dur(); if(!d)return; visual(getP(e),d);
     },{passive:false});
-    pw.addEventListener('touchend',()=>{if(progressDragging){suppressProgressClickUntil=Date.now()+450;commit();}});
+    pw.addEventListener('touchend',()=>{
+      if(progressDragging){
+        suppressProgressClickUntil=Date.now()+450;
+        commit();
+        hideSeekPreview();
+      }
+    });
     pw.addEventListener('touchcancel',()=>{progressDragging=false;pw.classList.remove('dragging');hideSeekPreview();});
     pw.addEventListener('click',e=>{
       if(Date.now()<suppressProgressClickUntil)return;

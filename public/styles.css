@@ -7764,6 +7764,7 @@ html[data-theme="light"] .fifa-live-section :is(.fifa-headline-item:hover,.fifa-
 .player-wrap.premium-player .player-bottom{
   margin:0 calc(22px + var(--sr)) calc(var(--sb) + 20px) calc(22px + var(--sl));
   padding:10px 12px 11px;
+  overflow:visible;
   border:1px solid rgba(255,255,255,.12);
   border-radius:12px;
   background:rgba(10,12,16,.82);
@@ -7773,10 +7774,14 @@ html[data-theme="light"] .fifa-live-section :is(.fifa-headline-item:hover,.fifa-
 }
 .player-wrap.premium-player .player-progress-row{
   margin:0 2px 6px;
+  position:relative;
+  z-index:2;
+  overflow:visible;
 }
 .player-wrap.premium-player .progress-wrap{
   height:24px;
   margin:0;
+  overflow:visible;
   touch-action:none;
 }
 .player-wrap.premium-player .progress-track{
@@ -7817,16 +7822,18 @@ html[data-theme="light"] .fifa-live-section :is(.fifa-headline-item:hover,.fifa-
   box-shadow:none;
   color:#fff;
   opacity:0;
+  visibility:hidden;
   transform:translate(-50%,0);
   transform-origin:center bottom;
   pointer-events:none;
   transition:none;
-  z-index:8;
+  z-index:30;
   backdrop-filter:none;
   -webkit-backdrop-filter:none;
 }
 .progress-preview.show{
   opacity:1;
+  visibility:visible;
   transform:translate(-50%,0);
 }
 .progress-preview-time{

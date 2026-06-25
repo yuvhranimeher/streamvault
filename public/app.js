@@ -1,6 +1,6 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260625-lightweight-seek-preview1';
+const SV_ASSET_VERSION = '20260626-visible-seek-preview1';
 function svDebugLoggingEnabled(){
   try{
     return new URLSearchParams(location.search).has('debug')
@@ -2955,8 +2955,35 @@ function resetSeekPreview(){
 }
 
 function seekPreviewDuration(){
-  const duration=Number(vid.duration);
+  const duration=Number(playerDuration());
   return validDurationSeconds(duration) ? duration : 0;
+}
+
+function seekPreviewRatioFromEvent(e,pw){
+  const rect=pw.getBoundingClientRect();
+  const width=Math.max(rect.width,1);
+  return Math.max(0,Math.min(1,(e.clientX-rect.left)/width));
+}
+
+function updateSeekPreviewFromPointer(e,pw,requireInside=false){
+  if(!pw || isLiveMode || (e.pointerType && e.pointerType!=='mouse'))return;
+  const rect=pw.getBoundingClientRect();
+  if(requireInside && (
+    e.clientX<rect.left ||
+    e.clientX>rect.right ||
+    e.clientY<rect.top ||
+    e.clientY>rect.bottom
+  ))return;
+  updateSeekPreview(seekPreviewRatioFromEvent(e,pw));
+}
+
+function bindSeekPreview(pw){
+  if(!pw || pw.dataset.seekPreviewBound==='1')return;
+  pw.dataset.seekPreviewBound='1';
+  const moveEvent=window.PointerEvent ? 'pointermove' : 'mousemove';
+  pw.addEventListener(moveEvent,e=>updateSeekPreviewFromPointer(e,pw),{passive:true});
+  pw.addEventListener('mouseenter',()=>{seekPreviewMetrics=null;});
+  pw.addEventListener('mouseleave',hideSeekPreview);
 }
 
 function measureSeekPreviewMetrics(){
@@ -6641,8 +6668,11 @@ vid._mdH = () => {
   vid.addEventListener('pause',         vid._puH);
   vid.addEventListener('seeked',        vid._skH);
 
-  // Progress bar — bind ONCE using a flag
+  // Preview is bound independently so another progress binding cannot suppress it.
   const pw=document.getElementById('progressWrap');
+  bindSeekPreview(pw);
+
+  // Progress bar — bind ONCE using a flag
   if(!pw._bound){
     pw._bound=true;
     let dragT=0;
@@ -6671,14 +6701,11 @@ vid._mdH = () => {
       if(isLiveMode)return; const d=dur(); if(!d)return;
       e.preventDefault(); seekPreviewMetrics=null; progressDragging=true; pw.classList.add('dragging'); visual(getP(e),d);
     });
-    pw.addEventListener('mouseenter',()=>{seekPreviewMetrics=null;});
     pw.addEventListener('mousemove',e=>{
       const d=dur(); if(!d)return;
       const p=getP(e);
       if(progressDragging){visual(p,d);return;}
-      updateSeekPreview(p);
     });
-    pw.addEventListener('mouseleave',hideSeekPreview);
     document.addEventListener('mouseup',()=>{if(progressDragging)commit();});
     pw.addEventListener('touchstart',e=>{
       if(isLiveMode)return; const d=dur(); if(!d)return;
@@ -6711,7 +6738,10 @@ vid._mdH = () => {
   if(!wrap._bound){
     wrap._bound=true;
     wrap.addEventListener('mouseenter',()=>notePlayerPointerActivity(wrap));
-    wrap.addEventListener('mousemove',()=>notePlayerPointerActivity(wrap),{passive:true});
+    wrap.addEventListener('mousemove',e=>{
+      notePlayerPointerActivity(wrap);
+      updateSeekPreviewFromPointer(e,pw,true);
+    },{passive:true});
     wrap.addEventListener('mouseleave',()=>{playerHovering=false;hideSeekPreview();scheduleHideUI();});
     wrap.addEventListener('focusin',showUI);
     wrap.addEventListener('focusout',()=>setTimeout(scheduleHideUI,0));

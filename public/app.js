@@ -1,6 +1,6 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260626-direct-seek-preview1';
+const SV_ASSET_VERSION = '20260626-heavy-media-smoothness1';
 function svDebugLoggingEnabled(){
   try{
     return new URLSearchParams(location.search).has('debug')
@@ -90,6 +90,7 @@ let playerBufferedRaf=0;
 let playerBufferedPending=null;
 let subtitleOverlayRaf=0;
 let playerUiClock=null;
+let playerUiHeavyRenderAt=0;
 let playerPointerRaf=0;
 let playbackRequestController=null;
 let playbackRequestToken=0;
@@ -2879,6 +2880,9 @@ function startPlayerUiClock(){
   if(playerUiClock || isLiveMode)return;
   playerUiClock=setInterval(()=>{
     if(vid.paused || progressDragging || isLiveMode)return;
+    const now=Date.now();
+    if(ftpHeavyStartupActive() && now-playerUiHeavyRenderAt < 450)return;
+    playerUiHeavyRenderAt=now;
     schedulePlayerProgressRender(playbackTime(),playerDuration());
   },250);
 }
@@ -2887,6 +2891,7 @@ function stopPlayerUiClock(){
   if(!playerUiClock)return;
   clearInterval(playerUiClock);
   playerUiClock=null;
+  playerUiHeavyRenderAt=0;
 }
 
 function notePlayerPointerActivity(wrap=document.getElementById('playerWrap')){
@@ -4697,6 +4702,162 @@ let _ftpSeekPending=false;
 let _ftpNeedsTranscode=false;
 let _ftpTrackLoadPromise=null;
 let _ftpTrackLoadFailed=false;
+let _ftpHeavyMedia=false;
+let _ftpHeavyStartupUntil=0;
+let _ftpHeavyPlaybackStarted=false;
+let _ftpPostStartMetadataTimer=null;
+let _ftpPostStartPlayingHandler=null;
+
+function decodedMediaLabel(sourceUrl=''){
+  try{return decodeURIComponent(String(sourceUrl || '')).toLowerCase();}
+  catch(_){return String(sourceUrl || '').toLowerCase();}
+}
+
+function finiteMediaMetric(...values){
+  for(const value of values){
+    const number=Number(value);
+    if(Number.isFinite(number) && number > 0)return number;
+  }
+  return 0;
+}
+
+function classifyHeavyMedia(info={}, sourceUrl=''){
+  const video=info?.video || info?.videoStream || {};
+  const format=info?.format || {};
+  const label=decodedMediaLabel(sourceUrl);
+  const codec=[
+    info?.videoCodec,
+    info?.codec,
+    video?.codec_name,
+    video?.codec,
+    label
+  ].filter(Boolean).join(' ').toLowerCase();
+  const profile=[
+    info?.profile,
+    info?.pixelFormat,
+    info?.pix_fmt,
+    info?.colorTransfer,
+    video?.profile,
+    video?.pix_fmt,
+    video?.color_transfer,
+    label
+  ].filter(Boolean).join(' ').toLowerCase();
+  const width=finiteMediaMetric(info?.width,info?.videoWidth,video?.width);
+  const height=finiteMediaMetric(info?.height,info?.videoHeight,video?.height);
+  const bitrate=finiteMediaMetric(
+    info?.bitrate,
+    info?.bitRate,
+    info?.videoBitrate,
+    info?.videoBitRate,
+    video?.bit_rate,
+    format?.bit_rate
+  );
+  const fileSize=finiteMediaMetric(
+    info?.fileSize,
+    info?.sizeBytes,
+    info?.contentLength,
+    info?.size,
+    format?.size
+  );
+  const named4k=/(?:^|[^a-z0-9])(?:2160p|4k|uhd)(?:[^a-z0-9]|$)/i.test(label);
+  const is4k=named4k || width >= 3000 || height >= 1600;
+  const isHevc=/(?:hevc|h[.\s-]?265|x265)/i.test(codec);
+  const isTenBitHdr=/(?:10[\s-]?bit|hdr10|hdr|dolby[\s._-]?vision|\bdv\b|main[\s._-]?10|p010)/i.test(profile);
+  const highBitrate=bitrate >= 25 * 1000 * 1000;
+  const veryLargeFile=fileSize >= 8 * 1024 * 1024 * 1024;
+  const highResolutionHevc=isHevc && isTenBitHdr && (width >= 2560 || height >= 1400);
+  return {
+    heavy:is4k || highBitrate || veryLargeFile || highResolutionHevc,
+    is4k,
+    isHevc,
+    isTenBitHdr,
+    highBitrate,
+    veryLargeFile
+  };
+}
+
+function ftpHeavyStartupActive(){
+  return _ftpHeavyMedia && _ftpHeavyStartupUntil > Date.now();
+}
+
+function noteFtpHeavyPlaybackStarted(){
+  if(!_ftpHeavyMedia || _ftpHeavyPlaybackStarted)return;
+  _ftpHeavyPlaybackStarted=true;
+  _ftpHeavyStartupUntil=Date.now() + 10000;
+}
+
+function clearFtpPostStartMetadataSchedule(){
+  if(_ftpPostStartMetadataTimer){
+    clearTimeout(_ftpPostStartMetadataTimer);
+    _ftpPostStartMetadataTimer=null;
+  }
+  if(_ftpPostStartPlayingHandler){
+    vid.removeEventListener('playing',_ftpPostStartPlayingHandler);
+    _ftpPostStartPlayingHandler=null;
+  }
+}
+
+function resetFtpHeavyPlaybackState(){
+  clearFtpPostStartMetadataSchedule();
+  _ftpHeavyMedia=false;
+  _ftpHeavyStartupUntil=0;
+  _ftpHeavyPlaybackStarted=false;
+}
+
+function runFtpPostStartMetadata(resolvedStreamUrl){
+  if(_ftpStreamUrl !== resolvedStreamUrl)return;
+  if(audioLockedIndex() === null){
+    ensureFtpTrackOptionsLoaded();
+  }else{
+    mediaFixLog('FTP full metadata deferred for locked English startup', {url:resolvedStreamUrl});
+  }
+  loadFtpDuration(resolvedStreamUrl);
+}
+
+function ftpBufferedSecondsAhead(){
+  const current=Number(vid.currentTime) || 0;
+  try{
+    for(let i=0;i<vid.buffered.length;i++){
+      if(vid.buffered.start(i) <= current && vid.buffered.end(i) >= current){
+        return Math.max(0,vid.buffered.end(i)-current);
+      }
+    }
+  }catch(_){}
+  return 0;
+}
+
+function scheduleFtpPostStartMetadata(resolvedStreamUrl){
+  clearFtpPostStartMetadataSchedule();
+  const queue=()=>{
+    if(_ftpPostStartPlayingHandler){
+      vid.removeEventListener('playing',_ftpPostStartPlayingHandler);
+      _ftpPostStartPlayingHandler=null;
+    }
+    if(_ftpStreamUrl !== resolvedStreamUrl)return;
+    const delay=_ftpHeavyMedia ? 10000 : 500;
+    const runWhenBuffered=()=>{
+      _ftpPostStartMetadataTimer=null;
+      if(_ftpStreamUrl !== resolvedStreamUrl)return;
+      if(_ftpHeavyMedia && !vid.paused && ftpBufferedSecondsAhead() < 15){
+        _ftpPostStartMetadataTimer=setTimeout(runWhenBuffered,5000);
+        return;
+      }
+      const run=()=>runFtpPostStartMetadata(resolvedStreamUrl);
+      if(_ftpHeavyMedia && typeof window.requestIdleCallback === 'function'){
+        window.requestIdleCallback(run,{timeout:2000});
+      }else{
+        run();
+      }
+    };
+    _ftpPostStartMetadataTimer=setTimeout(runWhenBuffered,delay);
+  };
+  if(_ftpHeavyMedia && !_ftpHeavyPlaybackStarted){
+    _ftpPostStartPlayingHandler=queue;
+    vid.addEventListener('playing',_ftpPostStartPlayingHandler,{once:true});
+    return;
+  }
+  queue();
+}
 
 function ensureFtpTrackOptionsLoaded(options={}){
   if(!_ftpStreamUrl)return Promise.resolve();
@@ -4756,6 +4917,7 @@ async function playFtpMedia(streamUrl, name, year){
     _ftpNeedsTranscode = false;
     _ftpTrackLoadPromise = null;
     _ftpTrackLoadFailed = false;
+    resetFtpHeavyPlaybackState();
     _currentFtpPlaybackPlan = null;
     _ftpCurrentTime = 0;
     _ftpSeekPending = false;
@@ -4808,6 +4970,7 @@ async function playFtpMedia(streamUrl, name, year){
     const startupAudio = await prepareFtpStartupAudio(requestedStreamUrl, playbackScope);
     if(!isCurrentPlaybackScope(playbackScope) || _ftpStreamUrl !== requestedStreamUrl)return;
     const startupInfo = startupAudio.info;
+    _ftpHeavyMedia=classifyHeavyMedia(startupInfo,requestedStreamUrl).heavy;
     startupOptions = startupAudio.options || {};
     if(!startupOptions.fallbackReason)startupOptions.fallbackReason = startupAudio.reason || 'FTP startup';
     if(startupOptions.blockPlayback){
@@ -4935,15 +5098,7 @@ async function playFtpMedia(streamUrl, name, year){
       playbackMode === 'stream' ? SV_MEDIA_TRANSCODE_STARTUP_TIMEOUT_MS : SV_MEDIA_SOURCE_STARTUP_TIMEOUT_MS
     );
 
-    setTimeout(()=>{
-      if(_ftpStreamUrl !== resolvedStreamUrl)return;
-      if(audioLockedIndex() === null){
-        ensureFtpTrackOptionsLoaded();
-      }else{
-        mediaFixLog('FTP full metadata deferred for locked English startup', {url:resolvedStreamUrl});
-      }
-      loadFtpDuration(resolvedStreamUrl);
-    }, 500);
+    scheduleFtpPostStartMetadata(resolvedStreamUrl);
 
     if(mobilePlayback){
       vid.play().catch(e => {
@@ -5119,6 +5274,7 @@ function closePlayer(){
   vid._queuedAudioSwitchIdx=null;
   vid._audioSwitchToken=(vid._audioSwitchToken || 0) + 1;
   clearAudioLock();
+  resetFtpHeavyPlaybackState();
   _ftpStreamUrl='';
   _ftpDuration=0;
   _ftpNeedsTranscode=false;
@@ -6689,7 +6845,7 @@ vid._mdH = () => {
     if(currentStreamId&&!_ftpStreamUrl){watchProgress[currentStreamId]={progress:0.99,updatedAt:Date.now()};try{localStorage.setItem('sv_progress',JSON.stringify(watchProgress));}catch(_){}}
   };
   vid._waH=()=>{document.getElementById('playerSpinner').classList.add('on');showUI();};
-  vid._plH=()=>{document.getElementById('playerSpinner').classList.remove('on');startPlayerUiClock();schedulePlayerProgressRender(playbackTime(),dur());scheduleHideUI();};
+  vid._plH=()=>{document.getElementById('playerSpinner').classList.remove('on');noteFtpHeavyPlaybackStarted();startPlayerUiClock();schedulePlayerProgressRender(playbackTime(),dur());scheduleHideUI();};
   vid._cpH=()=>{document.getElementById('playerSpinner').classList.remove('on');};
   vid._paH=()=>{updatePlayIcons(false);startPlayerUiClock();scheduleHideUI();};
   vid._puH=()=>{stopPlayerUiClock();updatePlayIcons(true);schedulePlayerProgressRender(playbackTime(),dur(),{force:true});showUI();};

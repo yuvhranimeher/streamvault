@@ -1,6 +1,6 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260629-instant-skip1';
+const SV_ASSET_VERSION = '20260629-playback-stability1';
 function svDebugLoggingEnabled(){
   try{
     return new URLSearchParams(location.search).has('debug')
@@ -410,6 +410,8 @@ async function attachPlayerSource(src, mode='direct', options={}){
 
   return new Promise(resolve=>{
     let settled=false;
+    const requireManifest=!!options.requireHlsManifest || String(src || '').includes('/api/heavy-compat-hls/');
+    const attachTimeoutMs=requireManifest ? Number(options.manifestTimeoutMs || 60000) : 5000;
     const finish=value=>{
       if(settled)return;
       settled=true;
@@ -437,7 +439,7 @@ async function attachPlayerSource(src, mode='direct', options={}){
       finish(false);
     });
     hlsInstance.attachMedia(vid);
-    setTimeout(()=>finish(true), 5000);
+    setTimeout(()=>finish(!requireManifest), attachTimeoutMs);
   });
 }
 let _totalMoviePages=0;
@@ -2782,6 +2784,7 @@ function nativeSeekCurrentSource(target,{smallSkip=false,keepSpinnerHidden=false
   const token=(vid._seekToken||0)+1;
   vid._seekToken=token;
   try{
+    if(keepSpinnerHidden)vid._skipSeekSuppressSpinnerUntil=Date.now()+1800;
     vid.currentTime=local;
     if(_ftpStreamUrl)_ftpCurrentTime=absolute;
     if(keepSpinnerHidden)document.getElementById('playerSpinner')?.classList.remove('on');
@@ -6984,12 +6987,18 @@ vid._mdH = () => {
     updatePlayIcons(true);
     if(currentStreamId&&!_ftpStreamUrl){watchProgress[currentStreamId]={progress:0.99,updatedAt:Date.now()};try{localStorage.setItem('sv_progress',JSON.stringify(watchProgress));}catch(_){}}
   };
-  vid._waH=()=>{document.getElementById('playerSpinner').classList.add('on');showUI();};
+  vid._waH=()=>{
+    if(Date.now() < Number(vid._skipSeekSuppressSpinnerUntil || 0)){
+      showUI();
+      return;
+    }
+    document.getElementById('playerSpinner').classList.add('on');showUI();
+  };
   vid._plH=()=>{document.getElementById('playerSpinner').classList.remove('on');noteFtpHeavyPlaybackStarted();startPlayerUiClock();schedulePlayerProgressRender(playbackTime(),dur());scheduleHideUI();};
   vid._cpH=()=>{document.getElementById('playerSpinner').classList.remove('on');};
   vid._paH=()=>{updatePlayIcons(false);startPlayerUiClock();scheduleHideUI();};
   vid._puH=()=>{stopPlayerUiClock();updatePlayIcons(true);schedulePlayerProgressRender(playbackTime(),dur(),{force:true});showUI();};
-  vid._skH=()=>setTimeout(scheduleSubtitleOverlayUpdate,60);
+  vid._skH=()=>{vid._skipSeekSuppressSpinnerUntil=0;setTimeout(scheduleSubtitleOverlayUpdate,60);};
   vid.addEventListener('timeupdate',    vid._tuH);
   vid.addEventListener('progress',      vid._prH);
   vid.addEventListener('loadedmetadata',vid._mdH);

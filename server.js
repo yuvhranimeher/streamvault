@@ -1941,6 +1941,72 @@ function requireAbsolutePlaybackAudio(req, res, audioSelection, mode, label = 'm
   return false;
 }
 
+async function resolveCompatibilityAudioSelection(req, input, label = 'media') {
+  const requested = playbackAudioSelectionFromReq(req);
+  let info = null;
+  try {
+    info = await getCachedAudioOnlyMediaInfo(input);
+  } catch (e) {
+    console.warn(`[Compatibility Audio] ${label} audio probe failed; using requested map ${requested.audioMap}: ${e.message}`);
+    return {
+      ...requested,
+      audioCodec: '',
+      audioLanguage: '',
+      audioTitle: '',
+      audioMap: requested.audioStreamIdx !== null ? `0:${requested.audioStreamIdx}` : requested.audioMap,
+      audioFallbackReason: 'probe-failed',
+      videoStreamIdx: 0,
+    };
+  }
+
+  const tracks = Array.isArray(info.audioTracks) ? info.audioTracks.filter(serverAudioTrackIsAudible) : [];
+  const videoStartTime = streamStartSeconds(info.videoStartTime);
+  const videoStreamIdx = Number.isFinite(Number(info.videoIndex)) ? Number(info.videoIndex) : 0;
+  const wantsEnglish = req.query.english === '1' || req.query.preferEnglish === '1';
+  const selectedStreamIdx = Number(requested.audioStreamIdx);
+  let selectedTrack = null;
+  let reason = 'requested';
+
+  if (Number.isFinite(selectedStreamIdx) && selectedStreamIdx >= 0) {
+    selectedTrack = tracks.find(track => serverAudioTrackAbsoluteIndex(track) === selectedStreamIdx) || null;
+    if (!selectedTrack) reason = 'requested-stream-missing';
+  }
+
+  if (!selectedTrack && wantsEnglish) {
+    selectedTrack = tracks.find(track => serverAudioTrackIsEnglish(track) && serverAudioTrackIsAudible(track)) || null;
+    reason = selectedTrack ? 'english-fallback' : 'english-not-found';
+  }
+
+  if (!selectedTrack && Number.isFinite(requested.audioIdx) && requested.audioIdx >= 0) {
+    selectedTrack = tracks.find(track => Number(track.relativeIndex) === requested.audioIdx) || tracks[requested.audioIdx] || null;
+    reason = selectedTrack ? 'relative-fallback' : reason;
+  }
+
+  if (!selectedTrack) {
+    selectedTrack = tracks.find(track => track.default === true) || tracks[0] || null;
+    reason = selectedTrack ? 'first-playable-fallback' : 'no-playable-audio';
+  }
+
+  if (!selectedTrack) {
+    console.warn(`[Compatibility Audio] ${label} has no playable audio tracks; using optional ${requested.audioMap}`);
+    return {
+      ...requested,
+      audioCodec: '',
+      audioLanguage: '',
+      audioTitle: '',
+      audioMap: requested.audioMap,
+      audioFallbackReason: reason,
+      videoStreamIdx,
+    };
+  }
+
+  const resolved = selectionFromAbsoluteAudio(req, selectedTrack, reason, videoStartTime, videoStreamIdx);
+  resolved.audioMap = `0:${resolved.audioStreamIdx}`;
+  resolved.audioFallbackReason = reason;
+  console.log(`[Compatibility Audio] title="${label}" requestedAudio=${requested.audioIdx} requestedStream=${requested.audioStreamIdx ?? 'relative'} selectedStream=${resolved.audioStreamIdx} lang=${resolved.audioLanguage || ''} title="${resolved.audioTitle || ''}" inputCodec=${resolved.audioCodec || ''} outputCodec=aac reason=${reason}`);
+  return resolved;
+}
+
 function playbackStartFromReq(req) {
   return Math.max(0, parseFloat(req.query.start) || 0);
 }
@@ -5533,6 +5599,7 @@ function startHeavyCompatHlsSession({
     '-b:a', HEAVY_COMPAT_HLS_AUDIO_BITRATE,
     '-ar', '48000',
     '-ac', '2',
+    '-avoid_negative_ts', 'make_zero',
     '-muxdelay', '0',
     '-muxpreload', '0',
     '-f', 'hls',
@@ -5608,13 +5675,12 @@ app.get('/api/heavy-compat-hls/ftp/index.m3u8', async (req, res) => {
     return res.status(400).send('#EXTM3U\n');
   }
   const startSec = playbackStartFromReq(req);
-  let audioSelection = playbackAudioSelectionFromReq(req);
-  if (req.query.english === '1' || req.query.preferEnglish === '1' || audioSelection.audioStreamIdx !== null) {
-    try {
-      audioSelection = await resolvePlaybackAudioSelection(req, srcUrl, remoteFilename(srcUrl));
-    } catch (e) {
-      return res.status(502).send('#EXTM3U\n');
-    }
+  let audioSelection;
+  try {
+    audioSelection = await resolveCompatibilityAudioSelection(req, srcUrl, remoteFilename(srcUrl));
+  } catch (e) {
+    console.warn(`[Heavy Compat HLS] audio resolve failed for ${remoteFilename(srcUrl)}: ${e.message}`);
+    audioSelection = playbackAudioSelectionFromReq(req);
   }
   const audioKey = `${audioSelection.audioMap}|${HEAVY_COMPAT_HLS_VIDEO_CRF}|${HEAVY_COMPAT_HLS_VIDEO_MAXRATE}|${HEAVY_COMPAT_HLS_SEGMENT_TIME}`;
   const key = heavyCompatHlsKey(srcUrl, startSec, audioKey);
@@ -9460,12 +9526,15 @@ app.get('/api/ftp/stream', async (req, res) => {
   if (SV_PLAYBACK_VERBOSE) console.log(`[Media Playback] playbackType=${req.query.playbackType || 'media'} route=ftp-legacy-stream selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'stream'}`);
 
   const startSec = parseFloat(req.query.start) || 0;
-  const audioSelection = playbackAudioSelectionFromReq(req);
-  const audioIdx = audioSelection.audioIdx;
-  const audioStreamIdx = audioSelection.audioStreamIdx;
   const mobilePlayback = isMobilePlaybackRequest(req);
   const copyVideo = !mobilePlayback && isRemoteDirectPlayable(srcUrl) && remoteVideoCanCopy(srcUrl);
   const compatibilityTranscode = !copyVideo;
+  let audioSelection = playbackAudioSelectionFromReq(req);
+  if (compatibilityTranscode) {
+    audioSelection = await resolveCompatibilityAudioSelection(req, srcUrl, remoteFilename(srcUrl));
+  }
+  const audioIdx = audioSelection.audioIdx;
+  const audioStreamIdx = audioSelection.audioStreamIdx;
   const seekProfile = compatibilitySeekProfileForSource(srcUrl, { compatibilityTranscode, mobilePlayback });
   const seekWindow = compatibilitySeekWindow(startSec, seekProfile);
   console.log(`[FTP] Transcoding playbackType=${req.query.playbackType || 'media'} selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'stream'} ${remoteFilename(srcUrl)} start=${startSec} audioIdx=${audioIdx} audioStream=${audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap}`);
@@ -9495,7 +9564,7 @@ app.get('/api/ftp/stream', async (req, res) => {
   }
   ffmpegArgs.push('-map', '0:v:0');
   if (Number.isFinite(audioStreamIdx) && audioStreamIdx >= 0) {
-    ffmpegArgs.push('-map', `0:${audioStreamIdx}?`);
+    ffmpegArgs.push('-map', `0:${audioStreamIdx}`);
   } else {
     ffmpegArgs.push('-map', `0:a:${audioIdx}?`);
   }
@@ -9527,9 +9596,9 @@ app.get('/api/ftp/stream', async (req, res) => {
     '-b:a', '128k',
     '-ar', '48000',
     '-ac', '2',
-    '-copyts',
-    '-start_at_zero',
-    '-avoid_negative_ts', 'disabled',
+    ...(compatibilityTranscode
+      ? ['-avoid_negative_ts', 'make_zero']
+      : ['-copyts', '-start_at_zero', '-avoid_negative_ts', 'disabled']),
     '-max_interleave_delta', '0',
     '-muxdelay', '0',
     '-muxpreload', '0',
@@ -9545,7 +9614,7 @@ app.get('/api/ftp/stream', async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
 
   if (seekWindow.exactStart > 0 || SV_PLAYBACK_VERBOSE) {
-    console.log(`[FTP Stream Seek] title="${remoteFilename(srcUrl)}" url="${srcUrl}" requestedStart=${seekWindow.exactStart} inputStart=${seekWindow.inputStart} outputTrim=${seekWindow.outputTrim} seekArgs=${JSON.stringify(seekArgs.concat(trimArgs))} audioIdx=${audioIdx} audioStream=${audioStreamIdx ?? 'relative'} profile=${seekWindow.profile} reason=${seekWindow.profileReason}`);
+    console.log(`[FTP Stream Seek] title="${remoteFilename(srcUrl)}" url="${srcUrl}" requestedStart=${seekWindow.exactStart} inputStart=${seekWindow.inputStart} outputTrim=${seekWindow.outputTrim} seekArgs=${JSON.stringify(seekArgs.concat(trimArgs))} audioIdx=${audioIdx} audioStream=${audioStreamIdx ?? 'relative'} inputAudioCodec=${audioSelection.audioCodec || ''} outputAudioCodec=aac audioFallback=${audioSelection.audioFallbackReason || audioSelection.source || ''} profile=${seekWindow.profile} reason=${seekWindow.profileReason}`);
     console.log(`[FTP Stream FFmpeg Args] ${JSON.stringify(ffmpegArgs)}`);
   }
 

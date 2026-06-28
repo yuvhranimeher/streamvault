@@ -2976,7 +2976,7 @@ function resetSeekPreview(){
 }
 
 function seekPreviewDuration(){
-  const duration=Number(vid.duration);
+  const duration=Number(playerDuration());
   return validDurationSeconds(duration) ? duration : 0;
 }
 
@@ -4707,6 +4707,8 @@ let _ftpHeavyStartupUntil=0;
 let _ftpHeavyPlaybackStarted=false;
 let _ftpPostStartMetadataTimer=null;
 let _ftpPostStartPlayingHandler=null;
+let _ftpDurationLoadPromise=null;
+let _ftpDurationLoadUrl='';
 
 function decodedMediaLabel(sourceUrl=''){
   try{return decodeURIComponent(String(sourceUrl || '')).toLowerCase();}
@@ -4802,6 +4804,8 @@ function resetFtpHeavyPlaybackState(){
   _ftpHeavyMedia=false;
   _ftpHeavyStartupUntil=0;
   _ftpHeavyPlaybackStarted=false;
+  _ftpDurationLoadPromise=null;
+  _ftpDurationLoadUrl='';
 }
 
 function runFtpPostStartMetadata(resolvedStreamUrl){
@@ -4811,7 +4815,23 @@ function runFtpPostStartMetadata(resolvedStreamUrl){
   }else{
     mediaFixLog('FTP full metadata deferred for locked English startup', {url:resolvedStreamUrl});
   }
-  loadFtpDuration(resolvedStreamUrl);
+  ensureFtpDurationLoaded(resolvedStreamUrl);
+}
+
+function ensureFtpDurationLoaded(resolvedStreamUrl){
+  if(!resolvedStreamUrl || _ftpStreamUrl !== resolvedStreamUrl)return Promise.resolve();
+  if(validDurationSeconds(_ftpDuration))return Promise.resolve(_ftpDuration);
+  if(_ftpDurationLoadPromise && _ftpDurationLoadUrl === resolvedStreamUrl)return _ftpDurationLoadPromise;
+  _ftpDurationLoadUrl=resolvedStreamUrl;
+  _ftpDurationLoadPromise=loadFtpDuration(resolvedStreamUrl)
+    .catch(()=>{})
+    .finally(()=>{
+      if(_ftpDurationLoadUrl === resolvedStreamUrl){
+        _ftpDurationLoadPromise=null;
+        _ftpDurationLoadUrl='';
+      }
+    });
+  return _ftpDurationLoadPromise;
 }
 
 function ftpBufferedSecondsAhead(){
@@ -4834,6 +4854,7 @@ function scheduleFtpPostStartMetadata(resolvedStreamUrl){
       _ftpPostStartPlayingHandler=null;
     }
     if(_ftpStreamUrl !== resolvedStreamUrl)return;
+    ensureFtpDurationLoaded(resolvedStreamUrl);
     const delay=_ftpHeavyMedia ? 10000 : 500;
     const runWhenBuffered=()=>{
       _ftpPostStartMetadataTimer=null;
@@ -4971,6 +4992,10 @@ async function playFtpMedia(streamUrl, name, year){
     if(!isCurrentPlaybackScope(playbackScope) || _ftpStreamUrl !== requestedStreamUrl)return;
     const startupInfo = startupAudio.info;
     _ftpHeavyMedia=classifyHeavyMedia(startupInfo,requestedStreamUrl).heavy;
+    if(validDurationSeconds(Number(startupInfo?.duration))){
+      _ftpDuration=Number(startupInfo.duration);
+      setPlayerDuration(_ftpDuration,'api');
+    }
     startupOptions = startupAudio.options || {};
     if(!startupOptions.fallbackReason)startupOptions.fallbackReason = startupAudio.reason || 'FTP startup';
     if(startupOptions.blockPlayback){

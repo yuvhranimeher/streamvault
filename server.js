@@ -42,6 +42,7 @@ const MEDIA_AUDIO_OFFSET_THRESHOLD_SEC = Number(process.env.MEDIA_AUDIO_OFFSET_T
 const MEDIA_PACKET_PROBE_WINDOW_SEC = Number(process.env.MEDIA_PACKET_PROBE_WINDOW_SEC || 20);
 const MEDIA_PACKET_PROBE_TIMEOUT_MS = Number(process.env.MEDIA_PACKET_PROBE_TIMEOUT_MS || 12000);
 const MEDIA_PACKET_SYNC_BACKGROUND = process.env.MEDIA_PACKET_SYNC_BACKGROUND !== '0';
+const COMPAT_STREAM_SEEK_PREROLL_SEC = Math.max(0, Math.min(8, Number(process.env.COMPAT_STREAM_SEEK_PREROLL_SEC || 4) || 0));
 const SV_PLAYBACK_VERBOSE = process.env.SV_PLAYBACK_VERBOSE === '1';
 const SV_DETAIL_VERBOSE = process.env.SV_DETAIL_VERBOSE === '1';
 let activeMediaFfmpegStreams = 0;
@@ -6076,6 +6077,19 @@ function ffmpegSeconds(value) {
   return Number.isFinite(n) ? String(Number(n.toFixed(6))) : '0';
 }
 
+function compatibilitySeekWindow(startSec) {
+  const exactStart = Math.max(0, Number(startSec) || 0);
+  if (exactStart <= 0 || COMPAT_STREAM_SEEK_PREROLL_SEC <= 0) {
+    return { exactStart, inputStart: exactStart, outputTrim: 0 };
+  }
+  const inputStart = Math.max(0, exactStart - COMPAT_STREAM_SEEK_PREROLL_SEC);
+  return {
+    exactStart,
+    inputStart,
+    outputTrim: Math.max(0, exactStart - inputStart),
+  };
+}
+
 const mediaPacketSyncCache = new Map();
 const mediaPacketSyncInflight = new Map();
 const mediaPacketSyncScheduled = new Set();
@@ -6297,7 +6311,7 @@ function ffmpegMp4Args({
   const encodeAudio = mode === 'audio' || useOffsetAudioInput;
   if (encodeAudio) {
     args.push('-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2');
-    if (useOffsetAudioInput) args.push('-af', 'aresample=async=1:first_pts=0');
+    if (useOffsetAudioInput) args.push('-af', 'aresample=async=1');
   } else {
     args.push('-c', 'copy');
   }
@@ -9132,6 +9146,10 @@ app.get('/api/ftp/stream', async (req, res) => {
   const audioStreamIdx = audioSelection.audioStreamIdx;
   const mobilePlayback = isMobilePlaybackRequest(req);
   const copyVideo = !mobilePlayback && isRemoteDirectPlayable(srcUrl) && remoteVideoCanCopy(srcUrl);
+  const compatibilityTranscode = !copyVideo;
+  const seekWindow = compatibilityTranscode
+    ? compatibilitySeekWindow(startSec)
+    : { exactStart: startSec, inputStart: startSec, outputTrim: 0 };
   console.log(`[FTP] Transcoding playbackType=${req.query.playbackType || 'media'} selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'stream'} ${remoteFilename(srcUrl)} start=${startSec} audioIdx=${audioIdx} audioStream=${audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap}`);
 
   const ffmpegArgs = [
@@ -9139,7 +9157,7 @@ app.get('/api/ftp/stream', async (req, res) => {
     '-loglevel', 'warning',
     '-nostdin',
   ];
-  if (startSec > 0) ffmpegArgs.push('-ss', String(startSec));
+  if (seekWindow.inputStart > 0) ffmpegArgs.push('-ss', ffmpegSeconds(seekWindow.inputStart));
   ffmpegArgs.push(
     '-fflags', '+genpts+nobuffer',
     '-flags', 'low_delay',
@@ -9148,6 +9166,9 @@ app.get('/api/ftp/stream', async (req, res) => {
     '-rw_timeout', '15000000'
   );
   ffmpegArgs.push('-i', srcUrl);
+  if (compatibilityTranscode && seekWindow.outputTrim > 0) {
+    ffmpegArgs.push('-ss', ffmpegSeconds(seekWindow.outputTrim));
+  }
   ffmpegArgs.push('-map', '0:v:0');
   if (Number.isFinite(audioStreamIdx) && audioStreamIdx >= 0) {
     ffmpegArgs.push('-map', `0:${audioStreamIdx}?`);
@@ -9198,6 +9219,10 @@ app.get('/api/ftp/stream', async (req, res) => {
   res.setHeader('Accept-Ranges', 'none');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
+
+  if (SV_PLAYBACK_VERBOSE) {
+    console.log(`[FTP Stream FFmpeg] title="${remoteFilename(srcUrl)}" compatibility=${compatibilityTranscode ? 'transcode' : 'copy'} start=${seekWindow.exactStart} inputStart=${seekWindow.inputStart} outputTrim=${seekWindow.outputTrim} audioIdx=${audioIdx} audioStream=${audioStreamIdx ?? 'relative'} args=${JSON.stringify(ffmpegArgs)}`);
+  }
 
   const ffmpeg = spawn(FFMPEG_BIN, ffmpegArgs);
   ffmpeg.stdout.pipe(res);

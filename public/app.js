@@ -1,6 +1,6 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260629-heavy-compat-cache1';
+const SV_ASSET_VERSION = '20260629-instant-skip1';
 function svDebugLoggingEnabled(){
   try{
     return new URLSearchParams(location.search).has('debug')
@@ -2738,6 +2738,66 @@ function playbackTime(){
   return Math.max(0, base + local);
 }
 
+function timeRangesContain(ranges,time,tolerance=0.35){
+  const t=Number(time);
+  if(!Number.isFinite(t)||!ranges)return false;
+  try{
+    for(let i=0;i<ranges.length;i++){
+      if(t >= ranges.start(i)-tolerance && t <= ranges.end(i)+tolerance)return true;
+    }
+  }catch(_){}
+  return false;
+}
+
+function attachedSourceLocalTime(target){
+  const absolute=Number(target);
+  if(!Number.isFinite(absolute))return null;
+  const offset=Number(vid._sourceOffset || 0);
+  const local=absolute-offset;
+  if(local < -0.35)return null;
+  const mediaDuration=Number(vid.duration);
+  if(validDurationSeconds(mediaDuration) && local > mediaDuration + 0.75)return null;
+  return Math.max(0,local);
+}
+
+function canNativeSeekCurrentSource(target,{smallSkip=false}={}){
+  if(isLiveMode||_ftpSeekPending||vid._audioSwitchPending)return false;
+  if(!vid.currentSrc && !vid.getAttribute('src'))return false;
+  if(vid.readyState < 1)return false;
+  const local=attachedSourceLocalTime(target);
+  if(local===null)return false;
+  const needsSourceSeek=!!((_ftpStreamUrl&&_ftpNeedsTranscode)||vid._sourceSeekRequired||vid._mediaSourceSeekRequired);
+  if(!needsSourceSeek)return true;
+  if(!smallSkip)return false;
+  return timeRangesContain(vid.buffered,local,0.75);
+}
+
+function nativeSeekCurrentSource(target,{smallSkip=false,keepSpinnerHidden=false}={}){
+  if(!canNativeSeekCurrentSource(target,{smallSkip}))return false;
+  const duration=playerDuration();
+  const absolute=duration ? Math.max(0,Math.min(duration,target)) : Math.max(0,Number(target)||0);
+  const local=attachedSourceLocalTime(absolute);
+  if(local===null)return false;
+  const wasPlaying=!vid.paused;
+  const token=(vid._seekToken||0)+1;
+  vid._seekToken=token;
+  try{
+    vid.currentTime=local;
+    if(_ftpStreamUrl)_ftpCurrentTime=absolute;
+    if(keepSpinnerHidden)document.getElementById('playerSpinner')?.classList.remove('on');
+    scheduleSubtitleOverlayUpdate();
+    schedulePlayerProgressRender(absolute,duration,{force:true});
+    if(wasPlaying){
+      requestAnimationFrame(()=>{
+        if(token===vid._seekToken && vid.paused)vid.play().catch(()=>{});
+      });
+    }
+    return true;
+  }catch(_){
+    return false;
+  }
+}
+
 function activePointerPoint(e){
   const point = e.touches?.[0] || e.changedTouches?.[0] || e;
   return {x: point.clientX, y: point.clientY};
@@ -4647,7 +4707,11 @@ function scheduleHideUI(){
 function togglePlay(){if(vid.paused){vid._svPlaybackShouldPlay=true;vid.play();popCenter('');}else{vid._svPlaybackShouldPlay=false;vid.pause();popCenter('');clearTimeout(uiHideTimer);}}
 function seekBy(s){
   if(isLiveMode)return;
-  seekToTime(playbackTime()+s);
+  const duration=playerDuration();
+  const target=duration ? Math.max(0,Math.min(duration,playbackTime()+s)) : Math.max(0,playbackTime()+s);
+  if(!nativeSeekCurrentSource(target,{smallSkip:true,keepSpinnerHidden:true})){
+    seekToTime(target);
+  }
   flashSeek(s);showUI();
 }
 function flashSeek(s){const side=s<0?'Left':'Right';const el=document.getElementById('seekFlash'+side);el.classList.add('show');setTimeout(()=>el.classList.remove('show'),700);}

@@ -1990,6 +1990,27 @@ function playbackUrlHasHevcHint(srcUrl) {
   return /(x265|h265|hevc)/i.test(String(srcUrl || ''));
 }
 
+function decodedPlaybackSourceHint(srcUrl) {
+  let text = String(srcUrl || '');
+  for (let i = 0; i < 2; i += 1) {
+    try {
+      const decoded = decodeURIComponent(text);
+      if (decoded === text) break;
+      text = decoded;
+    } catch {
+      break;
+    }
+  }
+  return text;
+}
+
+function playbackUrlLooksHeavy4kHevc(srcUrl) {
+  const source = decodedPlaybackSourceHint(srcUrl);
+  const has4kHint = /\b(?:2160p|4k|uhd)\b/i.test(source);
+  const hasHevcHint = /\b(?:x265|h\.?265|hevc)\b/i.test(source);
+  return has4kHint && hasHevcHint;
+}
+
 function readTrustedRemotePlaybackMedia(req, res, errorAsJson = true) {
   let media;
   try {
@@ -9127,10 +9148,18 @@ app.get('/api/ftp/stream', async (req, res) => {
   if (SV_PLAYBACK_VERBOSE) console.log(`[Media Playback] playbackType=${req.query.playbackType || 'media'} route=ftp-legacy-stream selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'stream'}`);
 
   const startSec = parseFloat(req.query.start) || 0;
-  const audioSelection = playbackAudioSelectionFromReq(req);
+  const mobilePlayback = isMobilePlaybackRequest(req);
+  const stableHeavy4kSync = !mobilePlayback && playbackUrlLooksHeavy4kHevc(srcUrl);
+  let audioSelection = playbackAudioSelectionFromReq(req);
+  if (stableHeavy4kSync && audioSelection.audioStreamIdx === null && (req.query.english === '1' || req.query.preferEnglish === '1')) {
+    try {
+      audioSelection = await resolvePlaybackAudioSelection(req, srcUrl, remoteFilename(srcUrl));
+    } catch (e) {
+      console.warn(`[FTP] Heavy 4K English audio resolve failed for ${remoteFilename(srcUrl)}:`, e.message);
+    }
+  }
   const audioIdx = audioSelection.audioIdx;
   const audioStreamIdx = audioSelection.audioStreamIdx;
-  const mobilePlayback = isMobilePlaybackRequest(req);
   const copyVideo = !mobilePlayback && isRemoteDirectPlayable(srcUrl) && remoteVideoCanCopy(srcUrl);
   console.log(`[FTP] Transcoding playbackType=${req.query.playbackType || 'media'} selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'stream'} ${remoteFilename(srcUrl)} start=${startSec} audioIdx=${audioIdx} audioStream=${audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap}`);
 
@@ -9140,13 +9169,22 @@ app.get('/api/ftp/stream', async (req, res) => {
     '-nostdin',
   ];
   if (startSec > 0) ffmpegArgs.push('-ss', String(startSec));
-  ffmpegArgs.push(
-    '-fflags', '+genpts+nobuffer',
-    '-flags', 'low_delay',
-    '-probesize', '524288',
-    '-analyzeduration', '500000',
-    '-rw_timeout', '15000000'
-  );
+  if (stableHeavy4kSync) {
+    ffmpegArgs.push(
+      '-fflags', '+genpts',
+      '-probesize', '10485760',
+      '-analyzeduration', '10000000',
+      '-rw_timeout', '15000000'
+    );
+  } else {
+    ffmpegArgs.push(
+      '-fflags', '+genpts+nobuffer',
+      '-flags', 'low_delay',
+      '-probesize', '524288',
+      '-analyzeduration', '500000',
+      '-rw_timeout', '15000000'
+    );
+  }
   ffmpegArgs.push('-i', srcUrl);
   ffmpegArgs.push('-map', '0:v:0');
   if (Number.isFinite(audioStreamIdx) && audioStreamIdx >= 0) {
@@ -9181,15 +9219,30 @@ app.get('/api/ftp/stream', async (req, res) => {
     '-c:a', 'aac',
     '-b:a', '128k',
     '-ar', '48000',
-    '-ac', '2',
-    '-copyts',
-    '-start_at_zero',
-    '-avoid_negative_ts', 'disabled',
+    '-ac', '2'
+  );
+  if (stableHeavy4kSync) {
+    ffmpegArgs.push('-af', 'aresample=async=1:first_pts=0');
+  }
+  if (stableHeavy4kSync) {
+    ffmpegArgs.push(
+      '-avoid_negative_ts', 'make_zero'
+    );
+  } else {
+    ffmpegArgs.push(
+      '-copyts',
+      '-start_at_zero',
+      '-avoid_negative_ts', 'disabled'
+    );
+  }
+  ffmpegArgs.push(
     '-max_interleave_delta', '0',
     '-muxdelay', '0',
     '-muxpreload', '0',
     '-flush_packets', '1',
-    '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
+    '-movflags', stableHeavy4kSync
+      ? 'frag_keyframe+empty_moov+default_base_moof+delay_moov'
+      : 'frag_keyframe+empty_moov+default_base_moof',
     '-f', 'mp4',
     'pipe:1'
   );

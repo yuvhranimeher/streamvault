@@ -36,6 +36,17 @@ const MOBILE_HLS_MAX_FPS = Number(process.env.MOBILE_HLS_MAX_FPS || 24);
 const MOBILE_HLS_VIDEO_MAXRATE = String(process.env.MOBILE_HLS_VIDEO_MAXRATE || '1200k');
 const MOBILE_HLS_VIDEO_BUFSIZE = String(process.env.MOBILE_HLS_VIDEO_BUFSIZE || '2400k');
 const MOBILE_HLS_AUDIO_BITRATE = String(process.env.MOBILE_HLS_AUDIO_BITRATE || '96k');
+const HEAVY_COMPAT_HLS_DIR = path.join(__dirname, 'cache', 'heavy-compat-hls');
+const HEAVY_COMPAT_HLS_PROFILE = String(process.env.HEAVY_COMPAT_HLS_PROFILE || 'heavy-compat-hls-v1');
+const HEAVY_COMPAT_HLS_IDLE_MS = Number(process.env.HEAVY_COMPAT_HLS_IDLE_MS || 30 * 60 * 1000);
+const HEAVY_COMPAT_HLS_MAX_SESSIONS = Number(process.env.HEAVY_COMPAT_HLS_MAX_SESSIONS || 4);
+const HEAVY_COMPAT_HLS_STARTUP_SEGMENTS = Math.max(1, Math.min(6, Number(process.env.HEAVY_COMPAT_HLS_STARTUP_SEGMENTS || 2) || 2));
+const HEAVY_COMPAT_HLS_STARTUP_MS = Number(process.env.HEAVY_COMPAT_HLS_STARTUP_MS || 45000);
+const HEAVY_COMPAT_HLS_SEGMENT_TIME = Math.max(2, Math.min(8, Number(process.env.HEAVY_COMPAT_HLS_SEGMENT_TIME || 4) || 4));
+const HEAVY_COMPAT_HLS_VIDEO_CRF = String(process.env.HEAVY_COMPAT_HLS_VIDEO_CRF || '23');
+const HEAVY_COMPAT_HLS_VIDEO_MAXRATE = String(process.env.HEAVY_COMPAT_HLS_VIDEO_MAXRATE || '6M');
+const HEAVY_COMPAT_HLS_VIDEO_BUFSIZE = String(process.env.HEAVY_COMPAT_HLS_VIDEO_BUFSIZE || '12M');
+const HEAVY_COMPAT_HLS_AUDIO_BITRATE = String(process.env.HEAVY_COMPAT_HLS_AUDIO_BITRATE || '128k');
 const MEDIA_FFMPEG_STREAM_MAX = Number(process.env.MEDIA_FFMPEG_STREAM_MAX || 4);
 const MEDIA_FFMPEG_STARTUP_MS = Number(process.env.MEDIA_FFMPEG_STARTUP_MS || 15000);
 const MEDIA_AUDIO_OFFSET_THRESHOLD_SEC = Number(process.env.MEDIA_AUDIO_OFFSET_THRESHOLD_SEC || 0.05);
@@ -1728,6 +1739,28 @@ function remoteFilename(srcUrl) {
   } catch {
     return String(srcUrl || '').split('/').pop() || 'remote media';
   }
+}
+
+function decodedRemoteMediaLabel(srcUrl = '') {
+  try {
+    return decodeURIComponent(String(srcUrl || '')).toLowerCase();
+  } catch {
+    return String(srcUrl || '').toLowerCase();
+  }
+}
+
+function remoteCompatibilityTraits(srcUrl = '') {
+  const label = decodedRemoteMediaLabel(srcUrl);
+  const named4k = /(?:^|[^a-z0-9])(?:2160p|4k|uhd)(?:[^a-z0-9]|$)/i.test(label);
+  const isHevc = /(?:hevc|h[.\s-]?265|x265)/i.test(label);
+  const isTenBitHdr = /(?:10[\s-]?bit|hdr10|hdr|dolby[\s._-]?vision|\bdv\b|main[\s._-]?10|p010)/i.test(label);
+  return {
+    named4k,
+    isHevc,
+    isTenBitHdr,
+    heavy4kHevc: named4k && isHevc,
+    heavy4kHevcHdr: named4k && isHevc && isTenBitHdr,
+  };
 }
 
 function isRemoteDirectPlayable(srcUrl) {
@@ -5153,6 +5186,7 @@ app.get('/api/live-test/:channelId', async (req, res) => {
 // API: MOVIES (with cartoon filter applied)
 // ═══════════════════════════════════════════════════════════════════════════════
 const mobileHlsSessions = new Map();
+const heavyCompatHlsSessions = new Map();
 
 function mobileHlsPresetFromQuality(quality) {
   const q = String(quality || '').toLowerCase();
@@ -5350,6 +5384,244 @@ function sendMobileHlsPlaylist(res, scope, key, playlistPath) {
       res.status(504).send('#EXTM3U\n');
     });
 }
+
+function heavyCompatHlsKey(source, startSec, audioKey = '') {
+  return crypto
+    .createHash('sha1')
+    .update(`${HEAVY_COMPAT_HLS_PROFILE}|ftp|${source}|${Math.floor(Number(startSec) || 0)}|${audioKey}`)
+    .digest('hex')
+    .slice(0, 24);
+}
+
+function touchHeavyCompatHlsSession(key) {
+  const session = heavyCompatHlsSessions.get(key);
+  if (session) session.lastAccess = Date.now();
+  return session;
+}
+
+function stopHeavyCompatHlsSession(key, reason = 'stopped') {
+  const session = heavyCompatHlsSessions.get(key);
+  if (!session) return false;
+  session.stopping = true;
+  heavyCompatHlsSessions.delete(key);
+  console.log(`[Heavy Compat HLS] stop ${key} (${reason})`);
+  try {
+    if (!session.process.killed) session.process.kill('SIGKILL');
+  } catch {}
+  return true;
+}
+
+function cleanupHeavyCompatHlsSessions(reason = 'idle') {
+  const now = Date.now();
+  for (const [key, session] of [...heavyCompatHlsSessions.entries()]) {
+    if (now - (session.lastAccess || session.createdAt) > HEAVY_COMPAT_HLS_IDLE_MS) {
+      stopHeavyCompatHlsSession(key, reason);
+    }
+  }
+
+  const remaining = [...heavyCompatHlsSessions.entries()]
+    .sort((a, b) => (a[1].lastAccess || a[1].createdAt) - (b[1].lastAccess || b[1].createdAt));
+  while (remaining.length > HEAVY_COMPAT_HLS_MAX_SESSIONS) {
+    const [key] = remaining.shift();
+    stopHeavyCompatHlsSession(key, 'session limit');
+  }
+}
+
+setInterval(() => cleanupHeavyCompatHlsSessions(), Math.min(HEAVY_COMPAT_HLS_IDLE_MS, 60000)).unref?.();
+
+function heavyCompatPlaylistSegmentCount(content = '') {
+  return (String(content).match(/^seg_[^\r\n]+\.ts$/gm) || []).length;
+}
+
+function waitForHeavyCompatHlsPlaylist(playlistPath, key, timeoutMs = HEAVY_COMPAT_HLS_STARTUP_MS) {
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    let lastContent = '';
+    const check = () => {
+      const session = heavyCompatHlsSessions.get(key);
+      if (session?.error) return reject(new Error(session.error));
+      if (fs.existsSync(playlistPath)) {
+        lastContent = fs.readFileSync(playlistPath, 'utf8');
+        const segmentCount = heavyCompatPlaylistSegmentCount(lastContent);
+        if (lastContent.includes('#EXT-X-ENDLIST') || segmentCount >= HEAVY_COMPAT_HLS_STARTUP_SEGMENTS) {
+          return resolve(lastContent);
+        }
+      }
+      if (Date.now() - started >= timeoutMs) {
+        if (heavyCompatPlaylistSegmentCount(lastContent) > 0) return resolve(lastContent);
+        return reject(new Error('Heavy compatibility HLS startup timed out'));
+      }
+      setTimeout(check, 500);
+    };
+    check();
+  });
+}
+
+function startHeavyCompatHlsSession({
+  key,
+  input,
+  startSec = 0,
+  audioSelection = playbackAudioSelectionFromReq({ query: {} }),
+}) {
+  fs.mkdirSync(HEAVY_COMPAT_HLS_DIR, { recursive: true });
+  const sessionDir = path.join(HEAVY_COMPAT_HLS_DIR, key);
+  const playlistPath = path.join(sessionDir, 'index.m3u8');
+  const existing = heavyCompatHlsSessions.get(key);
+  if (existing && !existing.process.killed) {
+    existing.lastAccess = Date.now();
+    return playlistPath;
+  }
+
+  if (fs.existsSync(playlistPath)) {
+    try {
+      const content = fs.readFileSync(playlistPath, 'utf8');
+      if (content.includes('#EXT-X-ENDLIST') && heavyCompatPlaylistSegmentCount(content) > 0) {
+        return playlistPath;
+      }
+    } catch {}
+  }
+
+  cleanupHeavyCompatHlsSessions('new heavy session');
+  fs.rmSync(sessionDir, { recursive: true, force: true });
+  fs.mkdirSync(sessionDir, { recursive: true });
+
+  const seekProfile = compatibilitySeekProfileForSource(input, { compatibilityTranscode: true, mobilePlayback: false });
+  const seekWindow = compatibilitySeekWindow(startSec, seekProfile);
+  const audioMap = audioSelection.audioMap || '0:a:0?';
+  const seekArgs = [];
+  const trimArgs = [];
+
+  const ffmpegArgs = [
+    '-hide_banner',
+    '-loglevel', 'warning',
+    '-stats_period', '5',
+    '-nostdin',
+  ];
+  if (seekWindow.inputStart > 0) {
+    ffmpegArgs.push('-ss', ffmpegSeconds(seekWindow.inputStart));
+    seekArgs.push('-ss', ffmpegSeconds(seekWindow.inputStart));
+  }
+  if (/^https?:\/\//i.test(input)) {
+    ffmpegArgs.push(
+      '-fflags', '+genpts+nobuffer',
+      '-flags', 'low_delay',
+      '-probesize', '524288',
+      '-analyzeduration', '500000',
+      '-rw_timeout', '15000000'
+    );
+  }
+  ffmpegArgs.push('-i', input);
+  if (seekWindow.outputTrim > 0) {
+    ffmpegArgs.push('-ss', ffmpegSeconds(seekWindow.outputTrim));
+    trimArgs.push('-ss', ffmpegSeconds(seekWindow.outputTrim));
+  }
+  ffmpegArgs.push(
+    '-map', '0:v:0',
+    '-map', audioMap,
+    '-sn', '-dn',
+    '-c:v', 'libx264',
+    '-preset', 'ultrafast',
+    '-tune', 'zerolatency',
+    '-crf', HEAVY_COMPAT_HLS_VIDEO_CRF,
+    '-maxrate', HEAVY_COMPAT_HLS_VIDEO_MAXRATE,
+    '-bufsize', HEAVY_COMPAT_HLS_VIDEO_BUFSIZE,
+    '-pix_fmt', 'yuv420p',
+    '-g', '48',
+    '-keyint_min', '48',
+    '-sc_threshold', '0',
+    '-c:a', 'aac',
+    '-b:a', HEAVY_COMPAT_HLS_AUDIO_BITRATE,
+    '-ar', '48000',
+    '-ac', '2',
+    '-muxdelay', '0',
+    '-muxpreload', '0',
+    '-f', 'hls',
+    '-hls_time', String(HEAVY_COMPAT_HLS_SEGMENT_TIME),
+    '-hls_list_size', '0',
+    '-hls_playlist_type', 'event',
+    '-hls_flags', 'independent_segments',
+    '-hls_segment_filename', path.join(sessionDir, 'seg_%05d.ts'),
+    playlistPath
+  );
+
+  console.log(`[Heavy Compat HLS Seek] title="${remoteFilename(input)}" url="${input}" requestedStart=${seekWindow.exactStart} inputStart=${seekWindow.inputStart} outputTrim=${seekWindow.outputTrim} seekArgs=${JSON.stringify(seekArgs.concat(trimArgs))} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} audioMap=${audioMap} profile=${seekWindow.profile} reason=${seekWindow.profileReason}`);
+  console.log(`[Heavy Compat HLS FFmpeg Args] ${JSON.stringify(ffmpegArgs)}`);
+
+  const process = spawn(FFMPEG_BIN, ffmpegArgs);
+  const session = {
+    process,
+    dir: sessionDir,
+    playlistPath,
+    createdAt: Date.now(),
+    lastAccess: Date.now(),
+    startSec: seekWindow.exactStart,
+    input,
+    audioMap,
+    error: null,
+  };
+  heavyCompatHlsSessions.set(key, session);
+  process.stderr.on('data', d => console.log('[Heavy Compat HLS FFmpeg]', d.toString().trim()));
+  process.on('close', code => {
+    console.log(`[Heavy Compat HLS] ended ${key} code=${code}`);
+    const current = heavyCompatHlsSessions.get(key);
+    if (current?.process === process) {
+      if (current.stopping) return;
+      if (code === 0) {
+        current.ended = true;
+        current.lastAccess = Date.now();
+      } else {
+        current.error = current.error || `FFmpeg exited with code ${code}`;
+        heavyCompatHlsSessions.delete(key);
+      }
+    }
+  });
+  process.on('error', err => {
+    session.error = err.message;
+    console.error('[Heavy Compat HLS] spawn error:', err.message);
+  });
+  return playlistPath;
+}
+
+function sendHeavyCompatHlsPlaylist(res, key, playlistPath) {
+  touchHeavyCompatHlsSession(key);
+  waitForHeavyCompatHlsPlaylist(playlistPath, key)
+    .then(content => {
+      touchHeavyCompatHlsSession(key);
+      const rewritten = content.replace(/^(seg_[^\r\n]+\.ts)$/gm, `/api/heavy-compat-hls/ftp/${key}/$1`);
+      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.send(rewritten);
+    })
+    .catch(err => {
+      console.error('[Heavy Compat HLS] playlist error:', err.message);
+      res.status(504).send('#EXTM3U\n');
+    });
+}
+
+app.get('/api/heavy-compat-hls/ftp/index.m3u8', async (req, res) => {
+  const trusted = readTrustedRemotePlaybackMedia(req, res, false);
+  if (!trusted) return;
+  const { media, srcUrl, matched } = trusted;
+  const traits = remoteCompatibilityTraits(srcUrl);
+  if (!traits.heavy4kHevc) {
+    return res.status(400).send('#EXTM3U\n');
+  }
+  const startSec = playbackStartFromReq(req);
+  let audioSelection = playbackAudioSelectionFromReq(req);
+  if (req.query.english === '1' || req.query.preferEnglish === '1' || audioSelection.audioStreamIdx !== null) {
+    try {
+      audioSelection = await resolvePlaybackAudioSelection(req, srcUrl, remoteFilename(srcUrl));
+    } catch (e) {
+      return res.status(502).send('#EXTM3U\n');
+    }
+  }
+  const audioKey = `${audioSelection.audioMap}|${HEAVY_COMPAT_HLS_VIDEO_CRF}|${HEAVY_COMPAT_HLS_VIDEO_MAXRATE}|${HEAVY_COMPAT_HLS_SEGMENT_TIME}`;
+  const key = heavyCompatHlsKey(srcUrl, startSec, audioKey);
+  console.log(`[Heavy Compat HLS] request title="${remoteFilename(srcUrl)}" matched=${catalogLogLabel(matched)} requestedUrl="${media.requestedUrl}" start=${startSec} key=${key}`);
+  const playlistPath = startHeavyCompatHlsSession({ key, input: srcUrl, startSec, audioSelection });
+  sendHeavyCompatHlsPlaylist(res, key, playlistPath);
+});
 
 app.get('/api/mobile-hls/local/:id/index.m3u8', (req, res) => {
   const idx = parseInt(req.params.id, 10);
@@ -6044,6 +6316,24 @@ app.get('/api/mobile-hls/:scope/:key/:file', (req, res) => {
   stream.pipe(res);
 });
 
+app.get('/api/heavy-compat-hls/ftp/:key/:file', (req, res) => {
+  if (!/^[a-f0-9]{24}$/.test(req.params.key)) return res.status(404).end();
+  if (!/^seg_\d+\.ts$/.test(req.params.file)) return res.status(404).end();
+  touchHeavyCompatHlsSession(req.params.key);
+  const filePath = path.join(HEAVY_COMPAT_HLS_DIR, req.params.key, req.params.file);
+  if (!fs.existsSync(filePath)) return res.status(404).end();
+  res.setHeader('Content-Type', 'video/MP2T');
+  res.setHeader('Cache-Control', 'private, max-age=21600');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  const stream = fs.createReadStream(filePath);
+  res.on('close', () => stream.destroy());
+  stream.on('error', err => {
+    console.error('[Heavy Compat HLS] segment read error:', err.message);
+    if (!res.headersSent) res.status(500).end();
+  });
+  stream.pipe(res);
+});
+
 app.post('/api/mobile-hls/stop', (req, res) => {
   const sessions = Array.isArray(req.body?.sessions) ? req.body.sessions : [];
   const clientId = /^[a-zA-Z0-9_-]{8,80}$/.test(String(req.body?.client || '')) ? String(req.body.client) : '';
@@ -6077,16 +6367,45 @@ function ffmpegSeconds(value) {
   return Number.isFinite(n) ? String(Number(n.toFixed(6))) : '0';
 }
 
-function compatibilitySeekWindow(startSec) {
-  const exactStart = Math.max(0, Number(startSec) || 0);
-  if (exactStart <= 0 || COMPAT_STREAM_SEEK_PREROLL_SEC <= 0) {
-    return { exactStart, inputStart: exactStart, outputTrim: 0 };
+function compatibilitySeekProfileForSource(srcUrl, { compatibilityTranscode = true, mobilePlayback = false } = {}) {
+  if (!compatibilityTranscode) {
+    return {
+      name: 'copy-exact',
+      reason: 'video-copy',
+      prerollSec: 0,
+      traits: remoteCompatibilityTraits(srcUrl),
+    };
   }
-  const inputStart = Math.max(0, exactStart - COMPAT_STREAM_SEEK_PREROLL_SEC);
+  const traits = remoteCompatibilityTraits(srcUrl);
+  if (!mobilePlayback && traits.heavy4kHevcHdr && COMPAT_STREAM_SEEK_PREROLL_SEC > 0) {
+    return {
+      name: 'timestamp-preroll',
+      reason: 'heavy-4k-hevc-hdr',
+      prerollSec: COMPAT_STREAM_SEEK_PREROLL_SEC,
+      traits,
+    };
+  }
+  return {
+    name: 'compat-standard',
+    reason: mobilePlayback ? 'mobile-compat-exact' : 'compat-exact',
+    prerollSec: 0,
+    traits,
+  };
+}
+
+function compatibilitySeekWindow(startSec, profile = compatibilitySeekProfileForSource('')) {
+  const exactStart = Math.max(0, Number(startSec) || 0);
+  const prerollSec = Math.max(0, Number(profile?.prerollSec) || 0);
+  if (exactStart <= 0 || prerollSec <= 0) {
+    return { exactStart, inputStart: exactStart, outputTrim: 0, profile: profile?.name || 'compat-standard', profileReason: profile?.reason || 'exact' };
+  }
+  const inputStart = Math.max(0, exactStart - prerollSec);
   return {
     exactStart,
     inputStart,
     outputTrim: Math.max(0, exactStart - inputStart),
+    profile: profile?.name || 'timestamp-preroll',
+    profileReason: profile?.reason || 'preroll',
   };
 }
 
@@ -9147,9 +9466,8 @@ app.get('/api/ftp/stream', async (req, res) => {
   const mobilePlayback = isMobilePlaybackRequest(req);
   const copyVideo = !mobilePlayback && isRemoteDirectPlayable(srcUrl) && remoteVideoCanCopy(srcUrl);
   const compatibilityTranscode = !copyVideo;
-  const seekWindow = compatibilityTranscode
-    ? compatibilitySeekWindow(startSec)
-    : { exactStart: startSec, inputStart: startSec, outputTrim: 0 };
+  const seekProfile = compatibilitySeekProfileForSource(srcUrl, { compatibilityTranscode, mobilePlayback });
+  const seekWindow = compatibilitySeekWindow(startSec, seekProfile);
   console.log(`[FTP] Transcoding playbackType=${req.query.playbackType || 'media'} selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'stream'} ${remoteFilename(srcUrl)} start=${startSec} audioIdx=${audioIdx} audioStream=${audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap}`);
 
   const ffmpegArgs = [
@@ -9157,7 +9475,12 @@ app.get('/api/ftp/stream', async (req, res) => {
     '-loglevel', 'warning',
     '-nostdin',
   ];
-  if (seekWindow.inputStart > 0) ffmpegArgs.push('-ss', ffmpegSeconds(seekWindow.inputStart));
+  const seekArgs = [];
+  const trimArgs = [];
+  if (seekWindow.inputStart > 0) {
+    ffmpegArgs.push('-ss', ffmpegSeconds(seekWindow.inputStart));
+    seekArgs.push('-ss', ffmpegSeconds(seekWindow.inputStart));
+  }
   ffmpegArgs.push(
     '-fflags', '+genpts+nobuffer',
     '-flags', 'low_delay',
@@ -9168,6 +9491,7 @@ app.get('/api/ftp/stream', async (req, res) => {
   ffmpegArgs.push('-i', srcUrl);
   if (compatibilityTranscode && seekWindow.outputTrim > 0) {
     ffmpegArgs.push('-ss', ffmpegSeconds(seekWindow.outputTrim));
+    trimArgs.push('-ss', ffmpegSeconds(seekWindow.outputTrim));
   }
   ffmpegArgs.push('-map', '0:v:0');
   if (Number.isFinite(audioStreamIdx) && audioStreamIdx >= 0) {
@@ -9220,8 +9544,9 @@ app.get('/api/ftp/stream', async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
 
-  if (SV_PLAYBACK_VERBOSE) {
-    console.log(`[FTP Stream FFmpeg] title="${remoteFilename(srcUrl)}" compatibility=${compatibilityTranscode ? 'transcode' : 'copy'} start=${seekWindow.exactStart} inputStart=${seekWindow.inputStart} outputTrim=${seekWindow.outputTrim} audioIdx=${audioIdx} audioStream=${audioStreamIdx ?? 'relative'} args=${JSON.stringify(ffmpegArgs)}`);
+  if (seekWindow.exactStart > 0 || SV_PLAYBACK_VERBOSE) {
+    console.log(`[FTP Stream Seek] title="${remoteFilename(srcUrl)}" url="${srcUrl}" requestedStart=${seekWindow.exactStart} inputStart=${seekWindow.inputStart} outputTrim=${seekWindow.outputTrim} seekArgs=${JSON.stringify(seekArgs.concat(trimArgs))} audioIdx=${audioIdx} audioStream=${audioStreamIdx ?? 'relative'} profile=${seekWindow.profile} reason=${seekWindow.profileReason}`);
+    console.log(`[FTP Stream FFmpeg Args] ${JSON.stringify(ffmpegArgs)}`);
   }
 
   const ffmpeg = spawn(FFMPEG_BIN, ffmpegArgs);

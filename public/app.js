@@ -1,6 +1,6 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260626-heavy-media-smoothness1';
+const SV_ASSET_VERSION = '20260629-heavy-compat-cache1';
 function svDebugLoggingEnabled(){
   try{
     return new URLSearchParams(location.search).has('debug')
@@ -3337,6 +3337,7 @@ function validPlaybackSourceUrl(src){
       || url.pathname === '/api/playback/ftp'
       || url.pathname === '/api/ftp/proxy'
       || url.pathname === '/api/ftp/stream'
+      || url.pathname.startsWith('/api/heavy-compat-hls/')
       || url.pathname.startsWith('/api/mobile-hls/');
   }catch(_){
     return false;
@@ -3430,6 +3431,36 @@ function ftpStreamPlaybackPlan(url, start=0, fallbackReason='stream'){
     transcodeUrl:src,
     audioTranscodeUrl:src,
     duration:0
+  };
+}
+
+function ftpHeavyCompatHlsSrc(url, start=0, fallbackReason='heavy 4K compatibility cache'){
+  const params = new URLSearchParams();
+  params.set('url', url);
+  params.set('playbackType', 'media');
+  params.set('heavyCompat', '1');
+  if(fallbackReason)params.set('fallbackReason', fallbackReason);
+  if(start > 0)params.set('start', Math.floor(start));
+  appendSelectedAudioParams(params);
+  return '/api/heavy-compat-hls/ftp/index.m3u8?' + params.toString();
+}
+
+function ftpHeavyCompatHlsPlaybackPlan(url, start=0, fallbackReason='heavy 4K compatibility cache'){
+  const src=ftpHeavyCompatHlsSrc(url,start,fallbackReason);
+  return {
+    ok:true,
+    decodedUrl:url,
+    directPlayable:false,
+    mode:'hls',
+    transport:'hls',
+    heavyCompatHls:true,
+    src,
+    playUrl:src,
+    finalPlayUrl:src,
+    hlsUrl:src,
+    transcodeUrl:src,
+    audioTranscodeUrl:src,
+    duration:_ftpDuration || 0
   };
 }
 
@@ -4778,6 +4809,14 @@ function classifyHeavyMedia(info={}, sourceUrl=''){
   };
 }
 
+function shouldUseHeavyCompatHlsCache(info={}, sourceUrl=''){
+  const traits=classifyHeavyMedia(info,sourceUrl);
+  return traits.is4k
+    && traits.isHevc
+    && (traits.isTenBitHdr || traits.veryLargeFile)
+    && mediaNeedsBrowserVideoTranscode(info,sourceUrl);
+}
+
 function ftpHeavyStartupActive(){
   return _ftpHeavyMedia && _ftpHeavyStartupUntil > Date.now();
 }
@@ -5015,9 +5054,19 @@ async function playFtpMedia(streamUrl, name, year){
     const needsServerStart = !!(startupOptions.forceAudio || startupOptions.forceRemux || startupOptions.forceHls || startupOptions.mode);
     if(mediaNeedsBrowserVideoTranscode(startupInfo, requestedStreamUrl)){
       const fallbackReason='browser video codec transcode';
-      playInfo=ftpStreamPlaybackPlan(requestedStreamUrl,0,fallbackReason);
-      vid._ftpFallbackStepsTried.add('transcode');
-      mediaFixLog('FTP startup using browser-compatible video transcode', {url:requestedStreamUrl,codec:startupInfo?.videoCodec || ''});
+      if(shouldUseHeavyCompatHlsCache(startupInfo, requestedStreamUrl)){
+        playInfo=ftpHeavyCompatHlsPlaybackPlan(requestedStreamUrl,0,'heavy 4K compatibility cache');
+        vid._ftpFallbackStepsTried.add('hls');
+        mediaFixLog('FTP startup using heavy 4K compatibility cache', {
+          url:requestedStreamUrl,
+          codec:startupInfo?.videoCodec || '',
+          heavy:classifyHeavyMedia(startupInfo,requestedStreamUrl)
+        });
+      }else{
+        playInfo=ftpStreamPlaybackPlan(requestedStreamUrl,0,fallbackReason);
+        vid._ftpFallbackStepsTried.add('transcode');
+        mediaFixLog('FTP startup using browser-compatible video transcode', {url:requestedStreamUrl,codec:startupInfo?.videoCodec || ''});
+      }
     }else if(!mobilePlayback && !needsServerStart){
       // Never redirect an HTTPS desktop page to the private/HTTP media origin.
       // The same-origin proxy preserves Range/206 responses and encoded names.
@@ -5217,7 +5266,9 @@ async function ftpSeekTo(seconds){
   try{
     const currentMode = _currentFtpPlaybackPlan?.mode || 'direct';
     const fallbackReason='FTP seek';
-    const plan = currentMode === 'stream'
+    const plan = _currentFtpPlaybackPlan?.heavyCompatHls
+      ? ftpHeavyCompatHlsPlaybackPlan(_ftpStreamUrl, target, 'heavy 4K compatibility seek')
+      : currentMode === 'stream'
       ? { ok:true, mode:'stream', src:ftpTranscodeSrc(_ftpStreamUrl, target, fallbackReason), duration:_ftpDuration || 0 }
       : await fetchFtpPlaybackPlan(_ftpStreamUrl, target, {...playbackOptionsForStep(currentMode, fallbackReason), signal:playbackRequestController?.signal});
     if(token !== vid._seekToken)return;

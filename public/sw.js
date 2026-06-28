@@ -1,4 +1,4 @@
-const SV_CACHE_VERSION = '20260626-heavy-media-smoothness1';
+const SV_CACHE_VERSION = '20260629-heavy-compat-cache1';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
 const SV_POSTER_CACHE = `streamvault-posters-${SV_CACHE_VERSION}`;
 const SV_ASSET_CACHE = `streamvault-assets-${SV_CACHE_VERSION}`;
@@ -34,6 +34,7 @@ function isMediaStreamRequest(request, url) {
     || url.pathname.startsWith('/api/ftp/subtitle/')
     || url.pathname === '/api/ftp/stream'
     || url.pathname.startsWith('/api/playback/local/')
+    || url.pathname.startsWith('/api/heavy-compat-hls/')
     || url.pathname.startsWith('/api/mobile-hls/')
     || url.pathname === '/api/playback/ftp'
     || url.pathname === '/api/ftp/proxy';

@@ -1990,27 +1990,6 @@ function playbackUrlHasHevcHint(srcUrl) {
   return /(x265|h265|hevc)/i.test(String(srcUrl || ''));
 }
 
-function decodedPlaybackSourceHint(srcUrl) {
-  let text = String(srcUrl || '');
-  for (let i = 0; i < 2; i += 1) {
-    try {
-      const decoded = decodeURIComponent(text);
-      if (decoded === text) break;
-      text = decoded;
-    } catch {
-      break;
-    }
-  }
-  return text;
-}
-
-function playbackUrlLooksHeavy4kHevc(srcUrl) {
-  const source = decodedPlaybackSourceHint(srcUrl);
-  const has4kHint = /\b(?:2160p|4k|uhd)\b/i.test(source);
-  const hasHevcHint = /\b(?:x265|h\.?265|hevc)\b/i.test(source);
-  return has4kHint && hasHevcHint;
-}
-
 function readTrustedRemotePlaybackMedia(req, res, errorAsJson = true) {
   let media;
   try {
@@ -9152,7 +9131,6 @@ app.get('/api/ftp/stream', async (req, res) => {
   const audioIdx = audioSelection.audioIdx;
   const audioStreamIdx = audioSelection.audioStreamIdx;
   const mobilePlayback = isMobilePlaybackRequest(req);
-  const heavy4kAudioSync = !mobilePlayback && playbackUrlLooksHeavy4kHevc(srcUrl);
   const copyVideo = !mobilePlayback && isRemoteDirectPlayable(srcUrl) && remoteVideoCanCopy(srcUrl);
   console.log(`[FTP] Transcoding playbackType=${req.query.playbackType || 'media'} selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'stream'} ${remoteFilename(srcUrl)} start=${startSec} audioIdx=${audioIdx} audioStream=${audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap}`);
 
@@ -9203,15 +9181,10 @@ app.get('/api/ftp/stream', async (req, res) => {
     '-c:a', 'aac',
     '-b:a', '128k',
     '-ar', '48000',
-    '-ac', '2'
-  );
-  if (heavy4kAudioSync) {
-    ffmpegArgs.push('-af', 'aresample=async=1');
-  }
-  ffmpegArgs.push(
+    '-ac', '2',
     '-copyts',
     '-start_at_zero',
-    '-avoid_negative_ts', heavy4kAudioSync ? 'make_zero' : 'disabled',
+    '-avoid_negative_ts', 'disabled',
     '-max_interleave_delta', '0',
     '-muxdelay', '0',
     '-muxpreload', '0',

@@ -511,6 +511,8 @@ nav:not(.solid){background:linear-gradient(to bottom,rgba(0,0,0,.88),transparent
 .subtitle-overlay.show{display:flex}
 .subtitle-overlay span{display:inline-block;max-width:min(980px,100%);padding:3px 8px;border-radius:4px;background:rgba(0,0,0,.42);white-space:pre-line;}
 .player-wrap.subtitles-low .subtitle-overlay{bottom:calc(var(--sb) + 44px)}
+.skip-frame-overlay{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;opacity:0;display:none;pointer-events:none;z-index:11;transition:opacity .06s linear;}
+.skip-frame-overlay.show{display:block;opacity:1}
 .player-progress-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;min-width:0;}
 .player-spinner{position:relative;width:16px;height:20px;display:none;align-items:center;justify-content:center;pointer-events:none;z-index:23;flex:0 0 16px;}
 .player-spinner.on{display:flex}

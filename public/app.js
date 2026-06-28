@@ -1,6 +1,6 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260629-playback-stability1';
+const SV_ASSET_VERSION = '20260629-targeted-audio-skip1';
 function svDebugLoggingEnabled(){
   try{
     return new URLSearchParams(location.search).has('debug')
@@ -78,6 +78,7 @@ let uiHideTimer=null,uiVisible=true;
 let isDragging=false,lastTapTime=0,lastTapX=0;
 let progressDragging=false,progressDragTime=0;
 let playerHovering=false;
+let skipFrameOverlay=null,skipFrameOverlayHideTimer=null;
 let seekPreviewVisible=false;
 let seekPreviewRaf=0;
 let seekPreviewPending=null;
@@ -2762,6 +2763,48 @@ function attachedSourceLocalTime(target){
   return Math.max(0,local);
 }
 
+function ensureSkipFrameOverlay(){
+  const wrap=document.getElementById('playerWrap');
+  if(!wrap)return null;
+  if(skipFrameOverlay && skipFrameOverlay.parentNode===wrap)return skipFrameOverlay;
+  if(skipFrameOverlay)skipFrameOverlay.remove();
+  skipFrameOverlay=document.createElement('canvas');
+  skipFrameOverlay.id='skipFrameOverlay';
+  skipFrameOverlay.className='skip-frame-overlay';
+  skipFrameOverlay.setAttribute('aria-hidden','true');
+  wrap.appendChild(skipFrameOverlay);
+  return skipFrameOverlay;
+}
+
+function showSkipFrameOverlay(){
+  if(!vid || !vid.videoWidth || !vid.videoHeight)return;
+  const canvas=ensureSkipFrameOverlay();
+  if(!canvas)return;
+  let ctx=null;
+  try{ctx=canvas.getContext('2d',{alpha:false});}catch(_){}
+  if(!ctx)return;
+  const width=Math.max(1,vid.videoWidth|0);
+  const height=Math.max(1,vid.videoHeight|0);
+  if(canvas.width!==width)canvas.width=width;
+  if(canvas.height!==height)canvas.height=height;
+  try{
+    ctx.drawImage(vid,0,0,width,height);
+  }catch(_){
+    return;
+  }
+  clearTimeout(skipFrameOverlayHideTimer);
+  canvas.classList.add('show');
+  skipFrameOverlayHideTimer=setTimeout(hideSkipFrameOverlay,2200);
+}
+
+function hideSkipFrameOverlay(){
+  clearTimeout(skipFrameOverlayHideTimer);
+  skipFrameOverlayHideTimer=null;
+  const canvas=skipFrameOverlay;
+  if(!canvas)return;
+  canvas.classList.remove('show');
+}
+
 function canNativeSeekCurrentSource(target,{smallSkip=false}={}){
   if(isLiveMode||_ftpSeekPending||vid._audioSwitchPending)return false;
   if(!vid.currentSrc && !vid.getAttribute('src'))return false;
@@ -2784,7 +2827,10 @@ function nativeSeekCurrentSource(target,{smallSkip=false,keepSpinnerHidden=false
   const token=(vid._seekToken||0)+1;
   vid._seekToken=token;
   try{
-    if(keepSpinnerHidden)vid._skipSeekSuppressSpinnerUntil=Date.now()+1800;
+    if(keepSpinnerHidden){
+      vid._skipSeekSuppressSpinnerUntil=Date.now()+2200;
+      if(smallSkip)showSkipFrameOverlay();
+    }
     vid.currentTime=local;
     if(_ftpStreamUrl)_ftpCurrentTime=absolute;
     if(keepSpinnerHidden)document.getElementById('playerSpinner')?.classList.remove('on');
@@ -2797,6 +2843,7 @@ function nativeSeekCurrentSource(target,{smallSkip=false,keepSpinnerHidden=false
     }
     return true;
   }catch(_){
+    if(smallSkip)hideSkipFrameOverlay();
     return false;
   }
 }
@@ -5402,6 +5449,7 @@ function closePlayer(){
     playerPointerRaf=0;
   }
   resetSeekPreview();
+  hideSkipFrameOverlay();
   playerHovering=false;
   vid.pause();
   vid._durationToken = (vid._durationToken || 0) + 1;
@@ -6994,11 +7042,11 @@ vid._mdH = () => {
     }
     document.getElementById('playerSpinner').classList.add('on');showUI();
   };
-  vid._plH=()=>{document.getElementById('playerSpinner').classList.remove('on');noteFtpHeavyPlaybackStarted();startPlayerUiClock();schedulePlayerProgressRender(playbackTime(),dur());scheduleHideUI();};
-  vid._cpH=()=>{document.getElementById('playerSpinner').classList.remove('on');};
+  vid._plH=()=>{document.getElementById('playerSpinner').classList.remove('on');hideSkipFrameOverlay();noteFtpHeavyPlaybackStarted();startPlayerUiClock();schedulePlayerProgressRender(playbackTime(),dur());scheduleHideUI();};
+  vid._cpH=()=>{document.getElementById('playerSpinner').classList.remove('on');hideSkipFrameOverlay();};
   vid._paH=()=>{updatePlayIcons(false);startPlayerUiClock();scheduleHideUI();};
   vid._puH=()=>{stopPlayerUiClock();updatePlayIcons(true);schedulePlayerProgressRender(playbackTime(),dur(),{force:true});showUI();};
-  vid._skH=()=>{vid._skipSeekSuppressSpinnerUntil=0;setTimeout(scheduleSubtitleOverlayUpdate,60);};
+  vid._skH=()=>{vid._skipSeekSuppressSpinnerUntil=0;hideSkipFrameOverlay();setTimeout(scheduleSubtitleOverlayUpdate,60);};
   vid.addEventListener('timeupdate',    vid._tuH);
   vid.addEventListener('progress',      vid._prH);
   vid.addEventListener('loadedmetadata',vid._mdH);

@@ -1871,6 +1871,7 @@ function selectionFromAbsoluteAudio(req, track, source = 'server-english', video
   const selectedAudioStartTime = streamStartSeconds(track.startTime ?? track.start_time);
   const selectedVideoStartTime = streamStartSeconds(videoStartTime);
   const audioVideoOffsetSec = roundedSeconds(selectedAudioStartTime - selectedVideoStartTime);
+  const audioChannels = Number(track.channels);
   return {
     audioIdx: Number.isFinite(relative) && relative >= 0 ? relative : Math.max(0, parseInt(req.query.audio || '0', 10) || 0),
     audioStreamIdx,
@@ -1879,6 +1880,8 @@ function selectionFromAbsoluteAudio(req, track, source = 'server-english', video
     audioLanguage: track.language || track.lang || '',
     audioTitle: track.title || track.label || '',
     audioCodec: track.codec || '',
+    audioChannels: Number.isFinite(audioChannels) ? audioChannels : 0,
+    audioChannelLayout: track.channelLayout || track.channel_layout || '',
     audioStartTime: selectedAudioStartTime,
     videoStartTime: selectedVideoStartTime,
     audioVideoOffsetSec,
@@ -2003,7 +2006,21 @@ async function resolveCompatibilityAudioSelection(req, input, label = 'media') {
   const resolved = selectionFromAbsoluteAudio(req, selectedTrack, reason, videoStartTime, videoStreamIdx);
   resolved.audioMap = `0:${resolved.audioStreamIdx}`;
   resolved.audioFallbackReason = reason;
-  console.log(`[Compatibility Audio] title="${label}" requestedAudio=${requested.audioIdx} requestedStream=${requested.audioStreamIdx ?? 'relative'} selectedStream=${resolved.audioStreamIdx} lang=${resolved.audioLanguage || ''} title="${resolved.audioTitle || ''}" inputCodec=${resolved.audioCodec || ''} outputCodec=aac reason=${reason}`);
+  console.log(`[Compatibility Audio] title="${label}" requestedAudio=${requested.audioIdx} requestedStream=${requested.audioStreamIdx ?? 'relative'} selectedStream=${resolved.audioStreamIdx} lang=${resolved.audioLanguage || ''} title="${resolved.audioTitle || ''}" inputCodec=${resolved.audioCodec || ''} channels=${resolved.audioChannels || 0} layout="${resolved.audioChannelLayout || ''}" outputCodec=aac videoStart=${resolved.videoStartTime ?? 0} audioStart=${resolved.audioStartTime ?? 0} offset=${resolved.audioVideoOffsetSec ?? 0} reason=${reason}`);
+  if (SV_PLAYBACK_VERBOSE && Number.isFinite(Number(resolved.audioStreamIdx))) {
+    probeFirstPacketPts({
+      input,
+      remote: /^https?:\/\//i.test(String(input || '')),
+      videoStreamIdx: resolved.videoStreamIdx ?? 0,
+      audioStreamIdx: resolved.audioStreamIdx,
+      startSec: 0,
+    })
+      .then(pts => {
+        const packetOffset = roundedSeconds(Number(pts.audioFirstPts) - Number(pts.videoFirstPts));
+        console.log(`[Compatibility Audio Probe] title="${label}" videoFirstPts=${roundedSeconds(pts.videoFirstPts)} audioFirstPts=${roundedSeconds(pts.audioFirstPts)} packetOffset=${packetOffset} stream=${resolved.audioStreamIdx} codec=${resolved.audioCodec || ''} channels=${resolved.audioChannels || 0} layout="${resolved.audioChannelLayout || ''}"`);
+      })
+      .catch(e => console.warn(`[Compatibility Audio Probe] title="${label}" failed: ${e.message}`));
+  }
   return resolved;
 }
 
@@ -6475,6 +6492,33 @@ function compatibilitySeekWindow(startSec, profile = compatibilitySeekProfileFor
   };
 }
 
+function compatibilityDemuxProfileForSource(srcUrl, { compatibilityTranscode = true } = {}) {
+  const traits = remoteCompatibilityTraits(srcUrl);
+  if (compatibilityTranscode && traits.isHevc) {
+    return {
+      name: 'stable-hevc-demux',
+      reason: 'preserve-hevc-audio-timestamps',
+      args: [
+        '-fflags', '+genpts',
+        '-probesize', '10485760',
+        '-analyzeduration', '10000000',
+        '-rw_timeout', '15000000',
+      ],
+    };
+  }
+  return {
+    name: compatibilityTranscode ? 'low-latency-demux' : 'copy-low-latency-demux',
+    reason: compatibilityTranscode ? 'non-hevc-compatibility' : 'video-copy',
+    args: [
+      '-fflags', '+genpts+nobuffer',
+      '-flags', 'low_delay',
+      '-probesize', '524288',
+      '-analyzeduration', '500000',
+      '-rw_timeout', '15000000',
+    ],
+  };
+}
+
 const mediaPacketSyncCache = new Map();
 const mediaPacketSyncInflight = new Map();
 const mediaPacketSyncScheduled = new Set();
@@ -9537,7 +9581,8 @@ app.get('/api/ftp/stream', async (req, res) => {
   const audioStreamIdx = audioSelection.audioStreamIdx;
   const seekProfile = compatibilitySeekProfileForSource(srcUrl, { compatibilityTranscode, mobilePlayback });
   const seekWindow = compatibilitySeekWindow(startSec, seekProfile);
-  console.log(`[FTP] Transcoding playbackType=${req.query.playbackType || 'media'} selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'stream'} ${remoteFilename(srcUrl)} start=${startSec} audioIdx=${audioIdx} audioStream=${audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap}`);
+  const demuxProfile = compatibilityDemuxProfileForSource(srcUrl, { compatibilityTranscode });
+  console.log(`[FTP] Transcoding playbackType=${req.query.playbackType || 'media'} selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'stream'} ${remoteFilename(srcUrl)} start=${startSec} audioIdx=${audioIdx} audioStream=${audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap} demuxProfile=${demuxProfile.name}`);
 
   const ffmpegArgs = [
     '-hide_banner',
@@ -9550,13 +9595,7 @@ app.get('/api/ftp/stream', async (req, res) => {
     ffmpegArgs.push('-ss', ffmpegSeconds(seekWindow.inputStart));
     seekArgs.push('-ss', ffmpegSeconds(seekWindow.inputStart));
   }
-  ffmpegArgs.push(
-    '-fflags', '+genpts+nobuffer',
-    '-flags', 'low_delay',
-    '-probesize', '524288',
-    '-analyzeduration', '500000',
-    '-rw_timeout', '15000000'
-  );
+  ffmpegArgs.push(...demuxProfile.args);
   ffmpegArgs.push('-i', srcUrl);
   if (compatibilityTranscode && seekWindow.outputTrim > 0) {
     ffmpegArgs.push('-ss', ffmpegSeconds(seekWindow.outputTrim));
@@ -9614,7 +9653,7 @@ app.get('/api/ftp/stream', async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
 
   if (seekWindow.exactStart > 0 || SV_PLAYBACK_VERBOSE) {
-    console.log(`[FTP Stream Seek] title="${remoteFilename(srcUrl)}" url="${srcUrl}" requestedStart=${seekWindow.exactStart} inputStart=${seekWindow.inputStart} outputTrim=${seekWindow.outputTrim} seekArgs=${JSON.stringify(seekArgs.concat(trimArgs))} audioIdx=${audioIdx} audioStream=${audioStreamIdx ?? 'relative'} inputAudioCodec=${audioSelection.audioCodec || ''} outputAudioCodec=aac audioFallback=${audioSelection.audioFallbackReason || audioSelection.source || ''} profile=${seekWindow.profile} reason=${seekWindow.profileReason}`);
+    console.log(`[FTP Stream Seek] title="${remoteFilename(srcUrl)}" url="${srcUrl}" requestedStart=${seekWindow.exactStart} inputStart=${seekWindow.inputStart} outputTrim=${seekWindow.outputTrim} seekArgs=${JSON.stringify(seekArgs.concat(trimArgs))} audioIdx=${audioIdx} audioStream=${audioStreamIdx ?? 'relative'} inputAudioCodec=${audioSelection.audioCodec || ''} outputAudioCodec=aac audioFallback=${audioSelection.audioFallbackReason || audioSelection.source || ''} profile=${seekWindow.profile} reason=${seekWindow.profileReason} demuxProfile=${demuxProfile.name} demuxReason=${demuxProfile.reason}`);
     console.log(`[FTP Stream FFmpeg Args] ${JSON.stringify(ffmpegArgs)}`);
   }
 

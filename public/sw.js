@@ -1,4 +1,4 @@
-const SV_CACHE_VERSION = '20260629-playback-stability1';
+const SV_CACHE_VERSION = '20260629-targeted-audio-skip1';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
 const SV_POSTER_CACHE = `streamvault-posters-${SV_CACHE_VERSION}`;
 const SV_ASSET_CACHE = `streamvault-assets-${SV_CACHE_VERSION}`;

@@ -42,6 +42,7 @@ const MEDIA_AUDIO_OFFSET_THRESHOLD_SEC = Number(process.env.MEDIA_AUDIO_OFFSET_T
 const MEDIA_PACKET_PROBE_WINDOW_SEC = Number(process.env.MEDIA_PACKET_PROBE_WINDOW_SEC || 20);
 const MEDIA_PACKET_PROBE_TIMEOUT_MS = Number(process.env.MEDIA_PACKET_PROBE_TIMEOUT_MS || 12000);
 const MEDIA_PACKET_SYNC_BACKGROUND = process.env.MEDIA_PACKET_SYNC_BACKGROUND !== '0';
+const HEAVY_4K_AUDIO_DELAY_MS = Math.max(0, Math.min(1000, Math.round(Number(process.env.HEAVY_4K_AUDIO_DELAY_MS || 250) || 0)));
 const SV_PLAYBACK_VERBOSE = process.env.SV_PLAYBACK_VERBOSE === '1';
 const SV_DETAIL_VERBOSE = process.env.SV_DETAIL_VERBOSE === '1';
 let activeMediaFfmpegStreams = 0;
@@ -1988,6 +1989,27 @@ function playbackUrlHasUnsupportedVideoHint(srcUrl) {
 
 function playbackUrlHasHevcHint(srcUrl) {
   return /(x265|h265|hevc)/i.test(String(srcUrl || ''));
+}
+
+function decodedPlaybackSourceHint(srcUrl) {
+  let text = String(srcUrl || '');
+  for (let i = 0; i < 2; i += 1) {
+    try {
+      const decoded = decodeURIComponent(text);
+      if (decoded === text) break;
+      text = decoded;
+    } catch {
+      break;
+    }
+  }
+  return text;
+}
+
+function playbackUrlLooksHeavy4kHevc(srcUrl) {
+  const source = decodedPlaybackSourceHint(srcUrl);
+  const has4kHint = /\b(?:2160p|4k|uhd)\b/i.test(source);
+  const hasHevcHint = /\b(?:x265|h\.?265|hevc)\b/i.test(source);
+  return has4kHint && hasHevcHint;
 }
 
 function readTrustedRemotePlaybackMedia(req, res, errorAsJson = true) {
@@ -9131,6 +9153,7 @@ app.get('/api/ftp/stream', async (req, res) => {
   const audioIdx = audioSelection.audioIdx;
   const audioStreamIdx = audioSelection.audioStreamIdx;
   const mobilePlayback = isMobilePlaybackRequest(req);
+  const heavy4kAudioDelayMs = (!mobilePlayback && playbackUrlLooksHeavy4kHevc(srcUrl)) ? HEAVY_4K_AUDIO_DELAY_MS : 0;
   const copyVideo = !mobilePlayback && isRemoteDirectPlayable(srcUrl) && remoteVideoCanCopy(srcUrl);
   console.log(`[FTP] Transcoding playbackType=${req.query.playbackType || 'media'} selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'stream'} ${remoteFilename(srcUrl)} start=${startSec} audioIdx=${audioIdx} audioStream=${audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap}`);
 
@@ -9182,6 +9205,11 @@ app.get('/api/ftp/stream', async (req, res) => {
     '-b:a', '128k',
     '-ar', '48000',
     '-ac', '2',
+  );
+  if (heavy4kAudioDelayMs > 0) {
+    ffmpegArgs.push('-af', `adelay=${heavy4kAudioDelayMs}:all=1`);
+  }
+  ffmpegArgs.push(
     '-copyts',
     '-start_at_zero',
     '-avoid_negative_ts', 'disabled',

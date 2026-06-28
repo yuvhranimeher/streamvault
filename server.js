@@ -9148,18 +9148,11 @@ app.get('/api/ftp/stream', async (req, res) => {
   if (SV_PLAYBACK_VERBOSE) console.log(`[Media Playback] playbackType=${req.query.playbackType || 'media'} route=ftp-legacy-stream selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'stream'}`);
 
   const startSec = parseFloat(req.query.start) || 0;
-  const mobilePlayback = isMobilePlaybackRequest(req);
-  const stableHeavy4kSync = !mobilePlayback && playbackUrlLooksHeavy4kHevc(srcUrl);
-  let audioSelection = playbackAudioSelectionFromReq(req);
-  if (stableHeavy4kSync && audioSelection.audioStreamIdx === null && (req.query.english === '1' || req.query.preferEnglish === '1')) {
-    try {
-      audioSelection = await resolvePlaybackAudioSelection(req, srcUrl, remoteFilename(srcUrl));
-    } catch (e) {
-      console.warn(`[FTP] Heavy 4K English audio resolve failed for ${remoteFilename(srcUrl)}:`, e.message);
-    }
-  }
+  const audioSelection = playbackAudioSelectionFromReq(req);
   const audioIdx = audioSelection.audioIdx;
   const audioStreamIdx = audioSelection.audioStreamIdx;
+  const mobilePlayback = isMobilePlaybackRequest(req);
+  const heavy4kAudioSync = !mobilePlayback && playbackUrlLooksHeavy4kHevc(srcUrl);
   const copyVideo = !mobilePlayback && isRemoteDirectPlayable(srcUrl) && remoteVideoCanCopy(srcUrl);
   console.log(`[FTP] Transcoding playbackType=${req.query.playbackType || 'media'} selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'stream'} ${remoteFilename(srcUrl)} start=${startSec} audioIdx=${audioIdx} audioStream=${audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap}`);
 
@@ -9169,22 +9162,13 @@ app.get('/api/ftp/stream', async (req, res) => {
     '-nostdin',
   ];
   if (startSec > 0) ffmpegArgs.push('-ss', String(startSec));
-  if (stableHeavy4kSync) {
-    ffmpegArgs.push(
-      '-fflags', '+genpts',
-      '-probesize', '10485760',
-      '-analyzeduration', '10000000',
-      '-rw_timeout', '15000000'
-    );
-  } else {
-    ffmpegArgs.push(
-      '-fflags', '+genpts+nobuffer',
-      '-flags', 'low_delay',
-      '-probesize', '524288',
-      '-analyzeduration', '500000',
-      '-rw_timeout', '15000000'
-    );
-  }
+  ffmpegArgs.push(
+    '-fflags', '+genpts+nobuffer',
+    '-flags', 'low_delay',
+    '-probesize', '524288',
+    '-analyzeduration', '500000',
+    '-rw_timeout', '15000000'
+  );
   ffmpegArgs.push('-i', srcUrl);
   ffmpegArgs.push('-map', '0:v:0');
   if (Number.isFinite(audioStreamIdx) && audioStreamIdx >= 0) {
@@ -9221,28 +9205,18 @@ app.get('/api/ftp/stream', async (req, res) => {
     '-ar', '48000',
     '-ac', '2'
   );
-  if (stableHeavy4kSync) {
-    ffmpegArgs.push('-af', 'aresample=async=1:first_pts=0');
-  }
-  if (stableHeavy4kSync) {
-    ffmpegArgs.push(
-      '-avoid_negative_ts', 'make_zero'
-    );
-  } else {
-    ffmpegArgs.push(
-      '-copyts',
-      '-start_at_zero',
-      '-avoid_negative_ts', 'disabled'
-    );
+  if (heavy4kAudioSync) {
+    ffmpegArgs.push('-af', 'aresample=async=1');
   }
   ffmpegArgs.push(
+    '-copyts',
+    '-start_at_zero',
+    '-avoid_negative_ts', heavy4kAudioSync ? 'make_zero' : 'disabled',
     '-max_interleave_delta', '0',
     '-muxdelay', '0',
     '-muxpreload', '0',
     '-flush_packets', '1',
-    '-movflags', stableHeavy4kSync
-      ? 'frag_keyframe+empty_moov+default_base_moof+delay_moov'
-      : 'frag_keyframe+empty_moov+default_base_moof',
+    '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
     '-f', 'mp4',
     'pipe:1'
   );

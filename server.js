@@ -47,6 +47,11 @@ const HEAVY_COMPAT_HLS_VIDEO_CRF = String(process.env.HEAVY_COMPAT_HLS_VIDEO_CRF
 const HEAVY_COMPAT_HLS_VIDEO_MAXRATE = String(process.env.HEAVY_COMPAT_HLS_VIDEO_MAXRATE || '6M');
 const HEAVY_COMPAT_HLS_VIDEO_BUFSIZE = String(process.env.HEAVY_COMPAT_HLS_VIDEO_BUFSIZE || '12M');
 const HEAVY_COMPAT_HLS_AUDIO_BITRATE = String(process.env.HEAVY_COMPAT_HLS_AUDIO_BITRATE || '128k');
+const SMOOTH_MAX_WIDTH = Math.max(480, Math.min(3840, Number(process.env.SMOOTH_MAX_WIDTH || 1920) || 1920));
+const SMOOTH_VIDEO_BITRATE = String(process.env.SMOOTH_VIDEO_BITRATE || '5000k');
+const SMOOTH_VIDEO_BUFSIZE = String(process.env.SMOOTH_VIDEO_BUFSIZE || '10000k');
+const SMOOTH_AUDIO_BITRATE = String(process.env.SMOOTH_AUDIO_BITRATE || '128k');
+const SMOOTH_BUFFER_TRIGGER_COUNT = Math.max(1, Number(process.env.SMOOTH_BUFFER_TRIGGER_COUNT || 3) || 3);
 const MEDIA_FFMPEG_STREAM_MAX = Number(process.env.MEDIA_FFMPEG_STREAM_MAX || 4);
 const MEDIA_FFMPEG_STARTUP_MS = Number(process.env.MEDIA_FFMPEG_STARTUP_MS || 15000);
 const MEDIA_AUDIO_OFFSET_THRESHOLD_SEC = Number(process.env.MEDIA_AUDIO_OFFSET_THRESHOLD_SEC || 0.05);
@@ -8548,7 +8553,8 @@ app.get('/stream/:id', async (req, res) => {
   const audioIdx = parseInt(req.query.audio || '0');
   const explicitAudioStream = parseInt(req.query.audioStream ?? '', 10);
   const subtitleIdx = parseInt(req.query.subtitle ?? '-1');
-  const forceTranscode = audioIdx > 0 || (Number.isFinite(explicitAudioStream) && explicitAudioStream >= 0) || subtitleIdx >= 0;
+  const smoothPlayback = req.query.smooth === '1' || req.query.profile === 'smooth';
+  const forceTranscode = smoothPlayback || audioIdx > 0 || (Number.isFinite(explicitAudioStream) && explicitAudioStream >= 0) || subtitleIdx >= 0;
 
   try {
     const mobilePlayback = isMobilePlaybackRequest(req);
@@ -8780,6 +8786,7 @@ function transcodeStream(req, res, filePath, mediaInfo, entry) {
   const hasSubtitle = !isNaN(subtitleIdx) && subtitleIdx >= 0;
   const startSec = parseFloat(req.query.start) || 0;
   const mobilePlayback = isMobilePlaybackRequest(req);
+  const smoothPlayback = req.query.smooth === '1' || req.query.profile === 'smooth';
 
   const validAudioTracks = mediaInfo.audioTracks || [];
   const selectedAudioIdx = audioIdx < validAudioTracks.length ? audioIdx : 0;
@@ -8819,10 +8826,21 @@ function transcodeStream(req, res, filePath, mediaInfo, entry) {
   const isH264 = videoCodec === 'h264' || videoCodec === 'avc1' || videoCodec === 'avc';
   const videoFilters = [];
   if (subtitleFilter) videoFilters.push(subtitleFilter);
-  if (mobilePlayback) videoFilters.push('scale=w=min(1280\\,iw):h=-2');
+  if (smoothPlayback) videoFilters.push(`scale=w=min(${SMOOTH_MAX_WIDTH}\\,iw):h=-2`);
+  else if (mobilePlayback) videoFilters.push('scale=w=min(1280\\,iw):h=-2');
   
-  if (isH264 && !mobilePlayback && !subtitleFilter) {
+  if (isH264 && !mobilePlayback && !subtitleFilter && !smoothPlayback) {
     ffmpegArgs.push('-c:v', 'copy');
+  } else if (smoothPlayback) {
+    ffmpegArgs.push(
+      '-c:v', 'libx264',
+      '-preset', 'ultrafast',
+      '-tune', 'zerolatency',
+      '-b:v', SMOOTH_VIDEO_BITRATE,
+      '-maxrate', SMOOTH_VIDEO_BITRATE,
+      '-bufsize', SMOOTH_VIDEO_BUFSIZE,
+      '-pix_fmt', 'yuv420p'
+    );
   } else {
     ffmpegArgs.push(
       '-c:v', 'libx264',
@@ -8844,7 +8862,7 @@ function transcodeStream(req, res, filePath, mediaInfo, entry) {
 
   ffmpegArgs.push(
     '-c:a', 'aac',
-    '-b:a', '128k',
+    '-b:a', smoothPlayback ? SMOOTH_AUDIO_BITRATE : '128k',
     '-ar', '48000',
     '-ac', '2',
     '-copyts',
@@ -9464,7 +9482,8 @@ app.get('/api/ftp/stream', async (req, res) => {
   const audioIdx = audioSelection.audioIdx;
   const audioStreamIdx = audioSelection.audioStreamIdx;
   const mobilePlayback = isMobilePlaybackRequest(req);
-  const copyVideo = !mobilePlayback && isRemoteDirectPlayable(srcUrl) && remoteVideoCanCopy(srcUrl);
+  const smoothPlayback = req.query.smooth === '1' || req.query.profile === 'smooth';
+  const copyVideo = !smoothPlayback && !mobilePlayback && isRemoteDirectPlayable(srcUrl) && remoteVideoCanCopy(srcUrl);
   const compatibilityTranscode = !copyVideo;
   const seekProfile = compatibilitySeekProfileForSource(srcUrl, { compatibilityTranscode, mobilePlayback });
   const seekWindow = compatibilitySeekWindow(startSec, seekProfile);
@@ -9504,19 +9523,35 @@ app.get('/api/ftp/stream', async (req, res) => {
   if (copyVideo) {
     ffmpegArgs.push('-c:v', 'copy');
   } else {
-    if (mobilePlayback) ffmpegArgs.push('-vf', 'scale=w=min(1280\\,iw):h=-2');
-    ffmpegArgs.push(
-      '-c:v', 'libx264',
-      '-preset', 'ultrafast',
-      '-tune', 'zerolatency',
-      '-crf', mobilePlayback ? '30' : '23',
-      '-maxrate', mobilePlayback ? '2000k' : '6M',
-      '-bufsize', mobilePlayback ? '4000k' : '12M',
-      '-pix_fmt', 'yuv420p',
-      '-g', '48',
-      '-keyint_min', '48',
-      '-sc_threshold', '0'
-    );
+    if (smoothPlayback) ffmpegArgs.push('-vf', `scale=w=min(${SMOOTH_MAX_WIDTH}\\,iw):h=-2`);
+    else if (mobilePlayback) ffmpegArgs.push('-vf', 'scale=w=min(1280\\,iw):h=-2');
+    if (smoothPlayback) {
+      ffmpegArgs.push(
+        '-c:v', 'libx264',
+        '-preset', 'ultrafast',
+        '-tune', 'zerolatency',
+        '-b:v', SMOOTH_VIDEO_BITRATE,
+        '-maxrate', SMOOTH_VIDEO_BITRATE,
+        '-bufsize', SMOOTH_VIDEO_BUFSIZE,
+        '-pix_fmt', 'yuv420p',
+        '-g', '48',
+        '-keyint_min', '48',
+        '-sc_threshold', '0'
+      );
+    } else {
+      ffmpegArgs.push(
+        '-c:v', 'libx264',
+        '-preset', 'ultrafast',
+        '-tune', 'zerolatency',
+        '-crf', mobilePlayback ? '30' : '23',
+        '-maxrate', mobilePlayback ? '2000k' : '6M',
+        '-bufsize', mobilePlayback ? '4000k' : '12M',
+        '-pix_fmt', 'yuv420p',
+        '-g', '48',
+        '-keyint_min', '48',
+        '-sc_threshold', '0'
+      );
+    }
     if (mobilePlayback) {
       ffmpegArgs.push('-profile:v', 'baseline', '-level', '3.1');
     }
@@ -9524,7 +9559,7 @@ app.get('/api/ftp/stream', async (req, res) => {
 
   ffmpegArgs.push(
     '-c:a', 'aac',
-    '-b:a', '128k',
+    '-b:a', smoothPlayback ? SMOOTH_AUDIO_BITRATE : '128k',
     '-ar', '48000',
     '-ac', '2',
     '-copyts',

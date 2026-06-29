@@ -1,6 +1,7 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260629-heavy-compat-cache1';
+const SV_ASSET_VERSION = '20260629-smooth-buffer-profile1';
+const SV_SMOOTH_BUFFER_TRIGGER_COUNT = Math.max(1, Number(window.SMOOTH_BUFFER_TRIGGER_COUNT || 3) || 3);
 function svDebugLoggingEnabled(){
   try{
     return new URLSearchParams(location.search).has('debug')
@@ -3407,24 +3408,26 @@ function desktopFtpPlaybackSrc(url){
   return '';
 }
 
-function ftpTranscodeSrc(url, start=0, fallbackReason=''){
+function ftpTranscodeSrc(url, start=0, fallbackReason='', options={}){
   const params = new URLSearchParams();
   params.set('url', url);
   params.set('playbackType', 'media');
   if(fallbackReason)params.set('fallbackReason', fallbackReason);
+  if(options.smooth)params.set('smooth','1');
   if(start > 0)params.set('start', Math.floor(start));
   appendSelectedAudioParams(params);
   return '/api/ftp/stream?' + params.toString();
 }
 
-function ftpStreamPlaybackPlan(url, start=0, fallbackReason='stream'){
-  const src=ftpTranscodeSrc(url,start,fallbackReason);
+function ftpStreamPlaybackPlan(url, start=0, fallbackReason='stream', options={}){
+  const src=ftpTranscodeSrc(url,start,fallbackReason,options);
   return {
     ok:true,
     decodedUrl:url,
     directPlayable:false,
     mode:'stream',
     transport:'stream',
+    smoothProfile:!!options.smooth,
     src,
     playUrl:src,
     finalPlayUrl:src,
@@ -4107,6 +4110,7 @@ async function playMedia(id, name, year){
   console.log('[Playback] play button clicked');
   console.log('[Playback] Local playback plan');
   const movie = movies.find(m => m.id === id) || {};
+  const localSourceLabel = movie.file || movie.filename || movie.path || movie.name || name || '';
   recordWatchHistory(id, movie.name || name, movie.genre || '', 'movie');
   if (!checkParentalLock(movie.rating || 'PG')) {
     showToast('Content locked by parental controls');
@@ -4158,6 +4162,7 @@ async function playMedia(id, name, year){
   vid._audioSwitchPending = false;
   vid._queuedAudioSwitchIdx = null;
   vid._audioSwitchToken = (vid._audioSwitchToken || 0) + 1;
+  resetSmoothPlaybackState('local startup');
   resetSeekPreview();
 
   // ── Attach the metadata handler BEFORE setting src ──
@@ -4197,6 +4202,7 @@ async function playMedia(id, name, year){
   }
   if(!isCurrentPlaybackScope(playbackScope) || String(currentStreamId) !== String(id) || _ftpStreamUrl)return;
   const startupInfo = startupAudio.info;
+  armSmoothPlaybackMonitor('local', startupInfo, localSourceLabel);
   const startupOptions = startupAudio.options || {};
   if(!startupOptions.fallbackReason)startupOptions.fallbackReason = startupAudio.reason || 'local startup';
   if(startupOptions.blockPlayback){
@@ -4231,7 +4237,7 @@ async function playMedia(id, name, year){
     // play() call remains inside the card/episode click's user activation.
     const needsServerStart = !!(startupOptions.forceAudio || startupOptions.forceRemux || startupOptions.forceHls || startupOptions.mode);
     let plan;
-    if(mediaNeedsBrowserVideoTranscode(startupInfo, sourceFile)){
+    if(mediaNeedsBrowserVideoTranscode(startupInfo, localSourceLabel)){
       const fallbackReason='browser video codec transcode';
       plan={
         ok:true,
@@ -4740,6 +4746,7 @@ let _ftpPostStartMetadataTimer=null;
 let _ftpPostStartPlayingHandler=null;
 let _ftpDurationLoadPromise=null;
 let _ftpDurationLoadUrl='';
+let _smoothPlaybackState={kind:'',eligible:false,switched:false,switching:false,waitingCount:0,startedAt:0,playingAt:0,lastWaitingAt:0,reason:''};
 
 function decodedMediaLabel(sourceUrl=''){
   try{return decodeURIComponent(String(sourceUrl || '')).toLowerCase();}
@@ -4815,6 +4822,121 @@ function shouldUseHeavyCompatHlsCache(info={}, sourceUrl=''){
     && traits.isHevc
     && (traits.isTenBitHdr || traits.veryLargeFile)
     && mediaNeedsBrowserVideoTranscode(info,sourceUrl);
+}
+
+function resetSmoothPlaybackState(reason='reset'){
+  _smoothPlaybackState={kind:'',eligible:false,switched:false,switching:false,waitingCount:0,startedAt:0,playingAt:0,lastWaitingAt:0,reason};
+}
+
+function shouldUseSmoothPlaybackProfile(info={}, sourceUrl=''){
+  const traits=classifyHeavyMedia(info,sourceUrl);
+  return !!(
+    traits.heavy
+    || traits.is4k
+    || traits.isHevc
+    || traits.isTenBitHdr
+    || traits.highBitrate
+    || traits.veryLargeFile
+    || mediaNeedsBrowserVideoTranscode(info,sourceUrl)
+  );
+}
+
+function armSmoothPlaybackMonitor(kind, info={}, sourceUrl=''){
+  const eligible=shouldUseSmoothPlaybackProfile(info,sourceUrl);
+  _smoothPlaybackState={
+    kind,
+    eligible,
+    switched:false,
+    switching:false,
+    waitingCount:0,
+    startedAt:Date.now(),
+    playingAt:0,
+    lastWaitingAt:0,
+    reason:'metadata'
+  };
+  mediaFixLog('smooth playback monitor armed',{kind,eligible,traits:classifyHeavyMedia(info,sourceUrl)});
+}
+
+function noteSmoothPlaybackStarted(){
+  if(!_smoothPlaybackState.startedAt)_smoothPlaybackState.startedAt=Date.now();
+  if(!_smoothPlaybackState.playingAt)_smoothPlaybackState.playingAt=Date.now();
+}
+
+function localSmoothTranscodeSrc(id,start=0,fallbackReason='smooth buffering fallback'){
+  const params = new URLSearchParams();
+  params.set('playbackType','media');
+  params.set('smooth','1');
+  if(fallbackReason)params.set('fallbackReason',fallbackReason);
+  if(start > 0)params.set('start',Math.floor(start));
+  appendSelectedAudioParams(params);
+  return `/stream/${encodeURIComponent(id)}?${params.toString()}`;
+}
+
+function ftpSmoothTranscodeSrc(url,start=0,fallbackReason='smooth buffering fallback'){
+  return ftpTranscodeSrc(url,start,fallbackReason,{smooth:true});
+}
+
+async function switchToSmoothPlaybackProfile(reason='buffering'){
+  if(_smoothPlaybackState.switching || _smoothPlaybackState.switched || isLiveMode)return false;
+  if(_currentFtpPlaybackPlan?.heavyCompatHls)return false;
+  const isFtp=!!_ftpStreamUrl;
+  const isLocal=!isFtp && currentStreamId !== null && currentStreamId !== undefined;
+  if(!isFtp && !isLocal)return false;
+  _smoothPlaybackState.switching=true;
+  _smoothPlaybackState.switched=true;
+  const target=Math.max(0,playbackTime());
+  const wasPlaying=!vid.paused || vid._svPlaybackShouldPlay;
+  const fallbackReason='smooth buffering fallback';
+  document.getElementById('playerSpinner')?.classList.add('on');
+  try{
+    if(isFtp){
+      const plan=ftpStreamPlaybackPlan(_ftpStreamUrl,target,fallbackReason,{smooth:true});
+      plan.smoothProfile=true;
+      _currentFtpPlaybackPlan=plan;
+      _ftpNeedsTranscode=true;
+      _ftpCurrentTime=target;
+      vid._sourceOffset=target;
+      vid._sourceSeekRequired=true;
+      vid._mediaSourceSeekRequired=true;
+      mediaFixLog('switching FTP playback to smooth profile',{reason,target,url:_ftpStreamUrl});
+      const attached=await attachPlayerSource(plan.src,plan.mode,{playbackType:'media',fallbackReason});
+      if(!attached)throw new Error('smooth FTP stream unavailable');
+    }else{
+      const plan={ok:true,id:String(currentStreamId),mode:'stream',transport:'stream',src:localSmoothTranscodeSrc(currentStreamId,target,fallbackReason),duration:vid._apiDuration || vid._stableDuration || 0,smoothProfile:true};
+      _currentPlaybackPlan=plan;
+      vid._sourceOffset=target;
+      vid._sourceSeekRequired=true;
+      vid._mediaSourceSeekRequired=true;
+      mediaFixLog('switching local playback to smooth profile',{reason,target,id:currentStreamId});
+      const attached=await attachPlayerSource(plan.src,plan.mode,{playbackType:'media',fallbackReason});
+      if(!attached)throw new Error('smooth local stream unavailable');
+    }
+    if(wasPlaying)vid.play().catch(()=>{});
+    return true;
+  }catch(e){
+    mediaFixLog('smooth playback switch failed',{reason,message:e.message});
+    return false;
+  }finally{
+    _smoothPlaybackState.switching=false;
+    document.getElementById('playerSpinner')?.classList.remove('on');
+  }
+}
+
+function noteSmoothPlaybackBuffering(eventName='waiting'){
+  if(isLiveMode || _smoothPlaybackState.switching || _smoothPlaybackState.switched)return;
+  if(_currentFtpPlaybackPlan?.heavyCompatHls)return;
+  if(vid.seeking || _ftpSeekPending || vid._audioSwitchPending)return;
+  if(!_smoothPlaybackState.playingAt)return;
+  const now=Date.now();
+  const base=_smoothPlaybackState.playingAt || _smoothPlaybackState.startedAt || now;
+  if(now-base > 60000)return;
+  if(now-(_smoothPlaybackState.lastWaitingAt || 0) < 1500)return;
+  _smoothPlaybackState.lastWaitingAt=now;
+  _smoothPlaybackState.waitingCount+=1;
+  mediaFixLog('smooth playback buffering sample',{eventName,count:_smoothPlaybackState.waitingCount,trigger:SV_SMOOTH_BUFFER_TRIGGER_COUNT,kind:_smoothPlaybackState.kind});
+  if(_smoothPlaybackState.waitingCount >= SV_SMOOTH_BUFFER_TRIGGER_COUNT){
+    switchToSmoothPlaybackProfile(eventName).catch(()=>{});
+  }
 }
 
 function ftpHeavyStartupActive(){
@@ -4997,6 +5119,7 @@ async function playFtpMedia(streamUrl, name, year){
     vid._audioSwitchPending = false;
     vid._queuedAudioSwitchIdx = null;
     vid._audioSwitchToken = (vid._audioSwitchToken || 0) + 1;
+    resetSmoothPlaybackState('FTP startup');
     resetSeekPreview();
 
     // UI
@@ -5030,6 +5153,7 @@ async function playFtpMedia(streamUrl, name, year){
     const startupAudio = await prepareFtpStartupAudio(requestedStreamUrl, playbackScope);
     if(!isCurrentPlaybackScope(playbackScope) || _ftpStreamUrl !== requestedStreamUrl)return;
     const startupInfo = startupAudio.info;
+    armSmoothPlaybackMonitor('ftp', startupInfo, requestedStreamUrl);
     _ftpHeavyMedia=classifyHeavyMedia(startupInfo,requestedStreamUrl).heavy;
     if(validDurationSeconds(Number(startupInfo?.duration))){
       _ftpDuration=Number(startupInfo.duration);
@@ -5335,6 +5459,7 @@ function closePlayer(){
     playerPointerRaf=0;
   }
   resetSeekPreview();
+  resetSmoothPlaybackState('player close');
   playerHovering=false;
   vid.pause();
   vid._durationToken = (vid._durationToken || 0) + 1;
@@ -6878,6 +7003,7 @@ function setupPlayerEvents() {
   vid.removeEventListener('loadedmetadata', vid._mdH);
   vid.removeEventListener('ended',          vid._enH);
   vid.removeEventListener('waiting',        vid._waH);
+  vid.removeEventListener('stalled',        vid._stH);
   vid.removeEventListener('playing',        vid._plH);
   vid.removeEventListener('canplay',        vid._cpH);
   vid.removeEventListener('play',           vid._paH);
@@ -6920,8 +7046,9 @@ vid._mdH = () => {
     updatePlayIcons(true);
     if(currentStreamId&&!_ftpStreamUrl){watchProgress[currentStreamId]={progress:0.99,updatedAt:Date.now()};try{localStorage.setItem('sv_progress',JSON.stringify(watchProgress));}catch(_){}}
   };
-  vid._waH=()=>{document.getElementById('playerSpinner').classList.add('on');showUI();};
-  vid._plH=()=>{document.getElementById('playerSpinner').classList.remove('on');noteFtpHeavyPlaybackStarted();startPlayerUiClock();schedulePlayerProgressRender(playbackTime(),dur());scheduleHideUI();};
+  vid._waH=()=>{noteSmoothPlaybackBuffering('waiting');document.getElementById('playerSpinner').classList.add('on');showUI();};
+  vid._stH=()=>{noteSmoothPlaybackBuffering('stalled');};
+  vid._plH=()=>{document.getElementById('playerSpinner').classList.remove('on');noteFtpHeavyPlaybackStarted();noteSmoothPlaybackStarted();startPlayerUiClock();schedulePlayerProgressRender(playbackTime(),dur());scheduleHideUI();};
   vid._cpH=()=>{document.getElementById('playerSpinner').classList.remove('on');};
   vid._paH=()=>{updatePlayIcons(false);startPlayerUiClock();scheduleHideUI();};
   vid._puH=()=>{stopPlayerUiClock();updatePlayIcons(true);schedulePlayerProgressRender(playbackTime(),dur(),{force:true});showUI();};
@@ -6931,6 +7058,7 @@ vid._mdH = () => {
   vid.addEventListener('loadedmetadata',vid._mdH);
   vid.addEventListener('ended',         vid._enH);
   vid.addEventListener('waiting',       vid._waH);
+  vid.addEventListener('stalled',       vid._stH);
   vid.addEventListener('playing',       vid._plH);
   vid.addEventListener('canplay',       vid._cpH);
   vid.addEventListener('play',          vid._paH);

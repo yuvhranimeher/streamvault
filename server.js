@@ -30,14 +30,14 @@ const MOBILE_HLS_DIR = path.join(__dirname, 'cache', 'mobile-hls');
 const MOBILE_HLS_IDLE_MS = Number(process.env.MOBILE_HLS_IDLE_MS || 45000);
 const MOBILE_HLS_MAX_SESSIONS = Number(process.env.MOBILE_HLS_MAX_SESSIONS || 2);
 const MOBILE_HLS_FFMPEG_THREADS = String(process.env.MOBILE_HLS_FFMPEG_THREADS || 1);
-const MOBILE_HLS_PROFILE = String(process.env.MOBILE_HLS_PROFILE || 'mobile-hls-v3');
+const MOBILE_HLS_PROFILE = String(process.env.MOBILE_HLS_PROFILE || 'mobile-hls-v4-av-sync');
 const MOBILE_HLS_MAX_WIDTH = Number(process.env.MOBILE_HLS_MAX_WIDTH || 854);
 const MOBILE_HLS_MAX_FPS = Number(process.env.MOBILE_HLS_MAX_FPS || 24);
 const MOBILE_HLS_VIDEO_MAXRATE = String(process.env.MOBILE_HLS_VIDEO_MAXRATE || '1200k');
 const MOBILE_HLS_VIDEO_BUFSIZE = String(process.env.MOBILE_HLS_VIDEO_BUFSIZE || '2400k');
 const MOBILE_HLS_AUDIO_BITRATE = String(process.env.MOBILE_HLS_AUDIO_BITRATE || '96k');
 const HEAVY_COMPAT_HLS_DIR = path.join(__dirname, 'cache', 'heavy-compat-hls');
-const HEAVY_COMPAT_HLS_PROFILE = String(process.env.HEAVY_COMPAT_HLS_PROFILE || 'heavy-compat-hls-v1');
+const HEAVY_COMPAT_HLS_PROFILE = String(process.env.HEAVY_COMPAT_HLS_PROFILE || 'heavy-compat-hls-v2-av-sync');
 const HEAVY_COMPAT_HLS_IDLE_MS = Number(process.env.HEAVY_COMPAT_HLS_IDLE_MS || 30 * 60 * 1000);
 const HEAVY_COMPAT_HLS_MAX_SESSIONS = Number(process.env.HEAVY_COMPAT_HLS_MAX_SESSIONS || 4);
 const HEAVY_COMPAT_HLS_STARTUP_SEGMENTS = Math.max(1, Math.min(6, Number(process.env.HEAVY_COMPAT_HLS_STARTUP_SEGMENTS || 2) || 2));
@@ -62,6 +62,9 @@ const COMPAT_STREAM_SEEK_PREROLL_SEC = Math.max(0, Math.min(8, Number(process.en
 const SV_PLAYBACK_VERBOSE = process.env.SV_PLAYBACK_VERBOSE === '1';
 const SV_DETAIL_VERBOSE = process.env.SV_DETAIL_VERBOSE === '1';
 let activeMediaFfmpegStreams = 0;
+
+const COMPAT_VIDEO_PTS_FILTER = 'setpts=PTS-STARTPTS';
+const COMPAT_AUDIO_PTS_FILTER = 'asetpts=PTS-STARTPTS,aresample=async=1';
 
 // ── FFmpeg helper for extracting media info ──────────────────────────────────
 function streamStartSeconds(value) {
@@ -5327,7 +5330,7 @@ function startMobileHlsSession({
     '-map', '0:v:0',
     '-map', audioMap,
     '-sn', '-dn',
-    '-vf', `scale=w=min(${preset.maxWidth}\\,iw):h=-2,fps=${preset.maxFps}`,
+    '-vf', `scale=w=min(${preset.maxWidth}\\,iw):h=-2,fps=${preset.maxFps},${COMPAT_VIDEO_PTS_FILTER}`,
     '-c:v', 'libx264',
     '-preset', 'ultrafast',
     '-tune', 'zerolatency',
@@ -5346,6 +5349,7 @@ function startMobileHlsSession({
     '-b:a', preset.audioBitrate,
     '-ar', '48000',
     '-ac', '2',
+    '-af', COMPAT_AUDIO_PTS_FILTER,
     '-f', 'hls',
     '-hls_time', '3',
     '-hls_list_size', '0',
@@ -5525,6 +5529,7 @@ function startHeavyCompatHlsSession({
     '-map', '0:v:0',
     '-map', audioMap,
     '-sn', '-dn',
+    '-vf', COMPAT_VIDEO_PTS_FILTER,
     '-c:v', 'libx264',
     '-preset', 'ultrafast',
     '-tune', 'zerolatency',
@@ -5539,6 +5544,7 @@ function startHeavyCompatHlsSession({
     '-b:a', HEAVY_COMPAT_HLS_AUDIO_BITRATE,
     '-ar', '48000',
     '-ac', '2',
+    '-af', COMPAT_AUDIO_PTS_FILTER,
     '-muxdelay', '0',
     '-muxpreload', '0',
     '-f', 'hls',
@@ -6638,7 +6644,7 @@ function ffmpegMp4Args({
   const encodeAudio = normalizeTimestamps || mode === 'audio' || useOffsetAudioInput;
   if (encodeAudio) {
     args.push('-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2');
-    if (normalizeTimestamps || useOffsetAudioInput) args.push('-af', 'aresample=async=1');
+    if (normalizeTimestamps || useOffsetAudioInput) args.push('-af', COMPAT_AUDIO_PTS_FILTER);
   } else {
     args.push('-c', 'copy');
   }
@@ -8832,16 +8838,13 @@ function transcodeStream(req, res, filePath, mediaInfo, entry) {
 
   console.log(`[Transcode] route=local-compat title="${entry.file}" start=${startSec} videoCodec=${mediaInfo.videoCodec || 'unknown'} videoStart=${mediaInfo.videoStartTime ?? 0} audioIdx=${selectedAudioIdx} audioStream=${selectedAudioTrack?.index ?? 'relative'} audioCodec=${selectedAudioTrack?.codec || ''} audioStart=${selectedAudioTrack?.startTime ?? 0} map=${selectedAudioMap} smooth=${smoothPlayback} subtitle=${hasSubtitle ? subtitleIdx : 'off'}`);
 
-  const videoCodec = (mediaInfo.videoCodec || 'unknown').toLowerCase();
-  const isH264 = videoCodec === 'h264' || videoCodec === 'avc1' || videoCodec === 'avc';
   const videoFilters = [];
   if (subtitleFilter) videoFilters.push(subtitleFilter);
   if (smoothPlayback) videoFilters.push(`scale=w=min(${SMOOTH_MAX_WIDTH}\\,iw):h=-2`);
   else if (mobilePlayback) videoFilters.push('scale=w=min(1280\\,iw):h=-2');
+  videoFilters.push(COMPAT_VIDEO_PTS_FILTER);
   
-  if (isH264 && !mobilePlayback && !subtitleFilter && !smoothPlayback) {
-    ffmpegArgs.push('-c:v', 'copy');
-  } else if (smoothPlayback) {
+  if (smoothPlayback) {
     ffmpegArgs.push(
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
@@ -8875,7 +8878,7 @@ function transcodeStream(req, res, filePath, mediaInfo, entry) {
     '-b:a', smoothPlayback ? SMOOTH_AUDIO_BITRATE : '128k',
     '-ar', '48000',
     '-ac', '2',
-    '-af', 'aresample=async=1',
+    '-af', COMPAT_AUDIO_PTS_FILTER,
     '-avoid_negative_ts', 'make_zero',
     '-max_interleave_delta', '0',
     '-muxdelay', '0',
@@ -9564,8 +9567,11 @@ app.get('/api/ftp/stream', async (req, res) => {
   if (copyVideo) {
     ffmpegArgs.push('-c:v', 'copy');
   } else {
-    if (smoothPlayback) ffmpegArgs.push('-vf', `scale=w=min(${SMOOTH_MAX_WIDTH}\\,iw):h=-2`);
-    else if (mobilePlayback) ffmpegArgs.push('-vf', 'scale=w=min(1280\\,iw):h=-2');
+    const videoFilters = [];
+    if (smoothPlayback) videoFilters.push(`scale=w=min(${SMOOTH_MAX_WIDTH}\\,iw):h=-2`);
+    else if (mobilePlayback) videoFilters.push('scale=w=min(1280\\,iw):h=-2');
+    videoFilters.push(COMPAT_VIDEO_PTS_FILTER);
+    ffmpegArgs.push('-vf', videoFilters.join(','));
     if (smoothPlayback) {
       ffmpegArgs.push(
         '-c:v', 'libx264',
@@ -9605,7 +9611,7 @@ app.get('/api/ftp/stream', async (req, res) => {
     '-ac', '2',
   );
   if (compatibilityTranscode) {
-    ffmpegArgs.push('-af', 'aresample=async=1', '-avoid_negative_ts', 'make_zero');
+    ffmpegArgs.push('-af', COMPAT_AUDIO_PTS_FILTER, '-avoid_negative_ts', 'make_zero');
   } else {
     ffmpegArgs.push('-copyts', '-start_at_zero', '-avoid_negative_ts', 'disabled');
   }

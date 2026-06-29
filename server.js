@@ -1869,7 +1869,7 @@ function serverAudioTrackAbsoluteIndex(track = {}) {
   return Number.isFinite(idx) && idx >= 0 ? idx : null;
 }
 
-function selectionFromAbsoluteAudio(req, track, source = 'server-english', videoStartTime = 0, videoStreamIdx = 0) {
+function selectionFromAbsoluteAudio(req, track, source = 'server-english', videoStartTime = 0, videoStreamIdx = 0, videoCodec = '') {
   const audioStreamIdx = serverAudioTrackAbsoluteIndex(track);
   if (audioStreamIdx === null) return playbackAudioSelectionFromReq(req);
   const relative = Number(track.relativeIndex);
@@ -1884,6 +1884,7 @@ function selectionFromAbsoluteAudio(req, track, source = 'server-english', video
     audioLanguage: track.language || track.lang || '',
     audioTitle: track.title || track.label || '',
     audioCodec: track.codec || '',
+    videoCodec: videoCodec || '',
     audioStartTime: selectedAudioStartTime,
     videoStartTime: selectedVideoStartTime,
     audioVideoOffsetSec,
@@ -1917,7 +1918,7 @@ async function resolvePlaybackAudioSelection(req, input, label = 'media') {
       console.warn(`[Playback Audio] English requested but not found for ${label}`);
       return selection;
     }
-    const resolved = selectionFromAbsoluteAudio(req, english, 'server-english', videoStartTime, videoStreamIdx);
+    const resolved = selectionFromAbsoluteAudio(req, english, 'server-english', videoStartTime, videoStreamIdx, info.videoCodec || '');
     if (SV_PLAYBACK_VERBOSE) console.log(`[Playback Audio] ${label} route=${normalizePlaybackMode(req.query.mode, 'direct')} chosen lang=${resolved.audioLanguage || ''} title=${resolved.audioTitle || ''} codec=${resolved.audioCodec || ''} stream=${resolved.audioStreamIdx} audioStart=${resolved.audioStartTime} videoStart=${resolved.videoStartTime} offset=${resolved.audioVideoOffsetSec}`);
     return rememberPlaybackAudioSelection(cacheKey, resolved);
   }
@@ -1925,7 +1926,7 @@ async function resolvePlaybackAudioSelection(req, input, label = 'media') {
   if (selection.audioStreamIdx !== null) {
     const selectedTrack = tracks.find(track => serverAudioTrackAbsoluteIndex(track) === selection.audioStreamIdx);
     if (selectedTrack) {
-      const resolved = selectionFromAbsoluteAudio(req, selectedTrack, 'absolute-stream', videoStartTime, videoStreamIdx);
+      const resolved = selectionFromAbsoluteAudio(req, selectedTrack, 'absolute-stream', videoStartTime, videoStreamIdx, info.videoCodec || '');
       if (SV_PLAYBACK_VERBOSE) console.log(`[Playback Audio] ${label} route=${normalizePlaybackMode(req.query.mode, 'direct')} requested lang=${resolved.audioLanguage || ''} title=${resolved.audioTitle || ''} codec=${resolved.audioCodec || ''} stream=${resolved.audioStreamIdx} audioStart=${resolved.audioStartTime} videoStart=${resolved.videoStartTime} offset=${resolved.audioVideoOffsetSec}`);
       return rememberPlaybackAudioSelection(cacheKey, resolved);
     }
@@ -6613,14 +6614,16 @@ function ffmpegMp4Args({
   audioCorrectionSec = 0,
   remote = false,
   hevcTag = false,
+  normalizeTimestamps = true,
 }) {
   const args = ['-hide_banner', '-loglevel', 'warning', '-nostdin'];
   if (startSec > 0) args.push('-ss', String(Math.floor(startSec)));
-  args.push(...mappedMp4InputArgs(remote), '-i', input);
+  args.push('-fflags', '+genpts', ...mappedMp4InputArgs(remote), '-i', input);
 
   const selectedAudioStreamIdx = Number(audioStreamIdx);
-  const selectedAudioCorrectionSec = Number(audioCorrectionSec);
-  const useOffsetAudioInput = Number.isFinite(selectedAudioStreamIdx)
+  const selectedAudioCorrectionSec = normalizeTimestamps ? 0 : Number(audioCorrectionSec);
+  const useOffsetAudioInput = !normalizeTimestamps
+    && Number.isFinite(selectedAudioStreamIdx)
     && selectedAudioStreamIdx >= 0
     && Number.isFinite(selectedAudioCorrectionSec)
     && Math.abs(selectedAudioCorrectionSec) >= MEDIA_AUDIO_OFFSET_THRESHOLD_SEC;
@@ -6632,18 +6635,20 @@ function ffmpegMp4Args({
   }
 
   args.push('-map', '0:v:0', '-map', mappedAudio, '-sn', '-dn');
-  const encodeAudio = mode === 'audio' || useOffsetAudioInput;
+  const encodeAudio = normalizeTimestamps || mode === 'audio' || useOffsetAudioInput;
   if (encodeAudio) {
     args.push('-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2');
-    if (useOffsetAudioInput) args.push('-af', 'aresample=async=1');
+    if (normalizeTimestamps || useOffsetAudioInput) args.push('-af', 'aresample=async=1');
   } else {
     args.push('-c', 'copy');
   }
   if (hevcTag) args.push('-tag:v', 'hvc1');
+  if (normalizeTimestamps) {
+    args.push('-avoid_negative_ts', 'make_zero');
+  } else {
+    args.push('-copyts', '-start_at_zero', '-avoid_negative_ts', 'disabled');
+  }
   args.push(
-    '-copyts',
-    '-start_at_zero',
-    '-avoid_negative_ts', 'disabled',
     '-max_interleave_delta', '0',
     '-muxdelay', '0',
     '-muxpreload', '0',
@@ -6682,7 +6687,8 @@ async function streamFfmpegMp4(req, res, options) {
     audioCorrectionSec: sync.correctionAppliedSec,
   });
   if (SV_PLAYBACK_VERBOSE) {
-    console.log(`[Media FFmpeg] playbackType=${playbackType} selected source URL=${options.input} fallback reason=${fallbackReason || 'ffmpeg-start'} ${mode} start ${label} audioMap=${options.audioMap || '0:a:0?'} audioStream=${options.audioStreamIdx ?? 'relative'} syncSource=${sync.source || 'none'} offset=${sync.calculatedOffsetSec ?? 0} correctionApplied=${sync.correctionAppliedSec ?? 0}`);
+    console.log(`[Media FFmpeg] playbackType=${playbackType} route=compat-${mode} selected source URL=${options.input} fallback reason=${fallbackReason || 'ffmpeg-start'} title="${label}" start=${options.startSec || 0} audioMap=${options.audioMap || '0:a:0?'} audioStream=${options.audioStreamIdx ?? 'relative'} audioCodec=${options.audioCodec || ''} videoCodec=${options.videoCodec || ''} audioStart=${options.audioStartTime ?? 0} videoStart=${options.videoStartTime ?? 0} normalizeTimestamps=${options.normalizeTimestamps !== false} syncSource=${sync.source || 'none'} offset=${sync.calculatedOffsetSec ?? 0} correctionApplied=${options.normalizeTimestamps === false ? (sync.correctionAppliedSec ?? 0) : 0}`);
+    console.log(`[Media FFmpeg Args] ${JSON.stringify(args)}`);
   }
   activeMediaFfmpegStreams += 1;
   const ffmpeg = spawn(FFMPEG_BIN, args);
@@ -8532,6 +8538,10 @@ app.get('/api/playback/local/:id/stream', async (req, res) => {
     audioStreamIdx: audioSelection.audioStreamIdx,
     videoStreamIdx: audioSelection.videoStreamIdx,
     audioVideoOffsetSec: audioSelection.audioVideoOffsetSec,
+    audioCodec: audioSelection.audioCodec || '',
+    videoCodec: audioSelection.videoCodec || '',
+    audioStartTime: audioSelection.audioStartTime,
+    videoStartTime: audioSelection.videoStartTime,
     remote: false,
     label: entry.file,
     hevcTag: playbackUrlHasHevcHint(entry.file),
@@ -8797,7 +8807,7 @@ function transcodeStream(req, res, filePath, mediaInfo, entry) {
 
   const ffmpegArgs = [];
   if (startSec > 0) ffmpegArgs.push('-ss', String(startSec));
-  ffmpegArgs.push('-i', filePath);
+  ffmpegArgs.push('-fflags', '+genpts', '-i', filePath);
   ffmpegArgs.push('-map', '0:v:0');
   
   if (validAudioTracks.length > 0) {
@@ -8820,7 +8830,7 @@ function transcodeStream(req, res, filePath, mediaInfo, entry) {
     }
   }
 
-  console.log(`[Transcode] ${entry.file} start=${startSec} audioIdx=${selectedAudioIdx} audioStream=${selectedAudioTrack?.index ?? 'relative'} map=${selectedAudioMap} subtitle=${hasSubtitle ? subtitleIdx : 'off'}`);
+  console.log(`[Transcode] route=local-compat title="${entry.file}" start=${startSec} videoCodec=${mediaInfo.videoCodec || 'unknown'} videoStart=${mediaInfo.videoStartTime ?? 0} audioIdx=${selectedAudioIdx} audioStream=${selectedAudioTrack?.index ?? 'relative'} audioCodec=${selectedAudioTrack?.codec || ''} audioStart=${selectedAudioTrack?.startTime ?? 0} map=${selectedAudioMap} smooth=${smoothPlayback} subtitle=${hasSubtitle ? subtitleIdx : 'off'}`);
 
   const videoCodec = (mediaInfo.videoCodec || 'unknown').toLowerCase();
   const isH264 = videoCodec === 'h264' || videoCodec === 'avc1' || videoCodec === 'avc';
@@ -8865,13 +8875,18 @@ function transcodeStream(req, res, filePath, mediaInfo, entry) {
     '-b:a', smoothPlayback ? SMOOTH_AUDIO_BITRATE : '128k',
     '-ar', '48000',
     '-ac', '2',
-    '-copyts',
-    '-start_at_zero',
-    '-avoid_negative_ts', 'disabled',
+    '-af', 'aresample=async=1',
+    '-avoid_negative_ts', 'make_zero',
+    '-max_interleave_delta', '0',
+    '-muxdelay', '0',
+    '-muxpreload', '0',
+    '-flush_packets', '1',
     '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
     '-f', 'mp4',
     'pipe:1'
   );
+
+  if (SV_PLAYBACK_VERBOSE) console.log(`[Transcode FFmpeg Args] ${JSON.stringify(ffmpegArgs)}`);
 
   const ffmpeg = spawn(FFMPEG_BIN, ffmpegArgs);
 
@@ -9276,6 +9291,10 @@ app.get('/api/playback/ftp', async (req, res) => {
       audioStreamIdx: audioSelection.audioStreamIdx,
       videoStreamIdx: audioSelection.videoStreamIdx,
       audioVideoOffsetSec: audioSelection.audioVideoOffsetSec,
+      audioCodec: audioSelection.audioCodec || '',
+      videoCodec: audioSelection.videoCodec || '',
+      audioStartTime: audioSelection.audioStartTime,
+      videoStartTime: audioSelection.videoStartTime,
       remote: true,
       label: remoteFilename(srcUrl),
       hevcTag: playbackUrlHasHevcHint(srcUrl),
@@ -9487,7 +9506,20 @@ app.get('/api/ftp/stream', async (req, res) => {
   const compatibilityTranscode = !copyVideo;
   const seekProfile = compatibilitySeekProfileForSource(srcUrl, { compatibilityTranscode, mobilePlayback });
   const seekWindow = compatibilitySeekWindow(startSec, seekProfile);
-  console.log(`[FTP] Transcoding playbackType=${req.query.playbackType || 'media'} selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'stream'} ${remoteFilename(srcUrl)} start=${startSec} audioIdx=${audioIdx} audioStream=${audioStreamIdx ?? 'relative'} map=${audioSelection.audioMap}`);
+  let debugMediaInfo = null;
+  let debugAudioTrack = null;
+  if (SV_PLAYBACK_VERBOSE) {
+    try {
+      debugMediaInfo = await getCachedAudioOnlyMediaInfo(srcUrl);
+      const tracks = Array.isArray(debugMediaInfo.audioTracks) ? debugMediaInfo.audioTracks : [];
+      debugAudioTrack = Number.isFinite(audioStreamIdx) && audioStreamIdx >= 0
+        ? tracks.find(track => serverAudioTrackAbsoluteIndex(track) === audioStreamIdx) || null
+        : tracks[audioIdx] || tracks[0] || null;
+    } catch (e) {
+      console.warn(`[FTP Stream Probe] ${remoteFilename(srcUrl)} metadata unavailable: ${e.message}`);
+    }
+  }
+  console.log(`[FTP] Transcoding playbackType=${req.query.playbackType || 'media'} route=${compatibilityTranscode ? 'ftp-compat-transcode' : 'ftp-copy'} selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'stream'} ${remoteFilename(srcUrl)} start=${startSec} videoCodec=${debugMediaInfo?.videoCodec || ''} videoStart=${debugMediaInfo?.videoStartTime ?? ''} audioIdx=${audioIdx} audioStream=${audioStreamIdx ?? 'relative'} audioCodec=${debugAudioTrack?.codec || ''} audioStart=${debugAudioTrack?.startTime ?? ''} map=${audioSelection.audioMap} smooth=${smoothPlayback}`);
 
   const ffmpegArgs = [
     '-hide_banner',
@@ -9500,13 +9532,22 @@ app.get('/api/ftp/stream', async (req, res) => {
     ffmpegArgs.push('-ss', ffmpegSeconds(seekWindow.inputStart));
     seekArgs.push('-ss', ffmpegSeconds(seekWindow.inputStart));
   }
-  ffmpegArgs.push(
-    '-fflags', '+genpts+nobuffer',
-    '-flags', 'low_delay',
-    '-probesize', '524288',
-    '-analyzeduration', '500000',
-    '-rw_timeout', '15000000'
-  );
+  if (compatibilityTranscode) {
+    ffmpegArgs.push(
+      '-fflags', '+genpts',
+      '-probesize', '1048576',
+      '-analyzeduration', '1000000',
+      '-rw_timeout', '15000000'
+    );
+  } else {
+    ffmpegArgs.push(
+      '-fflags', '+genpts+nobuffer',
+      '-flags', 'low_delay',
+      '-probesize', '524288',
+      '-analyzeduration', '500000',
+      '-rw_timeout', '15000000'
+    );
+  }
   ffmpegArgs.push('-i', srcUrl);
   if (compatibilityTranscode && seekWindow.outputTrim > 0) {
     ffmpegArgs.push('-ss', ffmpegSeconds(seekWindow.outputTrim));
@@ -9562,9 +9603,13 @@ app.get('/api/ftp/stream', async (req, res) => {
     '-b:a', smoothPlayback ? SMOOTH_AUDIO_BITRATE : '128k',
     '-ar', '48000',
     '-ac', '2',
-    '-copyts',
-    '-start_at_zero',
-    '-avoid_negative_ts', 'disabled',
+  );
+  if (compatibilityTranscode) {
+    ffmpegArgs.push('-af', 'aresample=async=1', '-avoid_negative_ts', 'make_zero');
+  } else {
+    ffmpegArgs.push('-copyts', '-start_at_zero', '-avoid_negative_ts', 'disabled');
+  }
+  ffmpegArgs.push(
     '-max_interleave_delta', '0',
     '-muxdelay', '0',
     '-muxpreload', '0',

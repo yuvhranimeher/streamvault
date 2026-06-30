@@ -1850,15 +1850,26 @@ function serverAudioTrackText(track = {}) {
   return [track.language, track.lang, track.title, track.label, track.codec].filter(Boolean).join(' ').toLowerCase();
 }
 
-function serverAudioTrackIsEnglish(track = {}) {
+function serverAudioTrackLanguageTag(track = {}) {
+  track = track || {};
   const lang = String(track.language || track.lang || '').trim().toLowerCase();
+  return lang.replace('_', '-');
+}
+
+function serverAudioTrackEnglishScore(track = {}) {
+  track = track || {};
+  const lang = serverAudioTrackLanguageTag(track);
+  const titleText = [track.title, track.label].filter(Boolean).join(' ').toLowerCase();
   const text = serverAudioTrackText(track);
-  return lang === 'en'
-    || lang === 'eng'
-    || lang === 'english'
-    || /\benglish\b/i.test(text)
-    || /(^|[^a-z])eng([^a-z]|$)/i.test(text)
-    || /(^|[^a-z])en([^a-z]|$)/i.test(text);
+  if (lang === 'eng' || lang === 'en' || lang === 'english' || lang.startsWith('en-')) return 100;
+  if (/\benglish\b/i.test(titleText)) return 90;
+  if (/(^|[^a-z])eng([^a-z]|$)/i.test(titleText)) return 80;
+  if (/\benglish\b/i.test(text) || /(^|[^a-z])eng([^a-z]|$)/i.test(text) || /(^|[^a-z])en([^a-z]|$)/i.test(text)) return 60;
+  return 0;
+}
+
+function serverAudioTrackIsEnglish(track = {}) {
+  return serverAudioTrackEnglishScore(track) > 0;
 }
 
 function serverAudioTrackIsAudible(track = {}) {
@@ -1870,6 +1881,13 @@ function serverAudioTrackIsAudible(track = {}) {
 function serverAudioTrackAbsoluteIndex(track = {}) {
   const idx = Number(track.streamIndex ?? track.sourceIndex ?? track.index);
   return Number.isFinite(idx) && idx >= 0 ? idx : null;
+}
+
+function serverPreferredEnglishAudioTrack(tracks = []) {
+  return (Array.isArray(tracks) ? tracks : [])
+    .map((track, index) => ({ track, index, score: serverAudioTrackEnglishScore(track) }))
+    .filter(item => item.score > 0 && serverAudioTrackIsAudible(item.track))
+    .sort((a, b) => b.score - a.score || a.index - b.index)[0]?.track || null;
 }
 
 function selectionFromAbsoluteAudio(req, track, source = 'server-english', videoStartTime = 0, videoStreamIdx = 0, videoCodec = '') {
@@ -1904,10 +1922,11 @@ async function resolvePlaybackAudioSelection(req, input, label = 'media') {
   if (cachedSelection) return clonePlaybackAudioSelection(cachedSelection);
 
   let tracks = [];
+  let info = null;
   let videoStartTime = 0;
   let videoStreamIdx = 0;
   try {
-    const info = await getCachedAudioOnlyMediaInfo(input);
+    info = await getCachedAudioOnlyMediaInfo(input);
     tracks = Array.isArray(info.audioTracks) ? info.audioTracks : [];
     videoStartTime = streamStartSeconds(info.videoStartTime);
     videoStreamIdx = Number.isFinite(Number(info.videoIndex)) ? Number(info.videoIndex) : 0;
@@ -1916,12 +1935,12 @@ async function resolvePlaybackAudioSelection(req, input, label = 'media') {
   }
 
   if (wantsEnglish) {
-    const english = tracks.find(track => serverAudioTrackIsEnglish(track) && serverAudioTrackIsAudible(track));
+    const english = serverPreferredEnglishAudioTrack(tracks);
     if (!english) {
-      console.warn(`[Playback Audio] English requested but not found for ${label}`);
+      if (SV_PLAYBACK_VERBOSE) console.warn(`[Playback Audio] English requested but not found for ${label}`);
       return selection;
     }
-    const resolved = selectionFromAbsoluteAudio(req, english, 'server-english', videoStartTime, videoStreamIdx, info.videoCodec || '');
+    const resolved = selectionFromAbsoluteAudio(req, english, 'server-english', videoStartTime, videoStreamIdx, info?.videoCodec || '');
     if (SV_PLAYBACK_VERBOSE) console.log(`[Playback Audio] ${label} route=${normalizePlaybackMode(req.query.mode, 'direct')} chosen lang=${resolved.audioLanguage || ''} title=${resolved.audioTitle || ''} codec=${resolved.audioCodec || ''} stream=${resolved.audioStreamIdx} audioStart=${resolved.audioStartTime} videoStart=${resolved.videoStartTime} offset=${resolved.audioVideoOffsetSec}`);
     return rememberPlaybackAudioSelection(cacheKey, resolved);
   }
@@ -1929,7 +1948,7 @@ async function resolvePlaybackAudioSelection(req, input, label = 'media') {
   if (selection.audioStreamIdx !== null) {
     const selectedTrack = tracks.find(track => serverAudioTrackAbsoluteIndex(track) === selection.audioStreamIdx);
     if (selectedTrack) {
-      const resolved = selectionFromAbsoluteAudio(req, selectedTrack, 'absolute-stream', videoStartTime, videoStreamIdx, info.videoCodec || '');
+      const resolved = selectionFromAbsoluteAudio(req, selectedTrack, 'absolute-stream', videoStartTime, videoStreamIdx, info?.videoCodec || '');
       if (SV_PLAYBACK_VERBOSE) console.log(`[Playback Audio] ${label} route=${normalizePlaybackMode(req.query.mode, 'direct')} requested lang=${resolved.audioLanguage || ''} title=${resolved.audioTitle || ''} codec=${resolved.audioCodec || ''} stream=${resolved.audioStreamIdx} audioStart=${resolved.audioStartTime} videoStart=${resolved.videoStartTime} offset=${resolved.audioVideoOffsetSec}`);
       return rememberPlaybackAudioSelection(cacheKey, resolved);
     }
@@ -1948,6 +1967,26 @@ function requireAbsolutePlaybackAudio(req, res, audioSelection, mode, label = 'm
     source: audioSelection.source,
   });
   return false;
+}
+
+function resolvePlaybackAudioSelectionFromMediaInfo(req, mediaInfo = {}, label = 'media') {
+  const selection = playbackAudioSelectionFromReq(req);
+  const tracks = Array.isArray(mediaInfo.audioTracks) ? mediaInfo.audioTracks : [];
+  const videoStartTime = streamStartSeconds(mediaInfo.videoStartTime);
+  const videoStreamIdx = Number.isFinite(Number(mediaInfo.videoIndex)) ? Number(mediaInfo.videoIndex) : 0;
+  if ((req.query.english === '1' || req.query.preferEnglish === '1') && selection.audioStreamIdx === null) {
+    const english = serverPreferredEnglishAudioTrack(tracks);
+    if (english) {
+      const resolved = selectionFromAbsoluteAudio(req, english, 'server-english', videoStartTime, videoStreamIdx, mediaInfo.videoCodec || '');
+      if (SV_PLAYBACK_VERBOSE) console.log(`[Playback Audio] ${label} chosen lang=${resolved.audioLanguage || ''} title=${resolved.audioTitle || ''} codec=${resolved.audioCodec || ''} stream=${resolved.audioStreamIdx} audioStart=${resolved.audioStartTime} videoStart=${resolved.videoStartTime} offset=${resolved.audioVideoOffsetSec}`);
+      return resolved;
+    }
+  }
+  if (selection.audioStreamIdx !== null) {
+    const selectedTrack = tracks.find(track => serverAudioTrackAbsoluteIndex(track) === selection.audioStreamIdx);
+    if (selectedTrack) return selectionFromAbsoluteAudio(req, selectedTrack, 'absolute-stream', videoStartTime, videoStreamIdx, mediaInfo.videoCodec || '');
+  }
+  return selection;
 }
 
 function playbackStartFromReq(req) {
@@ -5635,14 +5674,21 @@ app.get('/api/heavy-compat-hls/ftp/index.m3u8', async (req, res) => {
   sendHeavyCompatHlsPlaylist(res, key, playlistPath);
 });
 
-app.get('/api/mobile-hls/local/:id/index.m3u8', (req, res) => {
+app.get('/api/mobile-hls/local/:id/index.m3u8', async (req, res) => {
   const idx = parseInt(req.params.id, 10);
   const entry = fileIndex[idx];
   if (!entry) return res.status(404).send('Not found');
   const filePath = entryPath(entry);
   if (!fs.existsSync(filePath)) return res.status(404).send('File missing');
   const startSec = parseFloat(req.query.start) || 0;
-  const audioSelection = playbackAudioSelectionFromReq(req);
+  let audioSelection = playbackAudioSelectionFromReq(req);
+  if (req.query.english === '1' || req.query.preferEnglish === '1' || audioSelection.audioStreamIdx !== null) {
+    try {
+      audioSelection = await resolvePlaybackAudioSelection(req, filePath, entry.file);
+    } catch (e) {
+      console.warn(`[Mobile HLS Local] audio selection failed for ${entry.file}:`, e.message);
+    }
+  }
   const audioMap = audioSelection.audioMap;
   const preset = mobileHlsPresetFromQuality(req.query.quality);
   const key = hlsSessionKey('local', filePath, startSec, `${audioMap}|${preset.key}`);
@@ -6294,12 +6340,19 @@ app.post('/api/details/cache/clear', (req, res) => {
   res.json({ ok: true, cleared: true });
 });
 
-app.get('/api/mobile-hls/ftp/index.m3u8', (req, res) => {
+app.get('/api/mobile-hls/ftp/index.m3u8', async (req, res) => {
   const trusted = readTrustedRemotePlaybackMedia(req, res, false);
   if (!trusted) return;
   const srcUrl = trusted.srcUrl;
   const startSec = parseFloat(req.query.start) || 0;
-  const audioSelection = playbackAudioSelectionFromReq(req);
+  let audioSelection = playbackAudioSelectionFromReq(req);
+  if (req.query.english === '1' || req.query.preferEnglish === '1' || audioSelection.audioStreamIdx !== null) {
+    try {
+      audioSelection = await resolvePlaybackAudioSelection(req, srcUrl, remoteFilename(srcUrl));
+    } catch (e) {
+      console.warn(`[Mobile HLS FTP] audio selection failed for ${remoteFilename(srcUrl)}:`, e.message);
+    }
+  }
   const audioMap = audioSelection.audioMap;
   const preset = mobileHlsPresetFromQuality(req.query.quality);
   const key = hlsSessionKey('ftp', srcUrl, startSec, `${audioMap}|${preset.key}`);
@@ -8796,7 +8849,7 @@ function remuxStream(req, res, filePath, entry) {
 
 // --- Transcode with explicit video/audio/subtitle stream mapping ---
 function transcodeStream(req, res, filePath, mediaInfo, entry) {
-  const audioSelection = playbackAudioSelectionFromReq(req);
+  const audioSelection = resolvePlaybackAudioSelectionFromMediaInfo(req, mediaInfo, entry?.file || 'local stream');
   const audioIdx = audioSelection.audioIdx;
   const subtitleIdx = parseInt(req.query.subtitle);
   const hasSubtitle = !isNaN(subtitleIdx) && subtitleIdx >= 0;
@@ -9500,7 +9553,14 @@ app.get('/api/ftp/stream', async (req, res) => {
   if (SV_PLAYBACK_VERBOSE) console.log(`[Media Playback] playbackType=${req.query.playbackType || 'media'} route=ftp-legacy-stream selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'stream'}`);
 
   const startSec = parseFloat(req.query.start) || 0;
-  const audioSelection = playbackAudioSelectionFromReq(req);
+  let audioSelection = playbackAudioSelectionFromReq(req);
+  if (req.query.english === '1' || req.query.preferEnglish === '1' || audioSelection.audioStreamIdx !== null) {
+    try {
+      audioSelection = await resolvePlaybackAudioSelection(req, srcUrl, remoteFilename(srcUrl));
+    } catch (e) {
+      console.warn(`[FTP Stream] audio selection failed for ${remoteFilename(srcUrl)}:`, e.message);
+    }
+  }
   const audioIdx = audioSelection.audioIdx;
   const audioStreamIdx = audioSelection.audioStreamIdx;
   const mobilePlayback = isMobilePlaybackRequest(req);

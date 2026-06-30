@@ -83,6 +83,8 @@ let seekPreviewVisible=false;
 let seekPreviewRaf=0;
 let seekPreviewPending=null;
 let seekPreviewMetrics=null;
+let seekPreviewMoveRaf=0;
+let seekPreviewMovePending=null;
 let seekPreviewHideTimer=null;
 let playerDomCache=null;
 let playerProgressRaf=0;
@@ -93,6 +95,10 @@ let subtitleOverlayRaf=0;
 let playerUiClock=null;
 let playerUiHeavyRenderAt=0;
 let playerPointerRaf=0;
+let playerSourceAttachToken=0;
+let playerAttachedSourceKey='';
+let playerPlayToken=0;
+let playerPlayPromise=null;
 let playbackRequestController=null;
 let playbackRequestToken=0;
 let currentLiveCat='All';
@@ -122,6 +128,10 @@ const svLivePlayerState={
   fallbackReason:'',
   sessionToken:0
 };
+const SV_PLAYER_TIMEUPDATE_MIN_MS = 180;
+const SV_PLAYER_PROGRESS_MIN_MS = 250;
+const SV_PLAYER_WAITING_MIN_MS = 450;
+const SV_PLAYER_SEEKING_MIN_MS = 120;
 
 function svPlaybackStateLog(step, data={}){
   try{
@@ -130,8 +140,84 @@ function svPlaybackStateLog(step, data={}){
   }catch(_){}
 }
 
+function svPlayerNow(){
+  try{return performance.now();}catch(_){return Date.now();}
+}
+
+function svThrottlePlayerEvent(key, minMs){
+  const video=svPlayerVideo();
+  if(!video)return true;
+  const state=video._svEventThrottle || (video._svEventThrottle = {});
+  const now=svPlayerNow();
+  if(now - (state[key] || 0) < minMs)return false;
+  state[key]=now;
+  return true;
+}
+
+function svAbortPendingPlayRequest(reason=''){
+  playerPlayToken += 1;
+  playerPlayPromise = null;
+  if(SV_DEBUG_LOGS && reason)console.debug('[Playback] aborted pending play:', reason);
+}
+
+function svAbortPendingPlayerTasks(reason=''){
+  svAbortPendingPlayRequest(reason);
+  try{if(vid)vid._seekToken=(vid._seekToken || 0) + 1;}catch(_){}
+}
+
+function svCanonicalSource(value){
+  try{return new URL(String(value || ''), window.location.href).href;}catch(_){return String(value || '').trim();}
+}
+
+function svPlayerSourceKey(src, mode){
+  return `${String(mode || 'direct').toLowerCase()}|${svCanonicalSource(src)}`;
+}
+
+function svCurrentVideoSourceMatches(src){
+  const current=svCanonicalSource(vid?.currentSrc || vid?.getAttribute?.('src') || vid?.src || '');
+  return !!current && current === svCanonicalSource(src);
+}
+
+function svPlayerSourceAlreadyAttached(src, mode, isHls){
+  if(!playerAttachedSourceKey || playerAttachedSourceKey !== svPlayerSourceKey(src, mode))return false;
+  if(vid?.error)return false;
+  if(isHls)return !!hlsInstance || svCurrentVideoSourceMatches(src);
+  return svCurrentVideoSourceMatches(src);
+}
+
+function svStalePlaybackError(reason='Stale playback request'){
+  try{return new DOMException(reason, 'AbortError');}catch(_){
+    const error=new Error(reason);
+    error.name='AbortError';
+    return error;
+  }
+}
+
+function svPlayVideo(reason='', options={}){
+  const scope=options.scope || null;
+  if(scope && !isCurrentPlaybackScope(scope))return Promise.resolve(false);
+  if(playerPlayPromise && !options.force)return playerPlayPromise;
+  const token=++playerPlayToken;
+  let rawPromise;
+  try{rawPromise=vid.play();}catch(error){rawPromise=Promise.reject(error);}
+  playerPlayPromise=Promise.resolve(rawPromise)
+    .then(()=>true)
+    .catch(error=>{
+      if(token !== playerPlayToken || (scope && !isCurrentPlaybackScope(scope)))return false;
+      if(error?.name === 'AbortError')return false;
+      if(typeof options.onError === 'function')return options.onError(error);
+      throw error;
+    })
+    .finally(()=>{
+      if(token === playerPlayToken)playerPlayPromise=null;
+    });
+  if(SV_DEBUG_LOGS && reason)playerPlayPromise.catch(()=>{});
+  return playerPlayPromise;
+}
+
 function beginPlaybackRequestScope(reason='playback'){
   playbackRequestToken += 1;
+  svAbortPendingPlayerTasks(reason);
   try{playbackRequestController?.abort?.();}catch(_){}
   playbackRequestController = new AbortController();
   playbackRequestController._svReason = reason;
@@ -144,6 +230,7 @@ function isCurrentPlaybackScope(scope){
 
 function abortPlaybackRequestScope(reason='playback stopped'){
   playbackRequestToken += 1;
+  svAbortPendingPlayerTasks(reason);
   try{playbackRequestController?.abort?.();}catch(_){}
   playbackRequestController = null;
   if(SV_DEBUG_LOGS)console.debug('[Playback] aborted stale requests:', reason);
@@ -395,50 +482,76 @@ async function attachPlayerSource(src, mode='direct', options={}){
   }
   svNoteSelectedSource(playbackType, src, {mode, fallbackReason});
   const isHls = mode === 'hls' || /\.m3u8(?:$|\?)/i.test(String(src));
+  const attachToken=++playerSourceAttachToken;
+  if(svPlayerSourceAlreadyAttached(src, mode, isHls)){
+    mediaFixLog('skipped duplicate source attach', {mode, src, fallbackReason});
+    return true;
+  }
+  svAbortPendingPlayRequest('source attach');
   if(hlsInstance){hlsInstance.destroy();hlsInstance=null;}
   if(!isHls){
+    if(attachToken !== playerSourceAttachToken)throw svStalePlaybackError('Superseded source attach');
     vid.src = src;
+    playerAttachedSourceKey=svPlayerSourceKey(src, mode);
     return true;
   }
 
   if(vid.canPlayType('application/vnd.apple.mpegurl')){
+    if(attachToken !== playerSourceAttachToken)throw svStalePlaybackError('Superseded native HLS attach');
     vid.src = src;
+    playerAttachedSourceKey=svPlayerSourceKey(src, mode);
     return true;
   }
 
   const ok = await loadHlsScript();
+  if(attachToken !== playerSourceAttachToken)throw svStalePlaybackError('Superseded HLS loader');
   if(!ok || typeof Hls === 'undefined' || !Hls.isSupported())return false;
 
-  return new Promise(resolve=>{
+  return new Promise((resolve,reject)=>{
     let settled=false;
-    const finish=value=>{
+    const finish=(value,error=null)=>{
       if(settled)return;
       settled=true;
-      resolve(value);
+      if(error)reject(error);
+      else resolve(value);
     };
+    const abortIfStale=()=>attachToken !== playerSourceAttachToken;
     hlsInstance=new Hls({
       enableWorker:true,
       lowLatencyMode:false,
       startFragPrefetch:true,
       capLevelToPlayerSize:true,
-      maxBufferLength:isMobilePlaybackClient()?20:45,
-      maxMaxBufferLength:isMobilePlaybackClient()?40:90,
-      maxBufferSize:isMobilePlaybackClient()?20*1000*1000:60*1000*1000,
-      backBufferLength:30,
+      maxBufferLength:isMobilePlaybackClient()?24:60,
+      maxMaxBufferLength:isMobilePlaybackClient()?60:120,
+      maxBufferSize:isMobilePlaybackClient()?28*1000*1000:80*1000*1000,
+      backBufferLength:isMobilePlaybackClient()?30:45,
       fragLoadingTimeOut:20000,
       manifestLoadingTimeOut:15000,
     });
-    hlsInstance.on(Hls.Events.MEDIA_ATTACHED,()=>hlsInstance.loadSource(src));
-    hlsInstance.on(Hls.Events.MANIFEST_PARSED,()=>finish(true));
+    hlsInstance.on(Hls.Events.MEDIA_ATTACHED,()=>{
+      if(abortIfStale())return finish(false, svStalePlaybackError('Superseded HLS attach'));
+      hlsInstance.loadSource(src);
+    });
+    hlsInstance.on(Hls.Events.MANIFEST_PARSED,()=>{
+      if(abortIfStale())return finish(false, svStalePlaybackError('Superseded HLS manifest'));
+      playerAttachedSourceKey=svPlayerSourceKey(src, mode);
+      finish(true);
+    });
     hlsInstance.on(Hls.Events.ERROR,(e,data)=>{
+      if(abortIfStale())return finish(false, svStalePlaybackError('Superseded HLS error'));
       if(!data?.fatal)return;
       console.warn('[HLS] fatal error:', data.type, data.details);
       try{hlsInstance?.destroy();}catch(_){}
       hlsInstance=null;
+      if(playerAttachedSourceKey === svPlayerSourceKey(src, mode))playerAttachedSourceKey='';
       finish(false);
     });
     hlsInstance.attachMedia(vid);
-    setTimeout(()=>finish(true), 5000);
+    setTimeout(()=>{
+      if(abortIfStale())return finish(false, svStalePlaybackError('Superseded HLS timeout'));
+      playerAttachedSourceKey=svPlayerSourceKey(src, mode);
+      finish(true);
+    }, 5000);
   });
 }
 let _totalMoviePages=0;
@@ -619,15 +732,26 @@ function audioTrackText(track={}){
   return [track.language,track.lang,track.title,track.label,track.codec].filter(Boolean).join(' ').toLowerCase();
 }
 
-function audioTrackIsEnglish(track){
-  const text=audioTrackText(track);
+function normalizedAudioLanguageTag(track={}){
+  track = track || {};
   const lang=String(track?.language || track?.lang || '').trim().toLowerCase();
-  return lang === 'en'
-    || lang === 'eng'
-    || lang === 'english'
-    || /\benglish\b/i.test(text)
-    || /(^|[^a-z])eng([^a-z]|$)/i.test(text)
-    || /(^|[^a-z])en([^a-z]|$)/i.test(text);
+  return lang.replace('_','-');
+}
+
+function audioTrackEnglishScore(track){
+  track = track || {};
+  const lang=normalizedAudioLanguageTag(track);
+  const titleText=[track?.title,track?.label].filter(Boolean).join(' ').toLowerCase();
+  const text=audioTrackText(track);
+  if(lang === 'eng' || lang === 'en' || lang === 'english' || lang.startsWith('en-'))return 100;
+  if(/\benglish\b/i.test(titleText))return 90;
+  if(/(^|[^a-z])eng([^a-z]|$)/i.test(titleText))return 80;
+  if(/\benglish\b/i.test(text) || /(^|[^a-z])eng([^a-z]|$)/i.test(text) || /(^|[^a-z])en([^a-z]|$)/i.test(text))return 60;
+  return 0;
+}
+
+function audioTrackIsEnglish(track){
+  return audioTrackEnglishScore(track) > 0;
 }
 
 function audioTrackIsAudible(track){
@@ -685,7 +809,10 @@ function englishStartupRequiresMappedSource(){
 function preferredAudioTrackIndex(tracks=[]){
   const list=tracks.map((track,index)=>({track,index})).filter(item=>audioTrackIsAudible(item.track));
   if(!list.length)return 0;
-  const english=list.find(item=>audioTrackIsEnglish(item.track));
+  const english=list
+    .map(item=>({...item, score:audioTrackEnglishScore(item.track)}))
+    .filter(item=>item.score > 0)
+    .sort((a,b)=>b.score-a.score || a.index-b.index)[0];
   if(english)return english.index;
   const defaultTrack=list.find(item=>item.track.default === true);
   if(defaultTrack)return defaultTrack.index;
@@ -814,6 +941,25 @@ function renderAudioTracks(){
   if(!list)return;
   const tool = document.querySelector('.audio-tool');
   const separator = document.querySelector('.tool-sep');
+  const lockedIdx=audioLockedIndex();
+  const signature=JSON.stringify({
+    currentAudioIdx,
+    lockedIdx,
+    tracks:availableAudio.map((track,index)=>[
+      index,
+      track?.title || track?.label || '',
+      track?.language || track?.lang || '',
+      track?.streamIndex ?? track?.sourceIndex ?? '',
+      !!track?.native,
+      !!track?.hls
+    ])
+  });
+  if(list.dataset.svAudioSignature === signature){
+    updateAudioBtn();
+    refreshPlayerControlVisibility();
+    return;
+  }
+  list.dataset.svAudioSignature = signature;
   if(availableAudio.length < 2){
     list.innerHTML = `<div class="pd-item" style="color:#666;pointer-events:none">No switchable audio tracks</div>`;
     if(tool)tool.style.display='';
@@ -829,7 +975,6 @@ function renderAudioTracks(){
   if(!availableAudio.length){
     availableAudio = [{index:0,title:'Default Audio'}];
   }
-  const lockedIdx=audioLockedIndex();
   if(lockedIdx !== null){
     const lockedTrack=availableAudio[lockedIdx] || selectedAudioTrack() || {index:0,title:'Default Audio'};
     const label=lockedTrack.title || audioTrackTitle(lockedTrack,lockedIdx);
@@ -1115,6 +1260,8 @@ function renderSortedTrack(trackId, list, sp=false) {
 
 // ══════════════════ INIT ══════════════════
 async function init(){
+  if(init._started)return;
+  init._started=true;
   try{
     const[mR,sR]=await Promise.all([
       fetch('/api/movies?page=0&limit=24'),
@@ -1230,6 +1377,8 @@ function goHome(){
 
 function switchTab(tab){
   if(tab==='home'||tab==='movies')tab='discover';
+  const previousTab=currentTab;
+  const sameTab=previousTab===tab;
   currentTab=tab;
   const isHome=tab==='discover';
   closeSearchOverlay(true);
@@ -1253,13 +1402,13 @@ function switchTab(tab){
   if(tab==='discover')document.getElementById('bnDiscover')?.classList.add('active');
   if(tab==='series'){
     document.getElementById('bnShows')?.classList.add('active');
-    filterSeriesPage();
-    loadAllSeriesForBrowse().then(()=>filterSeriesPage());
+    if(!sameTab)filterSeriesPage();
+    if(!_allSeriesLoaded)loadAllSeriesForBrowse().then(()=>{if(currentTab==='series')filterSeriesPage();});
   }
   if(tab==='movies-browse'){
     document.getElementById('bnMovies')?.classList.add('active');
-    loadAllMoviesForBrowse();
-    renderMoviesPage();
+    if(!_allMoviesLoaded)loadAllMoviesForBrowse();
+    if(!sameTab || !_mpRendered)renderMoviesPage();
   }
   if(tab==='live'){if(channels.length)renderLiveGrid();}
   if(tab==='mobile-mp4'){renderMobileMp4Page();}
@@ -2898,10 +3047,11 @@ function stopPlayerUiClock(){
 function notePlayerPointerActivity(wrap=document.getElementById('playerWrap')){
   if(!wrap)return;
   playerHovering=true;
-  wrap.classList.add('show-cursor');
   if(playerPointerRaf)return;
   playerPointerRaf=requestAnimationFrame(()=>{
     playerPointerRaf=0;
+    if(!wrap.isConnected)return;
+    wrap.classList.add('show-cursor');
     showUI();
   });
 }
@@ -2992,6 +3142,24 @@ function updateSeekPreviewFromPointer(e,pw){
   else updateSeekPreview(ratio,anchor);
 }
 
+function scheduleSeekPreviewFromPointer(e,pw){
+  if(!pw || isLiveMode || (e.pointerType && e.pointerType!=='mouse'))return;
+  seekPreviewMovePending={
+    pw,
+    clientX:e.clientX,
+    clientY:e.clientY,
+    pointerType:e.pointerType || 'mouse'
+  };
+  if(seekPreviewMoveRaf)return;
+  seekPreviewMoveRaf=requestAnimationFrame(()=>{
+    seekPreviewMoveRaf=0;
+    const pending=seekPreviewMovePending;
+    seekPreviewMovePending=null;
+    if(!pending?.pw?.isConnected)return;
+    updateSeekPreviewFromPointer(pending,pending.pw);
+  });
+}
+
 function hideSeekPreviewFromLeave(e,pw){
   const rect=pw.getBoundingClientRect();
   if(
@@ -3021,8 +3189,8 @@ function bindSeekPreview(pw){
   }
   if(pw.dataset.seekPreviewBound==='1')return;
   pw.dataset.seekPreviewBound='1';
-  pw.addEventListener('pointermove',e=>updateSeekPreviewFromPointer(e,pw),{passive:true});
-  pw.addEventListener('mousemove',e=>updateSeekPreviewFromPointer(e,pw),{passive:true});
+  pw.addEventListener('pointermove',e=>scheduleSeekPreviewFromPointer(e,pw),{passive:true});
+  pw.addEventListener('mousemove',e=>scheduleSeekPreviewFromPointer(e,pw),{passive:true});
   pw.addEventListener('mouseenter',()=>{seekPreviewMetrics=null;});
   pw.addEventListener('mouseleave',e=>hideSeekPreviewFromLeave(e,pw));
 }
@@ -3189,7 +3357,7 @@ async function showVlcPlaybackNotice(url, title=''){
     vid._vlcFallbackTitle = title || '';
     const attached = await attachPlayerSource(ftpTranscodeSrc(streamUrl, start, 'browser stream fallback'), 'stream', {playbackType:'media', fallbackReason:'browser stream fallback'});
     if(!attached)throw new Error('Browser stream unavailable');
-    await vid.play();
+    await svPlayVideo('browser stream fallback', {force:true});
     showToast('Playing with optimized browser stream');
   }catch(e){
     console.warn('[Playback] browser stream fallback failed:', e.message);
@@ -3684,7 +3852,7 @@ async function sourceSeekTo(seconds){
   const seekTimer = setTimeout(()=>{
     if(token !== vid._seekToken)return;
     document.getElementById('playerSpinner').classList.remove('on');
-    if(wasPlaying)vid.play().catch(()=>{});
+    if(wasPlaying)svPlayVideo('local seek timeout').catch(()=>{});
   }, 12000);
   try{
     const fallbackReason='local seek';
@@ -3702,11 +3870,11 @@ async function sourceSeekTo(seconds){
       vid.removeEventListener('loadedmetadata', onSourceSeekMeta);
       clearTimeout(seekTimer);
       document.getElementById('playerSpinner').classList.remove('on');
-      if(wasPlaying)vid.play().catch(()=>{});
+      if(wasPlaying)svPlayVideo('local seek metadata').catch(()=>{});
     }, {once:true});
     const attached = await attachPlayerSource(plan.src, plan.mode, {playbackType:'media', fallbackReason});
     if(!attached)throw new Error('HLS not supported');
-    if(wasPlaying)vid.play().catch(()=>{});
+    if(wasPlaying)svPlayVideo('local seek attach').catch(()=>{});
   }catch(e){
     if(e?.name === 'AbortError')return;
     if(token !== vid._seekToken)return;
@@ -3720,7 +3888,7 @@ async function sourceSeekTo(seconds){
       mode:_currentPlaybackPlan?.mode || '',
       message:e.message
     });
-    if(wasPlaying)vid.play().catch(()=>{});
+    if(wasPlaying)svPlayVideo('local seek rollback').catch(()=>{});
     showToast('Seek failed; resumed previous stream');
   }
 }
@@ -4006,14 +4174,15 @@ async function attachFtpFallbackStep(resolvedStreamUrl, name, step, failedAt){
     ()=>tryFtpAdaptiveFallback(resolvedStreamUrl, name, playbackTime()),
     step === 'transcode' ? SV_MEDIA_TRANSCODE_STARTUP_TIMEOUT_MS : SV_MEDIA_SOURCE_STARTUP_TIMEOUT_MS
   );
-  if(shouldPlay)vid.play().catch(e=>{
+  if(shouldPlay)svPlayVideo('FTP fallback', {force:true, onError:e=>{
     if(e?.name === 'NotAllowedError'){
       updatePlayIcons(true);
       showUI();
-      return;
+      return false;
     }
     playbackDebug('ftp fallback play rejected', {step, message:e.message});
-  });
+    return false;
+  }}).catch(()=>{});
   return true;
 }
 
@@ -4074,14 +4243,15 @@ async function attachLocalFallbackStep(id, step, failedAt){
     ()=>tryLocalAdaptiveFallback(id, playbackTime()),
     step === 'transcode' ? SV_MEDIA_TRANSCODE_STARTUP_TIMEOUT_MS : SV_MEDIA_SOURCE_STARTUP_TIMEOUT_MS
   );
-  if(shouldPlay)vid.play().catch(e=>{
+  if(shouldPlay)svPlayVideo('local fallback', {force:true, onError:e=>{
     if(e?.name === 'NotAllowedError'){
       updatePlayIcons(true);
       showUI();
-      return;
+      return false;
     }
     playbackDebug('local fallback play rejected', {id, step, message:e.message});
-  });
+    return false;
+  }}).catch(()=>{});
   return true;
 }
 
@@ -4175,7 +4345,7 @@ async function playMedia(id, name, year){
       const duration = setPlayerDuration(vid.duration);
       maybeResumeProgress(id, duration);
     }
-    vid.play().catch(() => {});
+    svPlayVideo('local metadata autoplay', {scope:playbackScope}).catch(()=>{});
   }, { once: true });
 
   // Now assign the source → the handler will fire reliably
@@ -4293,11 +4463,11 @@ async function playMedia(id, name, year){
       selectedAudio:audioDebugSummary(selectedAudioTrack(),currentAudioIdx)
     });
     const initialPlay = !mobilePlayback
-      ? vid.play().catch(e=>handleInitialPlayRejection(e, ()=>{
+      ? svPlayVideo('local initial play', {scope:playbackScope, force:true, onError:e=>handleInitialPlayRejection(e, ()=>{
           if(vid._localFallbackTried)return;
           vid._localFallbackTried = true;
           tryLocalAdaptiveFallback(id, playbackTime()).catch(()=>{});
-        }))
+        })})
       : null;
     const attached = await attachPromise;
     if(!isCurrentPlaybackScope(playbackScope))return;
@@ -4317,10 +4487,11 @@ async function playMedia(id, name, year){
     );
     if(validDurationSeconds(playerDuration()))maybeResumeProgress(id, playerDuration());
     if(mobilePlayback){
-      vid.play().catch(e=>{
+      svPlayVideo('local mobile initial play', {scope:playbackScope, force:true, onError:e=>{
         playbackDebug('local direct play rejected', {id, message:e.message});
         tryLocalAdaptiveFallback(id, playbackTime()).catch(()=>{});
-      });
+        return false;
+      }}).catch(()=>{});
     }else{
       await initialPlay;
     }
@@ -4382,7 +4553,7 @@ async function restorePlaybackSnapshot(snapshot, reason='switch failed'){
   const attached=await attachPlayerSource(snapshot.src,snapshot.mode, {playbackType:'media', fallbackReason:reason || 'audio switch rollback'});
   if(!attached)throw new Error('Previous source could not be restored');
   setTimeout(applyTime,0);
-  if(!snapshot.paused)vid.play().catch(()=>{});
+  if(!snapshot.paused)svPlayVideo('audio switch rollback', {force:true}).catch(()=>{});
   renderAudioTracks();
   mediaFixLog('audio switch rollback restored source', {
     reason,
@@ -4491,7 +4662,7 @@ async function switchAudioWithServer(idx){
     await canPlay;
     if(token!==vid._audioSwitchToken)return;
     setAppliedAudioIndex(idx,'server audio switch');
-    if(!previous.paused)vid.play().catch(()=>{});
+    if(!previous.paused)svPlayVideo('server audio switch', {force:true}).catch(()=>{});
     showToast(`Audio: ${selected.title||audioTrackTitle(selected,idx)}`);
     mediaFixLog('audio switch attached',{
       ftp:!!ftpUrl,
@@ -4650,7 +4821,7 @@ function scheduleHideUI(){
   if(vid.paused || playerMenusOpen() || progressDragging || playerControlsFocused())return;
   uiHideTimer=setTimeout(hideUI,3500);
 }
-function togglePlay(){if(vid.paused){vid._svPlaybackShouldPlay=true;vid.play();popCenter('');}else{vid._svPlaybackShouldPlay=false;vid.pause();popCenter('');clearTimeout(uiHideTimer);}}
+function togglePlay(){if(vid.paused){vid._svPlaybackShouldPlay=true;svPlayVideo('manual toggle', {force:true}).catch(()=>{});popCenter('');}else{vid._svPlaybackShouldPlay=false;svAbortPendingPlayRequest('manual pause');vid.pause();popCenter('');clearTimeout(uiHideTimer);}}
 function seekBy(s){
   if(isLiveMode)return;
   seekToTime(playbackTime()+s);
@@ -4911,7 +5082,7 @@ async function switchToSmoothPlaybackProfile(reason='buffering'){
       const attached=await attachPlayerSource(plan.src,plan.mode,{playbackType:'media',fallbackReason});
       if(!attached)throw new Error('smooth local stream unavailable');
     }
-    if(wasPlaying)vid.play().catch(()=>{});
+    if(wasPlaying)svPlayVideo('smooth playback switch', {force:true}).catch(()=>{});
     return true;
   }catch(e){
     mediaFixLog('smooth playback switch failed',{reason,message:e.message});
@@ -5274,10 +5445,10 @@ async function playFtpMedia(streamUrl, name, year){
     });
     const attachPromise = attachPlayerSource(finalPlayUrl, playbackMode, {playbackType:'media', fallbackReason:startupOptions.fallbackReason});
     const initialPlay = !mobilePlayback
-      ? vid.play().catch(e=>handleInitialPlayRejection(e, ()=>{
+      ? svPlayVideo('FTP initial play', {scope:playbackScope, force:true, onError:e=>handleInitialPlayRejection(e, ()=>{
           playbackDebug('ftp initial play rejected', {message:e.message});
           tryFtpAdaptiveFallback(resolvedStreamUrl, name, playbackTime()).catch(()=>showVlcPlaybackNotice(resolvedStreamUrl, name));
-        }))
+        })})
       : null;
     const attached = await attachPromise;
     if(!isCurrentPlaybackScope(playbackScope))return;
@@ -5299,10 +5470,11 @@ async function playFtpMedia(streamUrl, name, year){
     scheduleFtpPostStartMetadata(resolvedStreamUrl);
 
     if(mobilePlayback){
-      vid.play().catch(e => {
+      svPlayVideo('FTP mobile initial play', {scope:playbackScope, force:true, onError:e => {
         playbackDebug('ftp initial play rejected', {message:e.message});
         tryFtpAdaptiveFallback(resolvedStreamUrl, name, playbackTime()).catch(()=>showVlcPlaybackNotice(resolvedStreamUrl, name));
-      });
+        return false;
+      }}).catch(()=>{});
     }else{
       await initialPlay;
     }
@@ -5344,7 +5516,7 @@ async function playFtpMedia(streamUrl, name, year){
             ()=>_ftpStreamUrl === (fallback.decodedUrl || requestedStreamUrl),
             ()=>showVlcPlaybackNotice(requestedStreamUrl, name)
           );
-          vid.play().catch(err=>handleInitialPlayRejection(err,()=>showVlcPlaybackNotice(requestedStreamUrl,name)));
+          svPlayVideo('FTP startup proxy fallback', {force:true, onError:err=>handleInitialPlayRejection(err,()=>showVlcPlaybackNotice(requestedStreamUrl,name))}).catch(()=>{});
           return;
         }
       }catch(fallbackError){
@@ -5361,7 +5533,10 @@ async function playFtpMedia(streamUrl, name, year){
 }
 
 async function ftpSeekTo(seconds){
-  if(!_ftpStreamUrl || _ftpSeekPending) return;
+  if(!_ftpStreamUrl) return;
+  if(_ftpSeekPending){
+    mediaFixLog('FTP seek superseded', {target:seconds, previous:_ftpCurrentTime || playbackTime()});
+  }
   _ftpSeekPending = true;
   const wasPlaying = !vid.paused;
   const token = (vid._seekToken || 0) + 1;
@@ -5377,7 +5552,7 @@ async function ftpSeekTo(seconds){
     if(token !== vid._seekToken)return;
     _ftpSeekPending = false;
     document.getElementById('playerSpinner').classList.remove('on');
-    if(wasPlaying)vid.play().catch(()=>{});
+    if(wasPlaying)svPlayVideo('FTP seek timeout').catch(()=>{});
   }, 12000);
   vid.addEventListener('canplay', function onCp(){
     if(token !== vid._seekToken)return;
@@ -5385,7 +5560,7 @@ async function ftpSeekTo(seconds){
     clearTimeout(seekTimer);
     _ftpSeekPending = false;
     document.getElementById('playerSpinner').classList.remove('on');
-    if(wasPlaying) vid.play().catch(()=>{});
+    if(wasPlaying) svPlayVideo('FTP seek canplay').catch(()=>{});
   }, {once: true});
   try{
     const currentMode = _currentFtpPlaybackPlan?.mode || 'direct';
@@ -5407,7 +5582,7 @@ async function ftpSeekTo(seconds){
     }
     const attached = await attachPlayerSource(plan.src, plan.mode, {playbackType:'media', fallbackReason});
     if(!attached)throw new Error('HLS not supported');
-    if(wasPlaying)vid.play().catch(()=>{});
+    if(wasPlaying)svPlayVideo('FTP seek attach').catch(()=>{});
   }catch(e){
     if(e?.name === 'AbortError')return;
     _ftpSeekPending = false;
@@ -5422,7 +5597,7 @@ async function ftpSeekTo(seconds){
       mode:_currentFtpPlaybackPlan?.mode || '',
       message:e.message
     });
-    if(wasPlaying)vid.play().catch(()=>{});
+    if(wasPlaying)svPlayVideo('FTP seek rollback').catch(()=>{});
     showToast('Seek failed; resumed previous stream');
   }
 }
@@ -5458,9 +5633,15 @@ function closePlayer(){
     cancelAnimationFrame(playerPointerRaf);
     playerPointerRaf=0;
   }
+  if(seekPreviewMoveRaf){
+    cancelAnimationFrame(seekPreviewMoveRaf);
+    seekPreviewMoveRaf=0;
+  }
+  seekPreviewMovePending=null;
   resetSeekPreview();
   resetSmoothPlaybackState('player close');
   playerHovering=false;
+  svAbortPendingPlayRequest('player close');
   vid.pause();
   vid._durationToken = (vid._durationToken || 0) + 1;
   clearTimeout(vid._ftpFallbackTimer);
@@ -5485,6 +5666,8 @@ function closePlayer(){
   vid._localFallbackStepsTried = new Set();
   _currentPlaybackPlan=null;
   _currentFtpPlaybackPlan=null;
+  playerAttachedSourceKey='';
+  playerSourceAttachToken += 1;
   exitMobileLandscapeMode();
   if(hlsInstance){hlsInstance.destroy();hlsInstance=null;}
   isLiveMode=false;
@@ -5532,7 +5715,7 @@ function setQuality(q){
   const t=playbackTime(),paused=vid.paused;
   const sourceSeek = !!vid._sourceSeekRequired;
   vid._sourceOffset = sourceSeek ? t : 0;
-  vid.addEventListener('loadedmetadata',()=>{if(!sourceSeek)vid.currentTime=t;if(!paused)vid.play().catch(()=>{});},{once:true});
+  vid.addEventListener('loadedmetadata',()=>{if(!sourceSeek)vid.currentTime=t;if(!paused)svPlayVideo('quality change').catch(()=>{});},{once:true});
   if(sourceSeek)sourceSeekTo(t);
   else {
     const src=streamUrlFor(currentStreamId, 0);
@@ -5851,6 +6034,7 @@ let _mpRendered = false;
 function renderMoviesPage(){
   if(!movies.length) return;
   filterMoviesPage();
+  _mpRendered = true;
 }
 
 let _svMoviesFilterTimer=0,_svSeriesFilterTimer=0;
@@ -6997,6 +7181,8 @@ document.addEventListener('keydown',e=>{
 decorateRowHeaders();
 
 function setupPlayerEvents() {
+  if(setupPlayerEvents._bound)return;
+  setupPlayerEvents._bound=true;
   // Video element handlers (named so removeEventListener works correctly)
   vid.removeEventListener('timeupdate',     vid._tuH);
   vid.removeEventListener('progress',       vid._prH);
@@ -7004,6 +7190,7 @@ function setupPlayerEvents() {
   vid.removeEventListener('ended',          vid._enH);
   vid.removeEventListener('waiting',        vid._waH);
   vid.removeEventListener('stalled',        vid._stH);
+  vid.removeEventListener('seeking',        vid._sgH);
   vid.removeEventListener('playing',        vid._plH);
   vid.removeEventListener('canplay',        vid._cpH);
   vid.removeEventListener('play',           vid._paH);
@@ -7016,6 +7203,7 @@ function dur() {
 }
 
   vid._tuH=()=>{
+    if(!svThrottlePlayerEvent('timeupdate', SV_PLAYER_TIMEUPDATE_MIN_MS))return;
     scheduleSubtitleOverlayUpdate();
     if(isLiveMode||progressDragging)return;
     const ct=playbackTime();
@@ -7023,6 +7211,7 @@ function dur() {
     schedulePlayerProgressRender(ct,d,{save:true});
   };
   vid._prH=()=>{
+    if(!svThrottlePlayerEvent('progress', SV_PLAYER_PROGRESS_MIN_MS))return;
     schedulePlayerBufferedRender();
   };
   // Replace vid._mdH with:
@@ -7046,10 +7235,23 @@ vid._mdH = () => {
     updatePlayIcons(true);
     if(currentStreamId&&!_ftpStreamUrl){watchProgress[currentStreamId]={progress:0.99,updatedAt:Date.now()};try{localStorage.setItem('sv_progress',JSON.stringify(watchProgress));}catch(_){}}
   };
-  vid._waH=()=>{noteSmoothPlaybackBuffering('waiting');document.getElementById('playerSpinner').classList.add('on');showUI();};
-  vid._stH=()=>{noteSmoothPlaybackBuffering('stalled');};
-  vid._plH=()=>{document.getElementById('playerSpinner').classList.remove('on');noteFtpHeavyPlaybackStarted();noteSmoothPlaybackStarted();startPlayerUiClock();schedulePlayerProgressRender(playbackTime(),dur());scheduleHideUI();};
-  vid._cpH=()=>{document.getElementById('playerSpinner').classList.remove('on');};
+  vid._waH=()=>{
+    if(!svThrottlePlayerEvent('waiting', SV_PLAYER_WAITING_MIN_MS))return;
+    noteSmoothPlaybackBuffering('waiting');
+    playerEls().spinner?.classList.add('on');
+    showUI();
+  };
+  vid._stH=()=>{
+    if(!svThrottlePlayerEvent('stalled', SV_PLAYER_WAITING_MIN_MS))return;
+    noteSmoothPlaybackBuffering('stalled');
+  };
+  vid._sgH=()=>{
+    if(!svThrottlePlayerEvent('seeking', SV_PLAYER_SEEKING_MIN_MS))return;
+    scheduleSubtitleOverlayUpdate();
+    schedulePlayerProgressRender(playbackTime(),dur(),{force:true});
+  };
+  vid._plH=()=>{playerEls().spinner?.classList.remove('on');noteFtpHeavyPlaybackStarted();noteSmoothPlaybackStarted();startPlayerUiClock();schedulePlayerProgressRender(playbackTime(),dur());scheduleHideUI();};
+  vid._cpH=()=>{playerEls().spinner?.classList.remove('on');};
   vid._paH=()=>{updatePlayIcons(false);startPlayerUiClock();scheduleHideUI();};
   vid._puH=()=>{stopPlayerUiClock();updatePlayIcons(true);schedulePlayerProgressRender(playbackTime(),dur(),{force:true});showUI();};
   vid._skH=()=>setTimeout(scheduleSubtitleOverlayUpdate,60);
@@ -7059,6 +7261,7 @@ vid._mdH = () => {
   vid.addEventListener('ended',         vid._enH);
   vid.addEventListener('waiting',       vid._waH);
   vid.addEventListener('stalled',       vid._stH);
+  vid.addEventListener('seeking',       vid._sgH);
   vid.addEventListener('playing',       vid._plH);
   vid.addEventListener('canplay',       vid._cpH);
   vid.addEventListener('play',          vid._paH);
@@ -7073,6 +7276,8 @@ vid._mdH = () => {
   if(!pw._bound){
     pw._bound=true;
     let dragT=0;
+    let dragVisualRaf=0;
+    let dragVisualPending=null;
     let suppressProgressClickUntil=0;
     function getP(e){
       return progressRatioFromEvent(e, pw);
@@ -7087,7 +7292,28 @@ vid._mdH = () => {
       updateSeekPreview(p);
       showUI();
     }
+    function queueVisual(p,d){
+      dragT=p*d;
+      dragVisualPending={p,d};
+      if(dragVisualRaf)return;
+      dragVisualRaf=requestAnimationFrame(()=>{
+        dragVisualRaf=0;
+        const pending=dragVisualPending;
+        dragVisualPending=null;
+        if(pending)visual(pending.p,pending.d);
+      });
+    }
+    function flushQueuedVisual(){
+      if(dragVisualRaf){
+        cancelAnimationFrame(dragVisualRaf);
+        dragVisualRaf=0;
+      }
+      const pending=dragVisualPending;
+      dragVisualPending=null;
+      if(pending)visual(pending.p,pending.d);
+    }
     function commit(){
+      flushQueuedVisual();
       progressDragging=false; pw.classList.remove('dragging');
       const d=dur(); if(!d){hideSeekPreview();return;}
       const t=Math.max(0,Math.min(d,dragT));
@@ -7099,9 +7325,10 @@ vid._mdH = () => {
       e.preventDefault(); seekPreviewMetrics=null; progressDragging=true; pw.classList.add('dragging'); visual(getP(e),d);
     });
     pw.addEventListener('mousemove',e=>{
+      if(!progressDragging)return;
       const d=dur(); if(!d)return;
       const p=getP(e);
-      if(progressDragging){visual(p,d);return;}
+      queueVisual(p,d);
     });
     document.addEventListener('mouseup',()=>{if(progressDragging)commit();});
     pw.addEventListener('touchstart',e=>{
@@ -7110,7 +7337,7 @@ vid._mdH = () => {
     },{passive:false});
     pw.addEventListener('touchmove',e=>{
       if(!progressDragging)return; e.preventDefault();
-      const d=dur(); if(!d)return; visual(getP(e),d);
+      const d=dur(); if(!d)return; queueVisual(getP(e),d);
     },{passive:false});
     pw.addEventListener('touchend',()=>{
       if(progressDragging){
@@ -7119,7 +7346,7 @@ vid._mdH = () => {
         hideSeekPreview();
       }
     });
-    pw.addEventListener('touchcancel',()=>{progressDragging=false;pw.classList.remove('dragging');hideSeekPreview();});
+    pw.addEventListener('touchcancel',()=>{progressDragging=false;pw.classList.remove('dragging');dragVisualPending=null;if(dragVisualRaf){cancelAnimationFrame(dragVisualRaf);dragVisualRaf=0;}hideSeekPreview();});
     pw.addEventListener('click',e=>{
       if(Date.now()<suppressProgressClickUntil)return;
       if(isLiveMode||progressDragging)return;

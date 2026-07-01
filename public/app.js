@@ -1,7 +1,11 @@
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260629-smooth-buffer-profile1';
+const SV_ASSET_VERSION = '20260701-live-relay-default-final1';
 const SV_SMOOTH_BUFFER_TRIGGER_COUNT = Math.max(1, Number(window.SMOOTH_BUFFER_TRIGGER_COUNT || 3) || 3);
+const svNativeConsoleLog = (()=>{try{return console.log.bind(console);}catch(_){return ()=>{};}})();
+function svLiveConsoleLog(...args){
+  try{svNativeConsoleLog(...args);}catch(_){}
+}
 function svDebugLoggingEnabled(){
   try{
     return new URLSearchParams(location.search).has('debug')
@@ -132,6 +136,15 @@ const SV_PLAYER_TIMEUPDATE_MIN_MS = 180;
 const SV_PLAYER_PROGRESS_MIN_MS = 250;
 const SV_PLAYER_WAITING_MIN_MS = 450;
 const SV_PLAYER_SEEKING_MIN_MS = 120;
+let svMediaAudioWatchdogTimer=null;
+let liveCongestionScore=0;
+let liveLastSwitchTime=0;
+let lastSwitchDirection=0;
+const MIN_LEVEL=0;
+const ABR_SWITCH_INTERVAL=8000;
+let abrFreezeUntil=0;
+let liveAbrTimer=null;
+let liveRecoveryTimer=null;
 
 function svPlaybackStateLog(step, data={}){
   try{
@@ -238,6 +251,212 @@ function abortPlaybackRequestScope(reason='playback stopped'){
 
 function svPlayerVideo(){
   try{return typeof vid !== 'undefined' ? vid : null;}catch(_){return null;}
+}
+
+function svAudioResetSearchText(src=''){
+  const parts=[
+    src,
+    svMediaPlayerState.selectedSourceUrl,
+    svMediaPlayerState.sourceKey,
+    svMediaPlayerState.title,
+    typeof _ftpStreamUrl !== 'undefined' ? _ftpStreamUrl : '',
+    document.getElementById('playerTitle')?.textContent || ''
+  ];
+  return parts.map(value=>String(value || '')).join(' ');
+}
+
+function svIsLighthouseMediaSource(src=''){
+  return /(?:^|[^a-z0-9])lighthouse(?:[^a-z0-9]|$)/i.test(svAudioResetSearchText(src));
+}
+
+function svIsHlsMediaSource(src='', mode='direct'){
+  return String(mode || '').toLowerCase() === 'hls' || /\.m3u8(?:$|\?)/i.test(String(src || ''));
+}
+
+function svIsCompatibilityMediaSource(src='', mode='direct'){
+  const normalizedMode=String(mode || '').toLowerCase();
+  if(['stream','audio','remux'].includes(normalizedMode))return true;
+  const value=String(src || '');
+  return /\/api\/ftp\/stream(?:\?|$)/i.test(value)
+    || (/\/api\/playback\/(?:local|ftp)(?:\/|\?)/i.test(value) && /[?&]mode=(?:audio|remux)(?:&|$)/i.test(value));
+}
+
+function svMediaAudioResetContext(src='', mode='direct', options={}){
+  const playbackType=options.playbackType || ((isLiveMode && svActivePlaybackType === 'live') ? 'live' : 'media');
+  if(playbackType === 'live' || svActivePlaybackType === 'live' || svPlayerVideo()?._svPlaybackType === 'live')return null;
+  const isHls=svIsHlsMediaSource(src, mode);
+  const isLighthouse=svIsLighthouseMediaSource(src);
+  const isCompatibility=svIsCompatibilityMediaSource(src, mode);
+  if(!isHls && !isLighthouse && !isCompatibility)return null;
+  return {
+    sourceKey:svPlayerSourceKey(src, mode),
+    src:String(src || ''),
+    mode:String(mode || 'direct'),
+    isHls,
+    isLighthouse,
+    isCompatibility,
+    hasManifestAudio:false,
+    nativeReady:false,
+    lastReloadAt:0
+  };
+}
+
+function svSetMediaAudioResetContext(src='', mode='direct', options={}){
+  const video=svPlayerVideo();
+  if(!video)return null;
+  const context=svMediaAudioResetContext(src, mode, options);
+  video._svAudioResetContext=context;
+  if(context)svEnsureMediaAudioWatchdog();
+  return context;
+}
+
+function svSyncVolumeUi(video=svPlayerVideo()){
+  try{
+    const slider=document.getElementById('volSlider');
+    if(slider && video)slider.value=video.muted ? 0 : video.volume;
+    if(typeof updateVolIcon === 'function')updateVolIcon();
+  }catch(_){}
+}
+
+function svForceMediaAudioOutput(video=svPlayerVideo(), reason='audio reset'){
+  if(!video)return false;
+  let changed=false;
+  if(video.muted){
+    video.muted=false;
+    changed=true;
+  }
+  if(video.volume !== 1){
+    video.volume=1;
+    changed=true;
+  }
+  if(changed){
+    svSyncVolumeUi(video);
+    mediaFixLog('forced media audio output', {reason, muted:video.muted, volume:video.volume});
+  }
+  return changed;
+}
+
+function svShouldForceMediaAudioOutput(video, context){
+  if(!video || !context)return false;
+  return context.isHls || context.isLighthouse || video.muted === true || Number(video.volume) === 0;
+}
+
+function svEnglishHlsAudioIndex(tracks=[]){
+  return tracks.findIndex(track=>/eng|english/i.test(`${track?.name || ''} ${track?.lang || ''} ${track?.language || ''}`));
+}
+
+function svSelectDefaultHlsAudioTrack(hls, video=svPlayerVideo(), reason='HLS audio reset'){
+  if(!hls || !Array.isArray(hls.audioTracks))return false;
+  const tracks=hls.audioTracks;
+  if(!tracks.length)return false;
+  const englishIndex=svEnglishHlsAudioIndex(tracks);
+  const nextIndex=englishIndex !== -1 ? englishIndex : 0;
+  if(Number(hls.audioTrack) !== nextIndex)hls.audioTrack=nextIndex;
+  if(video?._svAudioResetContext)video._svAudioResetContext.hasManifestAudio=true;
+  currentAudioIdx=nextIndex;
+  setAppliedAudioIndex(nextIndex, reason);
+  refreshDesktopNativeAudioTracks();
+  mediaFixLog('selected default HLS audio track', {
+    reason,
+    selectedIndex:nextIndex,
+    language:tracks[nextIndex]?.lang || tracks[nextIndex]?.language || '',
+    title:tracks[nextIndex]?.name || ''
+  });
+  return true;
+}
+
+function svSelectDefaultNativeAudioTrack(video=svPlayerVideo(), reason='native audio reset'){
+  const list=video?.audioTracks;
+  if(!list || !Number.isFinite(Number(list.length)) || list.length <= 0)return false;
+  const tracks=Array.from({length:list.length},(_,index)=>list[index]).filter(Boolean);
+  if(!tracks.length)return false;
+  const englishIndex=tracks.findIndex(track=>/eng|english/i.test(`${track.language || ''} ${track.label || ''}`));
+  const nextIndex=englishIndex !== -1 ? englishIndex : 0;
+  tracks.forEach((track,index)=>{try{track.enabled=index===nextIndex;}catch(_){}});
+  currentAudioIdx=nextIndex;
+  setAppliedAudioIndex(nextIndex, reason);
+  refreshDesktopNativeAudioTracks();
+  mediaFixLog('selected default native audio track', {
+    reason,
+    selectedIndex:nextIndex,
+    language:tracks[nextIndex]?.language || '',
+    title:tracks[nextIndex]?.label || ''
+  });
+  return true;
+}
+
+function svArmNativeAudioResetOnLoad(context, reason='source load'){
+  const video=svPlayerVideo();
+  if(!video || !context)return;
+  const sourceKey=context.sourceKey;
+  let done=false;
+  const reset=()=>{
+    if(done)return;
+    const active=video._svAudioResetContext;
+    if(!active || active.sourceKey !== sourceKey)return;
+    done=true;
+    active.nativeReady=true;
+    svSelectDefaultNativeAudioTrack(video, reason);
+    if(svShouldForceMediaAudioOutput(video, active))svForceMediaAudioOutput(video, reason);
+  };
+  video.addEventListener('loadedmetadata', reset, {once:true});
+  video.addEventListener('canplay', reset, {once:true});
+}
+
+function svResetMediaAudioOnSourceSwitch(context, reason='stream switch', options={}){
+  const video=svPlayerVideo();
+  if(!video || !context)return;
+  if(hlsInstance && context.isHls){
+    try{hlsInstance.audioTrack=0;}catch(_){}
+  }
+  if(svShouldForceMediaAudioOutput(video, context))svForceMediaAudioOutput(video, reason);
+  if(options.reload){
+    try{video.load();}catch(_){}
+  }
+}
+
+function svMediaAudioWatchdogSilent(video, context){
+  const hlsTracks=hlsInstance && Array.isArray(hlsInstance.audioTracks) ? hlsInstance.audioTracks : [];
+  const nativeList=video.audioTracks;
+  const nativeLength=Number.isFinite(Number(nativeList?.length)) ? Number(nativeList.length) : null;
+  const hlsMissingSelection=context.isHls && hlsTracks.length > 0
+    && (Number(hlsInstance.audioTrack) < 0 || Number(hlsInstance.audioTrack) >= hlsTracks.length);
+  const nativeMissing=context.isLighthouse && context.nativeReady && nativeLength === 0;
+  if(context.isCompatibility && video.muted !== true && Number(video.volume) !== 0 && !hlsMissingSelection)return false;
+  return video.muted === true || Number(video.volume) === 0 || hlsMissingSelection || nativeMissing;
+}
+
+function svReloadMediaForAudio(video, context, reason='audio watchdog'){
+  const now=Date.now();
+  if(now - (context.lastReloadAt || 0) < 4500)return;
+  context.lastReloadAt=now;
+  const wasPlaying=!video.paused;
+  mediaFixLog('audio watchdog reload', {
+    reason,
+    mode:context.mode,
+    isHls:context.isHls,
+    isLighthouse:context.isLighthouse,
+    isCompatibility:context.isCompatibility
+  });
+  try{video.load();}catch(_){}
+  if(wasPlaying)svPlayVideo('audio watchdog reload', {force:true}).catch(()=>{});
+}
+
+function svRunMediaAudioWatchdog(){
+  const video=svPlayerVideo();
+  const context=video?._svAudioResetContext;
+  if(!video || !context)return;
+  if(svActivePlaybackType === 'live' || video._svPlaybackType === 'live')return;
+  if(!svMediaAudioWatchdogSilent(video, context))return;
+  if(context.isHls)svSelectDefaultHlsAudioTrack(hlsInstance, video, 'audio watchdog');
+  else svSelectDefaultNativeAudioTrack(video, 'audio watchdog');
+  svForceMediaAudioOutput(video, 'audio watchdog');
+  svReloadMediaForAudio(video, context, 'audio watchdog');
+}
+
+function svEnsureMediaAudioWatchdog(){
+  if(svMediaAudioWatchdogTimer)return;
+  svMediaAudioWatchdogTimer=setInterval(svRunMediaAudioWatchdog, 5000);
 }
 
 function svDecodeForGuard(value){
@@ -482,16 +701,20 @@ async function attachPlayerSource(src, mode='direct', options={}){
   }
   svNoteSelectedSource(playbackType, src, {mode, fallbackReason});
   const isHls = mode === 'hls' || /\.m3u8(?:$|\?)/i.test(String(src));
+  const audioResetContext=svSetMediaAudioResetContext(src, mode, {playbackType, fallbackReason});
   const attachToken=++playerSourceAttachToken;
   if(svPlayerSourceAlreadyAttached(src, mode, isHls)){
+    if(audioResetContext)svResetMediaAudioOnSourceSwitch(audioResetContext, 'duplicate source audio reset');
     mediaFixLog('skipped duplicate source attach', {mode, src, fallbackReason});
     return true;
   }
+  if(audioResetContext)svResetMediaAudioOnSourceSwitch(audioResetContext, 'source switch audio reset');
   svAbortPendingPlayRequest('source attach');
   if(hlsInstance){hlsInstance.destroy();hlsInstance=null;}
   if(!isHls){
     if(attachToken !== playerSourceAttachToken)throw svStalePlaybackError('Superseded source attach');
     vid.src = src;
+    svArmNativeAudioResetOnLoad(audioResetContext, 'source load');
     playerAttachedSourceKey=svPlayerSourceKey(src, mode);
     return true;
   }
@@ -499,6 +722,7 @@ async function attachPlayerSource(src, mode='direct', options={}){
   if(vid.canPlayType('application/vnd.apple.mpegurl')){
     if(attachToken !== playerSourceAttachToken)throw svStalePlaybackError('Superseded native HLS attach');
     vid.src = src;
+    svArmNativeAudioResetOnLoad(audioResetContext, 'native HLS source load');
     playerAttachedSourceKey=svPlayerSourceKey(src, mode);
     return true;
   }
@@ -534,6 +758,8 @@ async function attachPlayerSource(src, mode='direct', options={}){
     });
     hlsInstance.on(Hls.Events.MANIFEST_PARSED,()=>{
       if(abortIfStale())return finish(false, svStalePlaybackError('Superseded HLS manifest'));
+      svSelectDefaultHlsAudioTrack(hlsInstance, vid, 'HLS manifest parsed');
+      svForceMediaAudioOutput(vid, 'HLS manifest parsed');
       playerAttachedSourceKey=svPlayerSourceKey(src, mode);
       finish(true);
     });
@@ -1509,7 +1735,30 @@ function darken(hex){
   }catch{return '#000'}
 }
 
+function shouldUseNativeHlsForLive(){
+  const ua=navigator.userAgent || "";
+  const isAppleDevice=/iPhone|iPad|iPod/i.test(ua);
+  const isSafari=/Safari/i.test(ua) && !/Chrome|CriOS|FxiOS|Edg|OPR|Android/i.test(ua);
+  return isAppleDevice || isSafari;
+}
+
 function openLiveChannel(channelId, channelName){
+  const directLiveSourceUrl=`/live/${encodeURIComponent(channelId)}/playlist.m3u8`;
+  const relayLiveSourceUrl=`/live-relay/${encodeURIComponent(channelId)}/playlist.m3u8`;
+  let liveSourceUrl=relayLiveSourceUrl;
+  let liveDirectFallbackAttempted=false;
+  if(svLiveAbrActive(channelId) && hlsInstance){
+    document.getElementById('playerModal').classList.add('open');
+    document.getElementById('playerSpinner').classList.remove('on');
+    showUI();
+    try{hlsInstance.startLoad();}catch(_){}
+    svPlayVideo('live channel resume', {force:true}).catch(()=>{});
+    return;
+  }
+  if(typeof vid?._svLiveCleanup === 'function'){
+    try{vid._svLiveCleanup();}catch(_){}
+    vid._svLiveCleanup=null;
+  }
   svBeginLivePlayback(channelId, channelName);
   isLiveMode=true;
   currentStreamId=null;
@@ -1529,7 +1778,6 @@ function openLiveChannel(channelId, channelName){
   clearInterval(vid._pi);
   vid.pause();
   vid.removeAttribute('src');
-  try{vid.load();}catch{}
   vid.querySelectorAll('track').forEach(t=>t.remove());
   clearSubtitleOverlay();
   availableSubs=[];
@@ -1552,54 +1800,132 @@ function openLiveChannel(channelId, channelName){
   refreshPlayerControlVisibility();
   showUI();
 
-  const src=`/live/${encodeURIComponent(channelId)}/playlist.m3u8`;
-  svNoteSelectedSource('live', src, {mode:'hls'});
+  svNoteSelectedSource('live', liveSourceUrl, {mode:'hls'});
+  svLiveConsoleLog("[LIVE PATH]", {
+    channelId,
+    mode: shouldUseNativeHlsForLive() ? "native" : "hls.js",
+    source: liveSourceUrl,
+    relay: liveSourceUrl.includes("/live-relay/")
+  });
 
   const playNative=()=>{
-    vid.src=src;
+    const onNativeLiveError=()=>{
+      if(!liveDirectFallbackAttempted && isRelaySource()){
+        liveDirectFallbackAttempted=true;
+        liveSourceUrl=directLiveSourceUrl;
+        svNoteSelectedSource('live', liveSourceUrl, {mode:'native', fallbackReason:'native relay error'});
+        console.warn('[LIVE] Native relay failed; falling back to direct source once', {channelId, source:liveSourceUrl});
+        playNative();
+        return;
+      }
+      showLivePlaybackFailure('native video error');
+    };
+    vid.addEventListener('error',onNativeLiveError,{once:true});
+    vid.src=liveSourceUrl;
     vid.play().catch(()=>{});
   };
 
+  const isRelaySource=()=>liveSourceUrl.includes('/live-relay/');
+  const liveErrorStatus=data=>Number(data?.response?.code ?? data?.response?.status ?? data?.networkDetails?.status ?? 0) || 0;
+  const isLiveNetworkError=data=>data?.type===Hls.ErrorTypes.NETWORK_ERROR || data?.type==='networkError';
+  const isLivePlaylistNetworkError=data=>{
+    const details=String(data?.details || '');
+    return /manifest|level|playlist/i.test(details);
+  };
+  const fallbackToDirectLiveSource=reason=>{
+    if(liveDirectFallbackAttempted || !isRelaySource())return false;
+    liveDirectFallbackAttempted=true;
+    liveSourceUrl=directLiveSourceUrl;
+    svNoteSelectedSource('live', liveSourceUrl, {mode:'hls', fallbackReason:reason || 'live relay fallback'});
+    console.warn('[LIVE] Relay failed; falling back to direct source once', {channelId, reason, source:liveSourceUrl});
+    if(hlsInstance){try{hlsInstance.destroy();}catch(_){} hlsInstance=null;}
+    if(typeof vid?._svLiveCleanup === 'function'){
+      try{vid._svLiveCleanup();}catch(_){}
+      vid._svLiveCleanup=null;
+    }
+    document.getElementById('playerSpinner')?.classList.add('on');
+    playWithHls();
+    return true;
+  };
+  const showLivePlaybackFailure=reason=>{
+    document.getElementById('playerSpinner')?.classList.remove('on');
+    showPlayerNotice('Live TV playback failed. Please try again in a moment.');
+    console.warn('[LIVE] Playback failed', {channelId, reason});
+  };
+
   const playWithHls=()=>{
-    if(hlsInstance){hlsInstance.destroy();hlsInstance=null;}
     hlsInstance=new Hls({
       enableWorker:true,
-      lowLatencyMode:false,
-      liveSyncDurationCount:3,
+      lowLatencyMode:true,
+      capLevelToPlayerSize:true,
+      startLevel:-1,
+      maxBufferLength:20,
+      backBufferLength:10,
+      maxBufferHole:0.5,
+      liveSyncDurationCount:2,
+      maxMaxBufferLength:40,
+      maxLoadingDelay:4,
       liveMaxLatencyDurationCount:10,
       maxLiveSyncPlaybackRate:1.25,
-      manifestLoadingTimeOut:15000,
-      fragLoadingTimeOut:20000,
-      levelLoadingTimeOut:15000
+      manifestLoadingTimeOut:10000,
+      manifestLoadingMaxRetry:6,
+      fragLoadingTimeOut:10000,
+      fragLoadingMaxRetry:6,
+      fragLoadingRetryDelay:1000,
+      levelLoadingTimeOut:10000
     });
-    hlsInstance.on(Hls.Events.MEDIA_ATTACHED,()=>hlsInstance.loadSource(src));
+    vid._svLiveCleanup=svAttachLiveAbr(channelId,hlsInstance);
+    hlsInstance.on(Hls.Events.FRAG_LOADING,(e,d)=>{
+      window.__fragStart=performance.now();
+      svLiveConsoleLog("[LIVE] FRAG_LOADING:", d?.frag?.url);
+    });
+    hlsInstance.on(Hls.Events.FRAG_LOADED,(e,d)=>{
+      const latency=performance.now() - window.__fragStart;
+      window.__liveIssue?.fragLatency?.push(latency);
+      if(latency > 2000){
+        console.warn("[ROOT-CAUSE] HIGH FRAG LATENCY:", latency);
+      }
+      svLiveConsoleLog("[LIVE] FRAG_LOADED:", d?.frag?.url, "latency(ms):", latency);
+    });
+    hlsInstance.on(Hls.Events.MEDIA_ATTACHED,()=>hlsInstance.loadSource(liveSourceUrl));
     hlsInstance.on(Hls.Events.MANIFEST_PARSED,()=>{refreshPlayerControlVisibility();vid.play().catch(()=>{});});
     hlsInstance.on(Hls.Events.ERROR,(e,data)=>{
+      if(svLiveIsBufferStalledError(data)){
+        svLiveHandleStallRecovery(hlsInstance);
+        return;
+      }
       if(!data?.fatal)return;
-      if(data.type===Hls.ErrorTypes.NETWORK_ERROR){
-        try{hlsInstance.startLoad();}catch{}
+      if(isLiveNetworkError(data)){
+        const status=liveErrorStatus(data);
+        if(isRelaySource() && (isLivePlaylistNetworkError(data) || status === 404 || status === 502)){
+          if(fallbackToDirectLiveSource(data.details || `HTTP ${status || 'network error'}`))return;
+        }
+        if(liveDirectFallbackAttempted && isLivePlaylistNetworkError(data) && (status >= 400 || !status)){
+          showLivePlaybackFailure(data.details || `HTTP ${status || 'network error'}`);
+          return;
+        }
+        svLiveHandleNetworkRecovery(hlsInstance);
         return;
       }
-      if(data.type===Hls.ErrorTypes.MEDIA_ERROR){
-        try{hlsInstance.recoverMediaError();}catch{}
+      if(data.type===Hls.ErrorTypes.MEDIA_ERROR || data.type==='mediaError'){
+        svLiveHandleMediaRecovery(hlsInstance);
         return;
       }
-      showToast('Stream error — check channel URL in channels.json');
-      document.getElementById('playerSpinner').classList.remove('on');
-      try{hlsInstance.destroy();}catch{}
-      hlsInstance=null;
+      svLiveHandleUnknownRecovery(hlsInstance);
     });
     hlsInstance.attachMedia(vid);
   };
 
   if(typeof Hls !== 'undefined' && Hls.isSupported()){
     playWithHls();
-  }else if(vid.canPlayType('application/vnd.apple.mpegurl')){
+  }else if(shouldUseNativeHlsForLive() && vid.canPlayType('application/vnd.apple.mpegurl')){
     playNative();
   }else{
     loadHlsScript().then(ok=>{
       if(ok && typeof Hls !== 'undefined' && Hls.isSupported())playWithHls();
-      else{
+      else if(shouldUseNativeHlsForLive() && vid.canPlayType('application/vnd.apple.mpegurl')){
+        playNative();
+      }else{
         showToast('HLS not supported in this browser');
         closePlayer();
       }
@@ -2563,6 +2889,7 @@ function switchToSeries(showName){
 }
 
 const vid=document.getElementById('videoPlayer');
+svEnsureMediaAudioWatchdog();
 // Metadata is enough to discover duration and keeps desktop starts lightweight.
 // The browser will request only the byte ranges it needs instead of preloading a
 // whole movie while the player is opening.
@@ -3088,6 +3415,243 @@ function liveCaptionOptionsAvailable(){
   }catch(_){
     return false;
   }
+}
+
+function svLiveAbrActive(channelId=''){
+  return isLiveMode
+    && svActivePlaybackType === 'live'
+    && svLivePlayerState.playbackType === 'live'
+    && (!channelId || svLivePlayerState.currentChannelId === String(channelId || ''));
+}
+
+function svLiveCurrentLevel(hls){
+  const candidates=[hls?.currentLevel,hls?.nextLevel,hls?.loadLevel,hls?.nextAutoLevel];
+  for(const value of candidates){
+    const level=Number(value);
+    if(Number.isFinite(level) && level >= 0)return Math.floor(level);
+  }
+  return Array.isArray(hls?.levels) && hls.levels.length ? hls.levels.length - 1 : 0;
+}
+
+function svLiveBufferedAhead(video=vid){
+  try{
+    const buffered=video.buffered;
+    const current=Number(video.currentTime) || 0;
+    for(let i=0;i<buffered.length;i++){
+      if(buffered.start(i) <= current && buffered.end(i) >= current)return Math.max(0,buffered.end(i)-current);
+    }
+    return buffered.length ? Math.max(0,buffered.end(buffered.length-1)-current) : 0;
+  }catch(_){
+    return 0;
+  }
+}
+
+function svLiveAbrTick(){
+  const hls=hlsInstance;
+  if(!hls || !svLiveAbrActive() || !Array.isArray(hls.levels) || hls.levels.length < 2)return;
+  const now=Date.now();
+  if(now < abrFreezeUntil)return;
+  if(now - liveLastSwitchTime < ABR_SWITCH_INTERVAL)return;
+  const current=svLiveCurrentLevel(hls);
+  const buffered=svLiveBufferedAhead(vid);
+  if(buffered < 2)return;
+  if(liveCongestionScore >= 3){
+    if(current <= MIN_LEVEL)return;
+    if(lastSwitchDirection !== -1){
+      hls.nextLevel=Math.max(MIN_LEVEL,current - 1);
+      lastSwitchDirection=-1;
+      liveLastSwitchTime=now;
+      mediaFixLog('live ABR downgrade',{current,nextLevel:hls.nextLevel,buffered});
+    }
+    return;
+  }
+  if(liveCongestionScore === 0){
+    if(current >= hls.levels.length - 1)return;
+    if(lastSwitchDirection !== 1){
+      hls.nextLevel=Math.min(hls.levels.length - 1,current + 1);
+      lastSwitchDirection=1;
+      liveLastSwitchTime=now;
+      mediaFixLog('live ABR upgrade',{current,nextLevel:hls.nextLevel,buffered});
+    }
+  }
+}
+
+function svFreezeLiveAbrRecovery(reason='live recovery'){
+  abrFreezeUntil=Date.now() + 5000;
+  liveCongestionScore=0;
+  lastSwitchDirection=0;
+  liveLastSwitchTime=Date.now();
+  mediaFixLog('live ABR recovery freeze',{reason,until:abrFreezeUntil});
+}
+
+function svLiveStartLoad(hls, reason='live recovery', delay=0){
+  if(!hls)return;
+  const run=()=>{
+    if(hls !== hlsInstance || !svLiveAbrActive())return;
+    try{
+      hls.startLoad();
+      mediaFixLog('live HLS startLoad',{reason,buffered:svLiveBufferedAhead(vid)});
+    }catch(_){}
+  };
+  if(delay > 0)setTimeout(run,delay);
+  else run();
+}
+
+function svLiveIsBufferStalledError(data){
+  const detail=String(data?.details || '');
+  const stalled=typeof Hls !== 'undefined' && Hls.ErrorDetails ? Hls.ErrorDetails.BUFFER_STALLED_ERROR : '';
+  return detail === 'bufferStalledError' || (stalled && detail === stalled);
+}
+
+function svLiveHandleStallRecovery(hls){
+  svFreezeLiveAbrRecovery('buffer stalled');
+  svLiveStartLoad(hls,'buffer stalled');
+}
+
+function svLiveFastRecoveryTick(channelId,hls){
+  if(!hls || hls !== hlsInstance || !svLiveAbrActive(channelId))return;
+  if(svLiveBufferedAhead(vid) < 3){
+    svLiveStartLoad(hls,'low buffer fast recovery');
+  }
+}
+
+function svLiveOnStablePlayback(){
+  liveCongestionScore=Math.max(0,liveCongestionScore - 1);
+  if(liveCongestionScore === 0 && Date.now() - liveLastSwitchTime >= ABR_SWITCH_INTERVAL){
+    lastSwitchDirection=0;
+  }
+}
+
+function svLiveResetAbrState(){
+  liveCongestionScore=0;
+  liveLastSwitchTime=0;
+  lastSwitchDirection=0;
+  abrFreezeUntil=0;
+}
+
+function svLiveHandleNetworkRecovery(hls){
+  svFreezeLiveAbrRecovery('network error');
+  svLiveStartLoad(hls,'network error',1000);
+}
+
+function svLiveHandleMediaRecovery(hls){
+  svFreezeLiveAbrRecovery('media error');
+  try{hls.recoverMediaError();}catch(_){}
+}
+
+function svLiveHandleUnknownRecovery(hls){
+  svFreezeLiveAbrRecovery('unknown error');
+  try{hls.recoverMediaError();}catch(_){
+    try{hls.startLoad();}catch(__){}
+  }
+}
+
+function svAttachLiveAbr(channelId, hls){
+  if(!hls)return ()=>{};
+  window.__liveIssue={
+    fragLatency:[],
+    starvationCount:0,
+    stalledCount:0,
+    lastLevels:[]
+  };
+  svLiveResetAbrState();
+  clearInterval(liveAbrTimer);
+  liveAbrTimer=setInterval(svLiveAbrTick,3000);
+  clearInterval(liveRecoveryTimer);
+  liveRecoveryTimer=setInterval(()=>svLiveFastRecoveryTick(channelId,hls),3000);
+  const addCongestion=value=>{
+    if(!svLiveAbrActive(channelId))return;
+    liveCongestionScore=Math.min(10,liveCongestionScore + value);
+  };
+  const onWaiting=()=>{
+    addCongestion(2);
+    if(!svLiveAbrActive(channelId))return;
+    vid.style.backgroundColor='black';
+    svPlayVideo('live waiting recovery', {force:true}).catch(()=>{});
+  };
+  const onStalled=()=>addCongestion(3);
+  const onPlaying=()=>{
+    if(!svLiveAbrActive(channelId))return;
+    svLiveOnStablePlayback();
+  };
+  const liveBufferDiagnosticTimer=setInterval(()=>{
+    if(!vid || !svLiveAbrActive(channelId))return;
+
+    const buffered=vid.buffered.length
+      ? vid.buffered.end(0) - vid.currentTime
+      : 0;
+
+    if(buffered <= 0.2){
+      window.__liveIssue.starvationCount++;
+      console.warn("[ROOT-CAUSE] BUFFER STARVATION EVENT");
+      console.warn("[LIVE CRITICAL] Buffer starvation detected");
+    }
+
+    if(buffered <= 2){
+      console.warn("[LIVE WARNING] Low buffer:", buffered);
+    }
+  },2000);
+  const liveAbrDiagnosticTimer=setInterval(()=>{
+    if(!hls || hls !== hlsInstance || !svLiveAbrActive(channelId))return;
+    const buffer=vid.buffered.length
+      ? vid.buffered.end(0) - vid.currentTime
+      : 0;
+
+    window.__liveIssue.lastLevels.push({
+      level:hls.currentLevel,
+      buffer
+    });
+    svLiveConsoleLog("[LIVE ABR]",
+      "level:", hls.currentLevel,
+      "buffer:", buffer
+    );
+  },5000);
+  const liveRootCauseReportTimer=setInterval(()=>{
+    if(!window.__liveIssue || !svLiveAbrActive(channelId))return;
+    const avgLatency=
+      window.__liveIssue.fragLatency.reduce((a,b)=>a + b,0) /
+      (window.__liveIssue.fragLatency.length || 1);
+
+    svLiveConsoleLog("========== LIVE ROOT CAUSE REPORT ==========");
+    svLiveConsoleLog("Avg FRAG latency:", avgLatency);
+    svLiveConsoleLog("Starvation events:", window.__liveIssue.starvationCount);
+    svLiveConsoleLog("Stall events:", window.__liveIssue.stalledCount);
+    svLiveConsoleLog("Last ABR state:", window.__liveIssue.lastLevels.slice(-5));
+    svLiveConsoleLog("===========================================");
+  },30000);
+  const onDiagnosticWaiting=()=>{
+    console.warn("[LIVE] VIDEO WAITING (stall start)");
+  };
+  const onDiagnosticStalled=()=>{
+    window.__liveIssue.stalledCount++;
+    console.warn("[ROOT-CAUSE] VIDEO STALLED");
+    console.warn("[LIVE] VIDEO STALLED (network/segment issue)");
+  };
+  const onDiagnosticPlaying=()=>{
+    svLiveConsoleLog("[LIVE] Playback resumed");
+  };
+  vid.addEventListener('waiting',onWaiting);
+  vid.addEventListener('stalled',onStalled);
+  vid.addEventListener('playing',onPlaying);
+  vid.addEventListener("waiting",onDiagnosticWaiting);
+  vid.addEventListener("stalled",onDiagnosticStalled);
+  vid.addEventListener("playing",onDiagnosticPlaying);
+  return ()=>{
+    clearInterval(liveAbrTimer);
+    liveAbrTimer=null;
+    clearInterval(liveRecoveryTimer);
+    liveRecoveryTimer=null;
+    clearInterval(liveBufferDiagnosticTimer);
+    clearInterval(liveAbrDiagnosticTimer);
+    clearInterval(liveRootCauseReportTimer);
+    svLiveResetAbrState();
+    vid.removeEventListener('waiting',onWaiting);
+    vid.removeEventListener('stalled',onStalled);
+    vid.removeEventListener('playing',onPlaying);
+    vid.removeEventListener("waiting",onDiagnosticWaiting);
+    vid.removeEventListener("stalled",onDiagnosticStalled);
+    vid.removeEventListener("playing",onDiagnosticPlaying);
+  };
 }
 
 function updateAudioBtn(){
@@ -5652,6 +6216,7 @@ function closePlayer(){
   vid._sourceSeekRequired=false;
   vid._mediaSourceSeekRequired=false;
   vid._svPlaybackShouldPlay=false;
+  vid._svAudioResetContext=null;
   vid._audioSwitchPending=false;
   vid._queuedAudioSwitchIdx=null;
   vid._audioSwitchToken=(vid._audioSwitchToken || 0) + 1;

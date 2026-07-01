@@ -4464,7 +4464,7 @@ function svLiveSetSegmentHeaders(res, meta = {}, cacheState = 'MISS') {
   res.setHeader('Content-Type', meta.contentType || 'video/MP2T');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges, Content-Length, Content-Type, X-SV-Upstream-Status, X-SV-Upstream-Ms, X-SV-Live-Cache');
-  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Cache-Control', 'public, max-age=6');
   res.setHeader('X-Accel-Buffering', 'no');
   res.setHeader('X-SV-Live-Cache', cacheState);
   res.setHeader('X-SV-Upstream-Status', String(meta.upstreamStatus || status));
@@ -5056,7 +5056,7 @@ function svStartLiveRelay(channelId, reason = 'start', candidateIndex = 0) {
     '-map', '0:v:0?', '-map', '0:a:0?', '-c', 'copy', '-max_muxing_queue_size', '2048',
     '-f', 'hls', '-hls_time', '4', '-hls_list_size', '8',
     '-hls_flags', 'delete_segments+omit_endlist+independent_segments+temp_file',
-    '-hls_segment_filename', path.join(dir, 'segment_%09d.ts'),
+    '-hls_segment_filename', path.join(dir, 'seg_%09d.ts'),
     playlistPath,
   ];
   const relayProcess = spawn(FFMPEG_BIN, ffmpegArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -5139,7 +5139,7 @@ async function svWaitForLiveRelaySegment(channelId, filename) {
   return '';
 }
 
-app.get('/live-relay/:channelId/index.m3u8', async (req, res) => {
+async function svHandleLiveRelayPlaylist(req, res) {
   const channelId = req.params.channelId;
   const channel = svLiveRelayChannel(channelId);
   if (!channel) return res.status(404).send('Channel not found');
@@ -5165,13 +5165,15 @@ app.get('/live-relay/:channelId/index.m3u8', async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('X-SV-Live-Relay-Segments', String(state.segments));
   res.send(state.text);
-});
+}
+
+app.get(['/live-relay/:channelId/playlist.m3u8', '/live-relay/:channelId/index.m3u8'], svHandleLiveRelayPlaylist);
 
 app.get('/live-relay/:channelId/:segment', async (req, res) => {
   const channelId = req.params.channelId;
   const filename = path.basename(String(req.params.segment || ''));
   if (!svLiveRelayChannel(channelId)) return res.status(404).send('Channel not found');
-  if (!/^segment_\d+\.ts$/i.test(filename)) return res.status(400).send('Invalid relay segment');
+  if (!/^(?:seg|segment)_\d+\.ts$/i.test(filename)) return res.status(400).send('Invalid relay segment');
   const session = svLiveRelaySessions.get(channelId);
   if (session) session.lastAccess = Date.now();
   const filePath = await svWaitForLiveRelaySegment(channelId, filename);
@@ -5180,7 +5182,7 @@ app.get('/live-relay/:channelId/:segment', async (req, res) => {
     return res.status(404).send('Segment not ready');
   }
   res.setHeader('Content-Type', 'video/MP2T');
-  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Cache-Control', 'public, max-age=6');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.sendFile(filePath);
 });

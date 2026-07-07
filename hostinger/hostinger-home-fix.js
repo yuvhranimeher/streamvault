@@ -19,7 +19,7 @@
           rowEl = document.createElement("div");
           rowEl.className = "row";
           rowEl.id = rowId;
-          rowEl.innerHTML = `<div class="row-header"><div class="row-title">${row.title || row.sectionKey || "Movies"}</div></div><div class="cards-track" id="${trackId}"></div>`;
+          rowEl.innerHTML = '<div class="row-header"><div class="row-title">' + (row.title || row.sectionKey || "Movies") + '</div></div><div class="cards-track" id="' + trackId + '"></div>';
           main.appendChild(rowEl);
         }
 

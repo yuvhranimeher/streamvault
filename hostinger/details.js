@@ -43,7 +43,7 @@
     const width = wide ? 780 : ((window._svWeakDevice || innerWidth < 760) ? 185 : 342);
     const size = `w${width}`;
     const normalized = url.replace(/\/t\/p\/(?:original|w\d+)\//, `/t/p/${size}/`);
-    return `/poster-cache?url=${encodeURIComponent(normalized)}&w=${width}`;
+    return `${window.API_BASE || "https://streamvault.fit"}/poster-cache?url=${encodeURIComponent(normalized)}&w=${width}`;
   };
 
   svMediaArt = function(item, wide=false){
@@ -161,6 +161,7 @@
     el.innerHTML = visibleItems.map(render).join('');
   };
 })();
+
 
 
 

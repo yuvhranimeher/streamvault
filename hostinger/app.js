@@ -8413,8 +8413,8 @@ vid._mdH = () => {
 const _svWeakDevice = ((navigator.deviceMemory || 4) <= 2) || ((navigator.hardwareConcurrency || 4) <= 2) || (innerWidth < 760 && ((navigator.deviceMemory || 4) <= 3));
 window._svWeakDevice = _svWeakDevice;
 document.documentElement.classList.toggle('sv-weak-device', _svWeakDevice);
-let _svEagerImageBudget = _svWeakDevice || innerWidth < 760 ? 5 : 8;
-window._svEagerImageBudget = _svEagerImageBudget;
+let _svEagerImageBudget = 500;
+window._svEagerImageBudget = 500;
 function svConsumeImageAttrs(priority=false, immediate=false){
   const eager = priority || immediate || window._svEagerImageBudget-- > 0;
   const fetchPriority = priority ? 'high' : (eager ? 'auto' : 'low');
@@ -8426,7 +8426,7 @@ function svOptimizeImageUrl(src='', wide=false){
   const width = wide ? 780 : (_svWeakDevice || innerWidth < 760 ? 185 : 342);
   const size = `w${width}`;
   const normalized = url.replace(/\/t\/p\/(?:original|w\d+)\//, `/t/p/${size}/`);
-  return `/poster-cache?url=${encodeURIComponent(normalized)}&w=${width}`;
+  return `${window.API_BASE || "https://streamvault.fit"}/poster-cache?url=${encodeURIComponent(normalized)}&w=${width}`;
 }
 function svMediaArt(item, wide=false){
   if(!item)return '';
@@ -9271,6 +9271,7 @@ function buildRows(){
 
   svApplyHomeOrder();
 }
+
 
 
 

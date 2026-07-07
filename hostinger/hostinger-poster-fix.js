@@ -1,72 +1,40 @@
 ﻿(function(){
   window.API_BASE = window.API_BASE || "https://streamvault.fit";
 
-  function fixPosterUrl(url){
-    if(!url) return url;
-    if(url.startsWith("/poster-cache") || url.startsWith("/image-proxy")){
-      return window.API_BASE + url;
+  function fixUrl(u){
+    if(!u) return u;
+    if(u.startsWith("/poster-cache") || u.startsWith("/image-proxy")){
+      return window.API_BASE + u;
     }
-    try{
-      const u = new URL(url, location.href);
-      if(u.origin === location.origin && (u.pathname.startsWith("/poster-cache") || u.pathname.startsWith("/image-proxy"))){
-        return window.API_BASE + u.pathname + u.search;
-      }
-    }catch(e){}
-    return url;
+    return u;
   }
 
-  function boostImages(root){
+  function fixImgs(root){
     (root || document).querySelectorAll("img").forEach(img=>{
-      const ds = img.getAttribute("data-src");
-      if(ds) img.setAttribute("data-src", fixPosterUrl(ds));
-
-      const src = img.getAttribute("src");
-      const fixed = fixPosterUrl(src);
-      if(fixed && fixed !== src) img.setAttribute("src", fixed);
-
-      img.loading = "eager";
-      img.decoding = "async";
-      img.fetchPriority = "high";
-
-      if(img.dataset && img.dataset.src && !img.src){
-        img.src = fixPosterUrl(img.dataset.src);
-      }
-    });
-
-    (root || document).querySelectorAll("[data-bg],[data-poster]").forEach(el=>{
-      ["data-bg","data-poster"].forEach(a=>{
-        const v = el.getAttribute(a);
-        if(v) el.setAttribute(a, fixPosterUrl(v));
+      ["src","data-src","data-sv-src"].forEach(a=>{
+        const v=img.getAttribute(a);
+        if(v) img.setAttribute(a, fixUrl(v));
       });
+
+      const sv=img.getAttribute("data-sv-src");
+      if(sv && (!img.getAttribute("src") || img.getAttribute("src").startsWith("data:"))){
+        img.setAttribute("src", fixUrl(sv));
+      }
+
+      img.loading="eager";
+      img.fetchPriority="high";
+      img.decoding="async";
     });
   }
 
-  function preloadPosters(){
-    const urls = new Set();
-    document.querySelectorAll("img").forEach(img=>{
-      const u = img.currentSrc || img.src || img.dataset.src;
-      if(u) urls.add(fixPosterUrl(u));
-    });
-    Array.from(urls).slice(0,300).forEach(u=>{
-      const im = new Image();
-      im.decoding = "async";
-      im.loading = "eager";
-      im.src = u;
-    });
-  }
-
-  window.addEventListener("load", ()=>{
-    boostImages(document);
-    setTimeout(preloadPosters, 300);
-    setTimeout(()=>boostImages(document), 1000);
-    setTimeout(()=>boostImages(document), 2500);
+  window.addEventListener("load",()=>{
+    fixImgs(document);
+    setInterval(()=>fixImgs(document),1200);
   });
 
-  new MutationObserver(muts=>{
-    muts.forEach(m=>{
-      m.addedNodes.forEach(n=>{
-        if(n.nodeType === 1) boostImages(n);
-      });
-    });
+  new MutationObserver(ms=>{
+    ms.forEach(m=>m.addedNodes.forEach(n=>{
+      if(n.nodeType===1) fixImgs(n);
+    }));
   }).observe(document.documentElement,{childList:true,subtree:true});
 })();

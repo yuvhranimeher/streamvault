@@ -101,7 +101,7 @@
       params.set('name', show.name || '');
       if(show.id != null)params.set('id', show.id);
       if(show.year)params.set('year', show.year);
-      const r = await fetch(`/api/series/detail?${params.toString()}`, {
+      const r = await fetch(`https://streamvault.fit(https://streamvault.fit/api/series/detail?${params.toString()}`, {
         signal:detailRequestController?.signal
       });
       if(r.ok){

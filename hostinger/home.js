@@ -1,4 +1,4 @@
-﻿window.API_BASE = "https://streamvault.fit";
+window.API_BASE = "https://streamvault.fit";
 (function(){
   var SV_PERF_HOME_LEGACY_MAIN = [
     { rowId:'netflixRow', trackId:'netflixTrack', sectionKey:'netflix', title:'Netflix Originals' },
@@ -12,9 +12,9 @@
     { rowId:'indianRow', trackId:'indianTrack', sectionKey:'indian', title:'Indian Movies & Drama' },
     { rowId:'dramaRow', trackId:'dramaTrack', sectionKey:'drama', title:'Drama & Emotion' },
     { rowId:'spanishRow', trackId:'spanishTrack', sectionKey:'spanish', title:'Spanish & Latino' },
-    { rowId:'highRatedRow', trackId:'highRatedTrack', sectionKey:'topRated', title:'â­ Top Rated (8+)' },
+    { rowId:'highRatedRow', trackId:'highRatedTrack', sectionKey:'topRated', title:'⭐ Top Rated (8+)' },
     { rowId:'allRow', trackId:'allTrack', sectionKey:'allMovies', title:'All Movies' },
-    { rowId:'trendingRow', trackId:'trendingTrack', sectionKey:'trending', title:'ðŸ”¥ Trending Now' },
+    { rowId:'trendingRow', trackId:'trendingTrack', sectionKey:'trending', title:'🔥 Trending Now' },
     { rowId:'seriesRow', trackId:'seriesTrack', sectionKey:'series', title:'Series' },
     { rowId:'newRow', trackId:'newTrack', sectionKey:'new', title:'New to StreamVault' }
   ];
@@ -56,11 +56,11 @@
     { rowId:'comingSoonRow', trackId:'comingSoonTrack', sectionKey:'comingSoon', title:'Coming Soon' },
     { rowId:'dramaRow', trackId:'dramaTrack', sectionKey:'drama', title:'Drama & Emotion' },
     { rowId:'spanishRow', trackId:'spanishTrack', sectionKey:'spanish', title:'Spanish & Latino' },
-    { rowId:'highRatedRow', trackId:'highRatedTrack', sectionKey:'topRated', title:'â­ Top Rated (8+)' },
+    { rowId:'highRatedRow', trackId:'highRatedTrack', sectionKey:'topRated', title:'⭐ Top Rated (8+)' },
     { rowId:'allRow', trackId:'allTrack', sectionKey:'allMovies', title:'All Movies' },
     { rowId:'recentlyAddedRow', trackId:'recentlyAddedTrack', sectionKey:'recentlyAdded', title:'Recently Added' },
     { rowId:'mostWatchedTodayRow', trackId:'mostWatchedTodayTrack', sectionKey:'mostWatchedToday', title:'Most Watched Today' },
-    { rowId:'trendingRow', trackId:'trendingTrack', sectionKey:'trending', title:'ðŸ”¥ Trending Now' },
+    { rowId:'trendingRow', trackId:'trendingTrack', sectionKey:'trending', title:'🔥 Trending Now' },
     { rowId:'seriesRow', trackId:'seriesTrack', sectionKey:'series', title:'Series' },
     { rowId:'newRow', trackId:'newTrack', sectionKey:'new', title:'New to StreamVault' }
   ];
@@ -214,7 +214,7 @@
       explore = document.createElement('div');
       explore.className = 'row-explore';
       explore.dataset.perfSection = '1';
-      explore.textContent = 'View All â†’';
+      explore.textContent = 'View All →';
       explore.onclick = ()=>openHomeSection(rowId);
       header.appendChild(explore);
     }
@@ -266,7 +266,7 @@
     if(svHomePayload && (svHomePayload._limit || 0) >= requestedLimit)return Promise.resolve(svHomePayload);
     if(svHomePayloadPromise)return svHomePayloadPromise;
     const readJson = r=>r.ok ? r.json() : Promise.reject(new Error('home feed failed'));
-    svHomePayloadPromise = fetch('/home-feed.json?v=20260620-player-tracks-sections-final1', { cache:'force-cache' })
+    svHomePayloadPromise = fetch('/home-feed.json?v=20260707', { cache:'no-store' })
       .then(readJson)
       .catch(()=>fetch(`${API_BASE}/api/home-feed?limit=${requestedLimit}`).then(readJson))
       .then(data=>{
@@ -1114,7 +1114,7 @@
     colombia:'CO',
     croatia:'HR',
     curacao:'CW',
-    'curaÃ§ao':'CW',
+    'curaçao':'CW',
     czechia:'CZ',
     'czech republic':'CZ',
     denmark:'DK',
@@ -1896,7 +1896,7 @@
       const text = `${event.type || ''} ${event.detail || ''}`;
       const isGoal = /goal/i.test(text);
       const isCard = /card/i.test(text);
-      const icon = isGoal ? 'G' : (isCard ? '!' : 'â€¢');
+      const icon = isGoal ? 'G' : (isCard ? '!' : '•');
       return `
         <div class="fifa-event-row ${isGoal ? 'is-goal' : ''}">
           <time>${svFifaEsc(event.minute || '')}</time>

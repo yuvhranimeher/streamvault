@@ -11,3 +11,4 @@
     if(heroTitle)heroTitle.textContent = 'Could not start StreamVault';
   }
 })();
+

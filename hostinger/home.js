@@ -1,4 +1,4 @@
-﻿const API_BASE = "https://streamvault.fit";
+﻿window.API_BASE = "https://streamvault.fit";
 (function(){
   var SV_PERF_HOME_LEGACY_MAIN = [
     { rowId:'netflixRow', trackId:'netflixTrack', sectionKey:'netflix', title:'Netflix Originals' },
@@ -3227,5 +3227,6 @@
     });
   }
 })();
+
 
 

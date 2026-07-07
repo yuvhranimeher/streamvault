@@ -1,4 +1,4 @@
-﻿const API_BASE = "https://streamvault.fit";
+﻿window.API_BASE = "https://streamvault.fit";
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
 const SV_ASSET_VERSION = '20260701-live-relay-default-final1';
@@ -9271,6 +9271,7 @@ function buildRows(){
 
   svApplyHomeOrder();
 }
+
 
 
 

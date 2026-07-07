@@ -4697,8 +4697,7 @@ async function loadFtpTrackOptions(streamUrl){
     params.set('playbackType', 'media');
     const r = await fetch(`/api/ftp/media-info?${params.toString()}`, {
       signal: controller.signal,
-      cache:'default',
-      headers:{'Cache-Control':'no-cache'}
+      cache:'default'
     });
     if(!r.ok)throw new Error(`metadata ${r.status}`);
     const data = await r.json();
@@ -7487,8 +7486,7 @@ function svFetchMediaInfoData(url, timeout=9000){
   if(svMediaInfoDataCache.has(key))return Promise.resolve(svMediaInfoDataCache.get(key));
   if(svMediaInfoPromiseCache.has(key))return svMediaInfoPromiseCache.get(key);
   const promise=fetchWithTimeout(key, {
-    cache:'default',
-    headers:{'Cache-Control':'no-cache'}
+    cache:'default'
   }, timeout)
     .then(async response=>{
       if(!response.ok)throw new Error(`metadata ${response.status}`);
@@ -9270,4 +9268,5 @@ function buildRows(){
 
   svApplyHomeOrder();
 }
+
 

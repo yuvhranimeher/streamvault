@@ -931,7 +931,27 @@
 
 <div class="toast" id="toast"></div>
 
-<script>window.API_BASE="https://streamvault.fit";</script>`r`n<script defer src="/app.js?v=20260707-api-global4"></script>
+<script>
+window.API_BASE = "https://streamvault.fit";
+(function(){
+  var nativeFetch = window.fetch.bind(window);
+  window.fetch = function(input, init){
+    try{
+      if(typeof input === "string"){
+        if(input.indexOf("/api/") === 0 || input.indexOf("/poster-cache") === 0){
+          input = window.API_BASE + input;
+        }
+      }else if(input && input.url){
+        var u = new URL(input.url, location.href);
+        if(u.origin === location.origin && (u.pathname.indexOf("/api/") === 0 || u.pathname.indexOf("/poster-cache") === 0)){
+          input = window.API_BASE + u.pathname + u.search;
+        }
+      }
+    }catch(e){}
+    return nativeFetch(input, init);
+  };
+})();
+</script>`r`n<script defer src="/app.js?v=20260707-api-global4"></script>
 <script defer src="/details.js?v=20260707-api-global4"></script>
 <script defer src="/home.js?v=20260707-api-global4"></script>
 <script defer src="/downloads.js?v=20260707-api-global4"></script>
@@ -943,6 +963,7 @@
 <script defer src="/hostinger-home-fix.js?v=20260707-force-home2"></script>
 </body>
 </html>  
+
 
 
 

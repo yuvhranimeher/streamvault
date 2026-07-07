@@ -1349,7 +1349,7 @@ async function loadAudioTracks(id, options={}){
     renderAudioTracks();
   }
   try{
-    const r = await fetch(`/api/media-info/${id}`);
+    const r = await fetch(`${API_BASE}/api/media-info/${id}`);
     if(!r.ok)return null;
     const data = await r.json();
     const tracks = Array.isArray(data.audioTracks) ? data.audioTracks : [];
@@ -1643,7 +1643,7 @@ async function init(){
     let _bgPagesLoaded = 0;
     for(let p=1; p<=homeBgPages; p++){
       setTimeout(()=>{
-        fetch(`/api/movies?page=${p}&limit=100`)
+        fetch(`${API_BASE}/api/movies?page=${p}&limit=100`)
           .then(r=>r.json())
           .then(d=>{
             let newMovies = d.movies.filter(m=>m&&m.name);
@@ -1685,7 +1685,7 @@ function loadAllMoviesForBrowse(){
   const total=Math.max(0,_totalMoviePages-startPage);
   for(let p=startPage; p<_totalMoviePages; p++){
     setTimeout(()=>{
-      fetch(`/api/movies?page=${p}&limit=${_movieBrowsePageSize}`)
+      fetch(`${API_BASE}/api/movies?page=${p}&limit=${_movieBrowsePageSize}`)
         .then(r=>r.json())
         .then(d=>{
           let newMovies = d.movies.filter(m=>m&&m.name);
@@ -2271,7 +2271,7 @@ async function buildStudioRow(trackId, rowId, publisher, keywords, priorityPatte
 
   let ftpMatched = [];
   try {
-    const r = await fetch(`/api/movies/keywords?q=${encodeURIComponent(keywords.join(','))}`);
+    const r = await fetch(`${API_BASE}/api/movies/keywords?q=${encodeURIComponent(keywords.join(','))}`);
     const data = await r.json();
     ftpMatched = data.filter(m => {
       const key = (m.name||'').toLowerCase().split('(')[0].trim();
@@ -4338,7 +4338,7 @@ async function fetchLocalPlaybackPlan(id, start=0, options={}){
   if(options.forceAudio)params.set('mode','audio');
   if(options.mode)params.set('mode', options.mode);
   const query = params.toString();
-  const r = await fetch(`/api/playback/local/${encodeURIComponent(id)}${query ? '?' + query : ''}`, {
+  const r = await fetch(`${API_BASE}/api/playback/local/${encodeURIComponent(id)}${query ? '?' + query : ''}`, {
     signal:options.signal
   });
   if(!r.ok){
@@ -4695,7 +4695,7 @@ async function loadFtpTrackOptions(streamUrl){
     const params=new URLSearchParams();
     params.set('url', requestedUrl);
     params.set('playbackType', 'media');
-    const r = await fetch(`/api/ftp/media-info?${params.toString()}`, {
+    const r = await fetch(`${API_BASE}/api/ftp/media-info?${params.toString()}`, {
       signal: controller.signal,
       cache:'no-store',
       headers:{'Cache-Control':'no-cache'}
@@ -4908,7 +4908,7 @@ async function loadPlayerDuration(id){
   vid._durationToken = token;
   vid._durationPending = true;
   try{
-    const r = await fetch(`/api/duration/${encodeURIComponent(id)}`, {
+    const r = await fetch(`${API_BASE}/api/duration/${encodeURIComponent(id)}`, {
       signal:playbackRequestController?.signal
     });
     if(token !== vid._durationToken || !r.ok)return;
@@ -4938,7 +4938,7 @@ async function loadFtpDuration(streamUrl){
     const params=new URLSearchParams();
     params.set('url', streamUrl);
     params.set('playbackType', 'media');
-    const r = await fetch(`/api/ftp/duration?${params.toString()}`, {
+    const r = await fetch(`${API_BASE}/api/ftp/duration?${params.toString()}`, {
       signal:playbackRequestController?.signal
     });
     if(token !== vid._durationToken || !r.ok)return;
@@ -6682,7 +6682,7 @@ function closePlayer(){
 async function loadQualityOptions(id){
   let data={available:['auto','1080p','720p','480p','360p'],native:'auto'};
   try{
-    const r=await fetch(`/api/qualities/${id}`);
+    const r=await fetch(`${API_BASE}/api/qualities/${id}`);
     if(r.ok){
       data=await r.json();
     }
@@ -6722,7 +6722,7 @@ async function loadSubtitleTracks(id){
   let externalSubs = [];
   let probedEmbeddedSubs = [];
   try{
-    const r=await fetch(`/api/subtitles/${id}`);
+    const r=await fetch(`${API_BASE}/api/subtitles/${id}`);
     if(r.ok){
       const data=await r.json();
       externalSubs=Array.isArray(data)?data:[];
@@ -6731,7 +6731,7 @@ async function loadSubtitleTracks(id){
     console.warn('[Subtitles] Load error:',e.message);
   }
   try{
-    const r=await fetch(`/api/media-info/${id}`);
+    const r=await fetch(`${API_BASE}/api/media-info/${id}`);
     if(r.ok){
       const data=await r.json();
       const subtitleTracks=Array.isArray(data.subtitleTracks)?data.subtitleTracks:[];
@@ -8831,7 +8831,7 @@ async function buildStudioRow(trackId, rowId, publisher, keywords, priorityPatte
 
   let ftpMatched = [];
   try {
-    const r = await fetch(`/api/movies/keywords?q=${encodeURIComponent(keywords.join(','))}`);
+    const r = await fetch(`${API_BASE}/api/movies/keywords?q=${encodeURIComponent(keywords.join(','))}`);
     const data = await r.json();
     ftpMatched = data.filter(m => {
       const key = (m.name||'').toLowerCase().split('(')[0].trim();
@@ -9270,4 +9270,5 @@ function buildRows(){
 
   svApplyHomeOrder();
 }
+
 

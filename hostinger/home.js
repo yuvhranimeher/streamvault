@@ -1,4 +1,4 @@
-(function(){
+﻿(function(){
   var SV_PERF_HOME_LEGACY_MAIN = [
     { rowId:'netflixRow', trackId:'netflixTrack', sectionKey:'netflix', title:'Netflix Originals' },
     { rowId:'marvelRow', trackId:'marvelTrack', sectionKey:'marvel', title:'Marvel Studios' },
@@ -11,9 +11,9 @@
     { rowId:'indianRow', trackId:'indianTrack', sectionKey:'indian', title:'Indian Movies & Drama' },
     { rowId:'dramaRow', trackId:'dramaTrack', sectionKey:'drama', title:'Drama & Emotion' },
     { rowId:'spanishRow', trackId:'spanishTrack', sectionKey:'spanish', title:'Spanish & Latino' },
-    { rowId:'highRatedRow', trackId:'highRatedTrack', sectionKey:'topRated', title:'⭐ Top Rated (8+)' },
+    { rowId:'highRatedRow', trackId:'highRatedTrack', sectionKey:'topRated', title:'â­ Top Rated (8+)' },
     { rowId:'allRow', trackId:'allTrack', sectionKey:'allMovies', title:'All Movies' },
-    { rowId:'trendingRow', trackId:'trendingTrack', sectionKey:'trending', title:'🔥 Trending Now' },
+    { rowId:'trendingRow', trackId:'trendingTrack', sectionKey:'trending', title:'ðŸ”¥ Trending Now' },
     { rowId:'seriesRow', trackId:'seriesTrack', sectionKey:'series', title:'Series' },
     { rowId:'newRow', trackId:'newTrack', sectionKey:'new', title:'New to StreamVault' }
   ];
@@ -55,11 +55,11 @@
     { rowId:'comingSoonRow', trackId:'comingSoonTrack', sectionKey:'comingSoon', title:'Coming Soon' },
     { rowId:'dramaRow', trackId:'dramaTrack', sectionKey:'drama', title:'Drama & Emotion' },
     { rowId:'spanishRow', trackId:'spanishTrack', sectionKey:'spanish', title:'Spanish & Latino' },
-    { rowId:'highRatedRow', trackId:'highRatedTrack', sectionKey:'topRated', title:'⭐ Top Rated (8+)' },
+    { rowId:'highRatedRow', trackId:'highRatedTrack', sectionKey:'topRated', title:'â­ Top Rated (8+)' },
     { rowId:'allRow', trackId:'allTrack', sectionKey:'allMovies', title:'All Movies' },
     { rowId:'recentlyAddedRow', trackId:'recentlyAddedTrack', sectionKey:'recentlyAdded', title:'Recently Added' },
     { rowId:'mostWatchedTodayRow', trackId:'mostWatchedTodayTrack', sectionKey:'mostWatchedToday', title:'Most Watched Today' },
-    { rowId:'trendingRow', trackId:'trendingTrack', sectionKey:'trending', title:'🔥 Trending Now' },
+    { rowId:'trendingRow', trackId:'trendingTrack', sectionKey:'trending', title:'ðŸ”¥ Trending Now' },
     { rowId:'seriesRow', trackId:'seriesTrack', sectionKey:'series', title:'Series' },
     { rowId:'newRow', trackId:'newTrack', sectionKey:'new', title:'New to StreamVault' }
   ];
@@ -213,7 +213,7 @@
       explore = document.createElement('div');
       explore.className = 'row-explore';
       explore.dataset.perfSection = '1';
-      explore.textContent = 'View All →';
+      explore.textContent = 'View All â†’';
       explore.onclick = ()=>openHomeSection(rowId);
       header.appendChild(explore);
     }
@@ -267,7 +267,7 @@
     const readJson = r=>r.ok ? r.json() : Promise.reject(new Error('home feed failed'));
     svHomePayloadPromise = fetch('/home-feed.json?v=20260620-player-tracks-sections-final1', { cache:'force-cache' })
       .then(readJson)
-      .catch(()=>fetch(`/api/home-feed?limit=${requestedLimit}`).then(readJson))
+      .catch(()=>fetch(`${API_BASE}/api/home-feed?limit=${requestedLimit}`).then(readJson))
       .then(data=>{
         data._limit = requestedLimit;
         svHomePayload = data;
@@ -281,7 +281,7 @@
   function svFetchHomeSection(meta, options={}){
     const limit = options.limit || SV_HOME_ROW_LIMIT;
     const summary = options.summary === true ? '1' : '0';
-    return fetch(`/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=${limit}&summary=${summary}&v=20260620-player-tracks-sections-final1`)
+    return fetch(`${API_BASE}/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=${limit}&summary=${summary}&v=20260620-player-tracks-sections-final1`)
       .then(r=>r.ok ? r.json() : Promise.reject(new Error(`section ${meta.sectionKey} failed`)))
       .then(data=>{
         const items = Array.isArray(data?.items) ? data.items : [];
@@ -1113,7 +1113,7 @@
     colombia:'CO',
     croatia:'HR',
     curacao:'CW',
-    'curaçao':'CW',
+    'curaÃ§ao':'CW',
     czechia:'CZ',
     'czech republic':'CZ',
     denmark:'DK',
@@ -1895,7 +1895,7 @@
       const text = `${event.type || ''} ${event.detail || ''}`;
       const isGoal = /goal/i.test(text);
       const isCard = /card/i.test(text);
-      const icon = isGoal ? 'G' : (isCard ? '!' : '•');
+      const icon = isGoal ? 'G' : (isCard ? '!' : 'â€¢');
       return `
         <div class="fifa-event-row ${isGoal ? 'is-goal' : ''}">
           <time>${svFifaEsc(event.minute || '')}</time>
@@ -2682,7 +2682,7 @@
     svFifaLiveState.newsLoading = true;
     if(svFifaLiveState.newsController)svFifaLiveState.newsController.abort();
     svFifaLiveState.newsController = new AbortController();
-    fetch('/api/fifa-live/news', {
+    fetch(API_BASE + '/api/fifa-live/news', {
       cache:'no-store',
       headers:{ Accept:'application/json' },
       signal:svFifaLiveState.newsController.signal
@@ -3078,7 +3078,7 @@
     const grid = document.getElementById('sectionGrid');
     grid.innerHTML = '<div class="sv-skeleton-card"></div><div class="sv-skeleton-card"></div><div class="sv-skeleton-card"></div>';
     svSectionState = { key:meta.sectionKey, page:0, pages:1, items:[], rowId };
-    fetch(`/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=${SV_HOME_ROW_LIMIT}&summary=0`)
+    fetch(`${API_BASE}/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=${SV_HOME_ROW_LIMIT}&summary=0`)
       .then(r=>r.json())
       .then(data=>{
         svSectionState.page = data.page || 0;
@@ -3094,7 +3094,7 @@
   window.svLoadMoreSection = function(){
     const nextPage = (svSectionState.page || 0) + 1;
     if(nextPage >= svSectionState.pages)return;
-    fetch(`/api/section/${encodeURIComponent(svSectionState.key)}?page=${nextPage}&limit=${SV_HOME_ROW_LIMIT}&summary=0`)
+    fetch(`${API_BASE}/api/section/${encodeURIComponent(svSectionState.key)}?page=${nextPage}&limit=${SV_HOME_ROW_LIMIT}&summary=0`)
       .then(r=>r.json())
       .then(data=>{
         svSectionState.page = data.page || nextPage;
@@ -3136,7 +3136,7 @@
       if(Array.isArray(channels) && channels.length)return Promise.resolve(channels);
     }catch(_){}
     if(svLiveMatchChannelsPromise)return svLiveMatchChannelsPromise;
-    svLiveMatchChannelsPromise = fetch('/api/channels', { cache:'no-store' })
+    svLiveMatchChannelsPromise = fetch(API_BASE + '/api/channels', { cache:'no-store' })
       .then(response=>response.ok ? response.json() : Promise.reject(new Error('channels unavailable')))
       .then(list=>{
         try{ channels = Array.isArray(list) ? list : []; }catch(_){}
@@ -3226,3 +3226,4 @@
     });
   }
 })();
+

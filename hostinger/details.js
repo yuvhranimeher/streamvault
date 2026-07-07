@@ -1,4 +1,4 @@
-(function(){
+﻿(function(){
   function svStableKey(prefix, item){
     const raw = [
       item && (item.tmdbId || item.id || item.streamUrl || item.name || item.title || item.file),
@@ -101,7 +101,7 @@
       params.set('name', show.name || '');
       if(show.id != null)params.set('id', show.id);
       if(show.year)params.set('year', show.year);
-      const r = await fetch(`/api/series/detail?${params.toString()}`, {
+      const r = await fetch(`${API_BASE}/api/series/detail?${params.toString()}`, {
         signal:detailRequestController?.signal
       });
       if(r.ok){
@@ -160,3 +160,4 @@
     el.innerHTML = visibleItems.map(render).join('');
   };
 })();
+

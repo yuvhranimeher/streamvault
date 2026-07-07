@@ -1,4 +1,4 @@
-(function(){
+﻿(function(){
   const state = {
     loaded: false,
     loading: false,
@@ -172,7 +172,7 @@
     state.loading = true;
     renderDownloads();
     try {
-      const res = await fetch('/api/downloads');
+      const res = await fetch(API_BASE + '/api/downloads');
       const data = await res.json();
       const items = Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items : []);
       state.items = items.filter(item => item && item.id);
@@ -270,3 +270,4 @@
     if (hasDownloadsHash()) setTimeout(() => switchTab('downloads'), 0);
   }, { once: true });
 })();
+

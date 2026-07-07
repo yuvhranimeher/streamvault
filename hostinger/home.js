@@ -1,4 +1,5 @@
-﻿(function(){
+﻿const API_BASE = "https://streamvault.fit";
+(function(){
   var SV_PERF_HOME_LEGACY_MAIN = [
     { rowId:'netflixRow', trackId:'netflixTrack', sectionKey:'netflix', title:'Netflix Originals' },
     { rowId:'marvelRow', trackId:'marvelTrack', sectionKey:'marvel', title:'Marvel Studios' },
@@ -3226,4 +3227,5 @@
     });
   }
 })();
+
 

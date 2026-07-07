@@ -1,6 +1,23 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
+<script>
+(function(){
+  var k='sv-clear-hostinger-cache-20260707';
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister();});}).catch(function(){});
+  }
+  if(window.caches){
+    caches.keys().then(function(keys){keys.forEach(function(x){caches.delete(x);});}).catch(function(){});
+  }
+  try{
+    if(!sessionStorage.getItem(k)){
+      sessionStorage.setItem(k,'1');
+      setTimeout(function(){location.reload();},500);
+    }
+  }catch(e){}
+})();
+</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -74,7 +91,7 @@
     });
 })();
 </script>
-<link rel="stylesheet" href="/styles.css?v=20260626-direct-seek-preview1">
+<link rel="stylesheet" href="/styles.css?v=20260707200915">
 </head>
 <body>
 
@@ -203,7 +220,7 @@
     <div class="fifa-headline-strip" id="fifaHeadlineStrip" hidden></div>
 	</section>
 </div>
-<script src="/fifa-fast.js?v=20260620-fifa-light-mobile-live-pill1"></script>
+<script src="/fifa-fast.js?v=20260707200915"></script>
 	
 <div class="content" id="mainSection">
   <div class="row" id="liveHomeRow" style="display:none">
@@ -951,17 +968,17 @@ window.API_BASE = "https://streamvault.fit";
     return nativeFetch(input, init);
   };
 })();
-</script>`r`n<script defer src="/app.js?v=20260707-hostinger-api-absolute1"></script>
-<script defer src="/details.js?v=20260707-detail-restore-v2"></script>
-<script defer src="/home.js?v=20260707-api-global4"></script>
-<script defer src="/downloads.js?v=20260707-api-global4"></script>
-<script defer src="/search.js?v=20260624-playable-only-search1"></script>
-<script defer src="/livetv.js?v=20260621-real-browser-track-loading1"></script>
-<script defer src="/player.js?v=20260621-real-browser-track-loading1"></script>
-<script defer src="/live-fast.js?v=20260701-live-relay-default-final1"></script>
-<script defer src="/boot.js?v=20260621-real-browser-track-loading1"></script>
-<script defer src="/hostinger-home-fix.js?v=20260707-force-home2"></script>
-<script defer src="/hostinger-poster-fix.js?v=20260707-poster-all1"></script>
+</script>`r`n<script defer src="/app.js?v=20260707200915"></script>
+<script defer src="/details.js?v=20260707200915"></script>
+<script defer src="/home.js?v=20260707200915"></script>
+<script defer src="/downloads.js?v=20260707200915"></script>
+<script defer src="/search.js?v=20260707200915"></script>
+<script defer src="/livetv.js?v=20260707200915"></script>
+<script defer src="/player.js?v=20260707200915"></script>
+<script defer src="/live-fast.js?v=20260707200915"></script>
+<script defer src="/boot.js?v=20260707200915"></script>
+<script defer src="/hostinger-home-fix.js?v=20260707200915"></script>
+<script defer src="/hostinger-poster-fix.js?v=20260707200915"></script>
 </body>
 </html>  
 

@@ -1,4 +1,4 @@
-﻿window.API_BASE = "https://streamvault.fit";
+window.API_BASE = "https://streamvault.fit";
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
 const SV_ASSET_VERSION = '20260701-live-relay-default-final1';
@@ -4455,8 +4455,8 @@ function validPlaybackSourceUrl(src){
     return url.pathname.startsWith('/stream/')
       || url.pathname.startsWith('/api/playback/local/')
       || url.pathname === '/api/playback/ftp'
-      || url.pathname === 'https://streamvault.fithttps://streamvault.fit/api/ftp/proxy'
-      || url.pathname === 'https://streamvault.fithttps://streamvault.fit/api/ftp/stream'
+      || url.pathname === '/api/ftp/proxy'
+      || url.pathname === '/api/ftp/stream'
       || url.pathname.startsWith('/api/heavy-compat-hls/')
       || url.pathname.startsWith('/api/mobile-hls/');
   }catch(_){
@@ -4479,7 +4479,7 @@ function ftpProxySrc(url){
   const params=new URLSearchParams();
   params.set('url', url);
   params.set('playbackType', 'media');
-  return 'https://streamvault.fithttps://streamvault.fit/api/ftp/proxy?' + params.toString();
+  return 'https://streamvault.fit/api/ftp/proxy?' + params.toString();
 }
 
 function ftpPlaybackRouteSrc(url, mode='redirect', fallbackReason=''){
@@ -4517,7 +4517,7 @@ function ftpRawSrc(url){
   const params=new URLSearchParams();
   params.set('url', url);
   params.set('playbackType', 'media');
-  return 'https://streamvault.fithttps://streamvault.fit/api/ftp/raw?' + params.toString();
+  return 'https://streamvault.fit/api/ftp/raw?' + params.toString();
 }
 
 function desktopFtpPlaybackSrc(url){
@@ -4535,7 +4535,7 @@ function ftpTranscodeSrc(url, start=0, fallbackReason='', options={}){
   if(options.smooth)params.set('smooth','1');
   if(start > 0)params.set('start', Math.floor(start));
   appendSelectedAudioParams(params);
-  return 'https://streamvault.fithttps://streamvault.fit/api/ftp/stream?' + params.toString();
+  return 'https://streamvault.fit/api/ftp/stream?' + params.toString();
 }
 
 function ftpStreamPlaybackPlan(url, start=0, fallbackReason='stream', options={}){
@@ -4691,7 +4691,7 @@ async function loadFtpTrackOptions(streamUrl){
     const params=new URLSearchParams();
     params.set('url', requestedUrl);
     params.set('playbackType', 'media');
-    const r = await fetch(`${API_BASE}https://streamvault.fit/api/ftp/media-info?${params.toString()}`, {
+    const r = await fetch(`${API_BASE}/api/ftp/media-info?${params.toString()}`, {
       signal: controller.signal,
       cache:'no-store',
       headers:{'Cache-Control':'no-cache'}
@@ -4934,7 +4934,7 @@ async function loadFtpDuration(streamUrl){
     const params=new URLSearchParams();
     params.set('url', streamUrl);
     params.set('playbackType', 'media');
-    const r = await fetch(`${API_BASE}https://streamvault.fit/api/ftp/duration?${params.toString()}`, {
+    const r = await fetch(`${API_BASE}/api/ftp/duration?${params.toString()}`, {
       signal:playbackRequestController?.signal
     });
     if(token !== vid._durationToken || !r.ok)return;

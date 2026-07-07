@@ -4488,7 +4488,7 @@ function ftpPlaybackRouteSrc(url, mode='redirect', fallbackReason=''){
   params.set('playbackType', 'media');
   if(fallbackReason)params.set('fallbackReason', fallbackReason);
   if(mode)params.set('mode', mode);
-  return '/api/playback/ftp?' + params.toString();
+  return 'https://streamvault.fit/api/playback/ftp?' + params.toString();
 }
 
 function localFtpPlaybackPlan(url, options={}){

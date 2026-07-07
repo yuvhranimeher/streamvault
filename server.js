@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const fs      = require('fs');
 const path    = require('path');
 const https   = require('https');
@@ -11,7 +11,40 @@ const tracker         = require('./middleware/tracker');
 const dashboardRoutes = require('./routes/dashboard');
 const { createInfraTelemetry } = require('./infra-telemetry');
 
-const app  = express();
+const app = express();
+app.options('/api/ftp/media-info', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,HEAD,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Range, Authorization');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
+  return res.status(204).end();
+});
+/* EMERGENCY_HOSTINGER_CORS */
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,HEAD,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Range, Authorization");
+  res.setHeader("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges");
+  if (req.method === "OPTIONS") return res.status(204).end();
+  next();
+});
+
+app.use((req, res, next) => {
+  const allowed = [
+    "https://streamvault.fit",
+    "https://mediumseagreen-butterfly-834518.hostingersite.com"
+  ];
+  const origin = req.headers.origin;
+  if (allowed.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+  }
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,Range");
+  if (req.method === "OPTIONS") return res.status(204).end();
+  next();
+});
+
 const PORT = 3000;
 const infraTelemetry = createInfraTelemetry({
   app,
@@ -21,7 +54,7 @@ const infraTelemetry = createInfraTelemetry({
 const FFMPEG_BIN = process.env.FFMPEG_BIN || process.env.FFMPEG_PATH || 'ffmpeg';
 const FFPROBE_BIN = process.env.FFPROBE_BIN || process.env.FFPROBE_PATH || 'ffprobe';
 
-// ── Paths ─────────────────────────────────────────────────────────────────────
+// â”€â”€ Paths â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const MEDIA_ROOT   = 'C:\\Users\\Mac Mini\\Desktop\\Website Host\\Streaming_Website\\streamvault';
 const MOVIES_DIR   = 'C:\\Users\\Mac Mini\\Desktop\\Website Host\\Streaming_Website\\streamvault\\movies';
 const SERIES_DIR   = 'C:\\Users\\Mac Mini\\Desktop\\Website Host\\Streaming_Website\\streamvault\\series';
@@ -78,7 +111,7 @@ let activeMediaFfmpegStreams = 0;
 const COMPAT_VIDEO_PTS_FILTER = 'setpts=PTS-STARTPTS';
 const COMPAT_AUDIO_PTS_FILTER = 'asetpts=PTS-STARTPTS,aresample=async=1';
 
-// ── FFmpeg helper for extracting media info ──────────────────────────────────
+// â”€â”€ FFmpeg helper for extracting media info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function streamStartSeconds(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
@@ -427,7 +460,7 @@ function getCachedDurationOnlyMediaInfo(filePath) {
   return promise;
 }
 
-// ── iPhone/iOS Detection & Compatibility Check ────────────────────────────────
+// â”€â”€ iPhone/iOS Detection & Compatibility Check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function isAppleDevice(userAgent) {
   const ua = userAgent || '';
   if (/Chrome|CriOS|FxiOS|Firefox|Edg\/|EdgA|OPR|OPiOS/i.test(ua)) return false;
@@ -438,13 +471,13 @@ function needsTranscode(mediaInfo, userAgent) {
   const videoCodec = (mediaInfo.videoCodec || '').toLowerCase();
   const container = (mediaInfo.container || '').toLowerCase();
 
-  // Codecs that are almost never hardware‑decoded in desktop browsers
+  // Codecs that are almost never hardwareâ€‘decoded in desktop browsers
   const permaBadCodecs = ['hevc', 'h265', 'vp9', 'vp8', 'av1', 'vc1'];
   // Containers that Chrome often struggles with if not MP4
   const badContainers = ['matroska', 'webm', 'avi', 'flv', 'mpegts'];
 
   if (!isAppleDevice(userAgent)) {
-    // Transcode if the codec is known to be problematic, OR the container isn’t MP4/MOV
+    // Transcode if the codec is known to be problematic, OR the container isnâ€™t MP4/MOV
     return permaBadCodecs.some(c => videoCodec.includes(c)) ||
            badContainers.some(c => container.includes(c));
   }
@@ -461,7 +494,7 @@ function isMobilePlaybackRequest(req) {
 
 const isMobile = req => /Mobi|Android|iPhone|iPad/i.test(String(req.headers['user-agent'] || ''));
 
-// ── TMDB API Key ─────────────────────────────────────────────────────────────
+// â”€â”€ TMDB API Key â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const TMDB_TOKEN  = 'eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiIzMzBlNWEzOTMzNzcxYjNkZjgxNTg5NzQ1N2E5MGFjOCIsIm5iZiI6MTc3NTk3MDAxNy40NTcsInN1YiI6IjY5ZGIyNmUxNGVjZGE5YWU1MzAyNzFjZSIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.QiajIRSY3s_J4sRSbnT7Jl70XK3zpROtMn8Pumzyn_M';
 const TMDB_IMG    = 'https://image.tmdb.org/t/p';
 const OMDB_KEY    = process.env.OMDB_API_KEY || process.env.OMDB_KEY || '';
@@ -476,7 +509,7 @@ const TMDB_GENRES = {
   10765:'Sci-Fi & Fantasy',10766:'Soap',10767:'Talk',10768:'War & Politics'
 };
 
-// ── Extension sets ────────────────────────────────────────────────────────────
+// â”€â”€ Extension sets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const VIDEO_EXTS = ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.wmv', '.m4v', '.mpg', '.mpeg', '.3gp'];
 const SUB_EXTS   = ['.srt', '.vtt', '.ass', '.ssa'];
 const MIME = {
@@ -495,7 +528,7 @@ const MIME = {
   '.3gp':  'video/3gpp',
 };
 
-// ── Quality tiers ─────────────────────────────────────────────────────────────
+// â”€â”€ Quality tiers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const QUALITY_TIERS = {
   auto:    null,
   '1080p': 5_000_000,
@@ -504,13 +537,13 @@ const QUALITY_TIERS = {
   '360p':    500_000,
 };
 
-// ── Persistent caches ─────────────────────────────────────────────────────────
+// â”€â”€ Persistent caches â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let posterCache  = {};
 let watchHistory = {};
 let fileIndex    = [];
 let channels     = [];
 
-// ── Pre-built in-memory lists (instant API responses) ─────────────────────────
+// â”€â”€ Pre-built in-memory lists (instant API responses) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let _movieList   = null;   // built synchronously at startup
 let _seriesList  = null;   // built synchronously at startup
 let _enrichBusy  = false;  // background TMDB enrichment flag
@@ -523,19 +556,19 @@ posterCache  = loadJSON(CACHE_FILE,    {});
 watchHistory = loadJSON(HISTORY_FILE,  {});
 channels     = loadJSON(CHANNELS_FILE, []);
 
-// ── FTP Catalog ───────────────────────────────────────────────────────────────
+// â”€â”€ FTP Catalog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let ftpCatalog = { movies: [], series: [] };
 try {
   const catalogPath = path.join(__dirname, 'catalog.json');
   if (fs.existsSync(catalogPath)) {
     ftpCatalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
-    console.log(`📡 FTP Catalog loaded: ${ftpCatalog.movies.length} movies, ${ftpCatalog.series.length} series`);
+    console.log(`ðŸ“¡ FTP Catalog loaded: ${ftpCatalog.movies.length} movies, ${ftpCatalog.series.length} series`);
   }
-} catch (e) { console.warn('⚠ Could not load catalog.json:', e.message); }
+} catch (e) { console.warn('âš  Could not load catalog.json:', e.message); }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // AGGRESSIVE CARTOON / ANIME FILTER
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function isCartoonOrAnime(item) {
   if (!item) return false;
   
@@ -602,7 +635,7 @@ function getCachedSeries() {
 
 
 
-// ── Massive clean catalog layer ───────────────────────────────────────────────
+// â”€â”€ Massive clean catalog layer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // This is backend-only and is enabled only for browse/search endpoints that ask
 // for it. Homepage/home-feed/software APIs stay untouched.
 let _massiveCatalogLoaded = false;
@@ -623,7 +656,7 @@ function svCleanMediaTitle(value) {
     .pop() || '';
   raw = raw
     .replace(/\.(mp4|mkv|avi|mov|webm|m3u8|ts|flv|wmv|mpg|mpeg)$/i, '')
-    .replace(/^\s*\d{1,3}\s*[-–—.]\s*/g, ' ')
+    .replace(/^\s*\d{1,3}\s*[-â€“â€”.]\s*/g, ' ')
     .replace(/\b(480p|576p|720p|1080p|1440p|2160p|4k|8k|uhd|hdr|hdr10|dv|dolby[ ._-]*vision|imax|web[- ]?dl|webrip|web|bluray|brrip|brip|dvdrip|hdrip|hdtv|hdcam|hdtc|camrip|amzn|nf|dsnp|zee5|hotstar|hulu|max|itunes|x264|x265|h264|h265|hevc|avc|aac|ac3|eac3|ddp?|ddp?5[ ._-]*1|dd5[ ._-]*1|dts|truehd|atmos|10bit|8bit|yts|rarbg|galaxyrg|mkvcage|mkvhub|hdhub4u|downloadhub|cinevood|msmod|psa|esub|msubs|subbed|dubbed|dual audio|multi audio|hindi|english|bengali|bangla|tamil|telugu|malayalam|korean|japanese|chinese|org|uncut|unrated|proper|repack|remux|reencoded|re encode|encoded|converted|sample|trailer|e[ ._-]*box|hsbs|half[ ._-]*sbs|3d|6ch|2ch|5[ ._-]*1ch|7[ ._-]*1)\b/ig, ' ')
     .replace(/\b\d+(?:\.\d+)?\s*(?:mb|gb)\b/ig, ' ')
     .replace(/[\[\](){}]/g, ' ')
@@ -642,7 +675,7 @@ function svCanonicalTitleForSearch(value, year = '') {
     text = text.replace(new RegExp('\\b' + y + '\\b.*$', 'i'), ' ');
   }
   text = text
-    .replace(/^\s*\d{1,3}\s*[-–—.]\s*/g, ' ')
+    .replace(/^\s*\d{1,3}\s*[-â€“â€”.]\s*/g, ' ')
     .replace(/\b(?:remastered|extended|unrated|directors?|director'?s?|cut|final|theatrical|imax|open[ ._-]*matte|proper|repack|rerip|remux|internal|limited|complete|collection|converted|reencoded|encoded|recoded|recode|free)\b/ig, ' ')
     .replace(/\b(?:480p|576p|720p|1080p|1440p|2160p|4k|8k|uhd|hdr|hdr10|dv|web|webdl|web-dl|webrip|bluray|brrip|brip|dvdrip|hdrip|hdtv|hdcam|hdtc|camrip|scr|x264|x265|h264|h265|hevc|avc|xvid|divx|aac|ac3|eac3|ddp?|dts|truehd|atmos|10bit|8bit|60fps|30fps|23fps|3d|hsbs|sbs|half[ ._-]*sbs|6ch|2ch|5[ ._-]*1|7[ ._-]*1|dd5|ddp5|bd5|ddn|sdr|hd|us)\b/ig, ' ')
     .replace(/\b(?:yts|yify|rarbg|galaxyrg|mkvcage|mkvhub|mkvc|mkv|hdhub4u|hdhub|downloadhub|cinevood|msmod|psa|tigole|ntg|evo|ctrlhd|shaanig|shaang|mx|ganool|pahe|rmteam|ettv|etrg|sparks|spray|sprite|hon3y|kmhd|torrenta2z)\b/ig, ' ')
@@ -650,7 +683,7 @@ function svCanonicalTitleForSearch(value, year = '') {
     .replace(/\b(?:esub|msub|msubs|subs?|subbed|dubbed|dual|multi|audio|org|uncut|uncensored|hdr10plus)\b/ig, ' ')
     .replace(/\b(?:hindi|english|bengali|bangla|tamil|telugu|malayalam|kannada|punjabi|korean|japanese|chinese|french|spanish|russian|turkish|arabic)\b/ig, ' ')
     .replace(/\b\d+(?:\.\d+)?\s*(?:mb|gb)\b/ig, ' ')
-    .replace(/[�]+/g, ' ')
+    .replace(/[ï¿½]+/g, ' ')
     .replace(/[^a-zA-Z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -664,8 +697,8 @@ function svIsNoisyMassiveTitle(title, source='') {
   const raw = String(source || '');
   const norm = svNormalizeSearchText(text);
   if (!norm || norm.length < 3) return true;
-  if (/\uFFFD|�/.test(text) || /\uFFFD|�/.test(raw)) return true;
-  if (/\bidx\b|\bidx\s*m\b|�|���/i.test(text) || /\bidx\b|\bidx\s*m\b|�|���/i.test(raw)) return true;
+  if (/\uFFFD|ï¿½/.test(text) || /\uFFFD|ï¿½/.test(raw)) return true;
+  if (/\bidx\b|\bidx\s*m\b|ï¿½|ï¿½ï¿½ï¿½/i.test(text) || /\bidx\b|\bidx\s*m\b|ï¿½|ï¿½ï¿½ï¿½/i.test(raw)) return true;
   if (/^[0-9\s]+$/.test(norm)) return true;
   if (/^[a-f0-9]{10,}/i.test(norm.replace(/\s+/g, ''))) return true;
   const tokens = norm.split(' ').filter(Boolean);
@@ -711,7 +744,7 @@ function loadMassiveCatalog() {
   if (_massiveCatalogLoaded) return;
   _massiveCatalogLoaded = true;
   if (!fs.existsSync(MASSIVE_CATALOG_FILE)) {
-    console.warn('⚠ Massive catalog not found:', MASSIVE_CATALOG_FILE);
+    console.warn('âš  Massive catalog not found:', MASSIVE_CATALOG_FILE);
     return;
   }
   try {
@@ -788,9 +821,9 @@ function loadMassiveCatalog() {
       for (const eps of Object.values(show.seasons)) eps.sort((a, b) => a.episode - b.episode);
       return show;
     });
-    console.log(`📚 Massive clean catalog loaded: ${_massiveMovies.length} movies, ${_massiveSeries.length} series`);
+    console.log(`ðŸ“š Massive clean catalog loaded: ${_massiveMovies.length} movies, ${_massiveSeries.length} series`);
   } catch (e) {
-    console.warn('⚠ Could not load massive clean catalog:', e.message);
+    console.warn('âš  Could not load massive clean catalog:', e.message);
     _massiveMovies = [];
     _massiveSeries = [];
   }
@@ -833,7 +866,7 @@ function svBuildPosterBridge() {
   try { (_seriesList || buildSeriesListSync()).forEach(s => add(s, 'series')); } catch {}
   try { getCachedSeries().forEach(s => add({ ...s, name:s.title || s.name }, 'series')); } catch {}
   _svPosterBridge = map;
-  console.log(`🖼️ Search poster bridge ready: ${map.size.toLocaleString()} keys`);
+  console.log(`ðŸ–¼ï¸ Search poster bridge ready: ${map.size.toLocaleString()} keys`);
   return map;
 }
 function svHydrateMassiveSearchItem(item, kind='movie') {
@@ -898,7 +931,7 @@ function svNormalizeSearchText(value) {
   return svSafeDecode(value || '')
     .toLowerCase()
     .replace(/&/g, ' and ')
-    .replace(/['’`]/g, '')
+    .replace(/['â€™`]/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -1084,7 +1117,7 @@ function svBuildFastSearchIndex() {
     createdAt: Date.now()
   };
   _svFastSearchIndexStamp = `${entries.length}:${_massiveMovies.length}:${_massiveSeries.length}`;
-  console.log(`⚡ Fast search index ready: ${entries.length.toLocaleString()} items, ${tokenSeen.size.toLocaleString()} tokens`);
+  console.log(`âš¡ Fast search index ready: ${entries.length.toLocaleString()} items, ${tokenSeen.size.toLocaleString()} tokens`);
   return _svFastSearchIndex;
 }
 
@@ -1513,7 +1546,7 @@ function svBuildBootSearchIndex() {
   };
   _svBootSearchStamp = svBootSearchStamp();
   svWriteBootSearchIndexFile(_svBootSearchIndex);
-  console.log(`⚡ Boot search index ready: ${capped.length.toLocaleString()} of ${items.length.toLocaleString()} titles`);
+  console.log(`âš¡ Boot search index ready: ${capped.length.toLocaleString()} of ${items.length.toLocaleString()} titles`);
   return _svBootSearchIndex;
 }
 
@@ -2604,7 +2637,7 @@ async function sendRemoteSidecarSubtitleAsVtt(req, res, srcUrl, sidecarUrl) {
 function saveCache()   { try { fs.writeFileSync(CACHE_FILE,   JSON.stringify(posterCache,  null, 2)); } catch {} }
 function saveHistory() { try { fs.writeFileSync(HISTORY_FILE, JSON.stringify(watchHistory, null, 2)); } catch {} }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function cleanTitle(filename) {
   let name = path.basename(filename, path.extname(filename));
   name = name.replace(/[\._]+/g, ' ').trim();
@@ -2674,7 +2707,7 @@ function parseSeriesFilename(filename) {
   return null;
 }
 
-// ── TMDB rate-limited queue ───────────────────────────────────────────────────
+// â”€â”€ TMDB rate-limited queue â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const tmdbQueue = [];
 let tmdbBusy = false;
 
@@ -2769,7 +2802,7 @@ async function getPosterInfo(filename, type = '') {
   return info;
 }
 
-// ── Subtitle discovery ────────────────────────────────────────────────────────
+// â”€â”€ Subtitle discovery â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function normalizeSubtitleMatchName(value) {
   return String(value || '')
     .replace(/\.[a-z0-9]{2,5}$/i, '')
@@ -2849,23 +2882,23 @@ function findSubtitleTracks(dir, videoFile) {
   return tracks;
 }
 
-// ── Build file index ──────────────────────────────────────────────────────────
+// â”€â”€ Build file index â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function buildFileIndex() {
   fileIndex = [];
   let movieFiles = [];
-  try { movieFiles = fs.readdirSync(MOVIES_DIR).filter(f => VIDEO_EXTS.includes(path.extname(f).toLowerCase())); } catch (e) { console.warn('⚠ Cannot read MOVIES_DIR:', e.message); }
+  try { movieFiles = fs.readdirSync(MOVIES_DIR).filter(f => VIDEO_EXTS.includes(path.extname(f).toLowerCase())); } catch (e) { console.warn('âš  Cannot read MOVIES_DIR:', e.message); }
   for (const f of movieFiles) fileIndex.push({ dir: MOVIES_DIR, file: f, type: 'movie' });
-  console.log(`📁 Indexed ${movieFiles.length} movie files`);
+  console.log(`ðŸ“ Indexed ${movieFiles.length} movie files`);
 
   let seriesFiles = [];
-  try { seriesFiles = fs.readdirSync(SERIES_DIR).filter(f => VIDEO_EXTS.includes(path.extname(f).toLowerCase())); } catch (e) { console.warn('⚠ Cannot read SERIES_DIR:', e.message); }
+  try { seriesFiles = fs.readdirSync(SERIES_DIR).filter(f => VIDEO_EXTS.includes(path.extname(f).toLowerCase())); } catch (e) { console.warn('âš  Cannot read SERIES_DIR:', e.message); }
   for (const f of seriesFiles) fileIndex.push({ dir: SERIES_DIR, file: f, type: 'episode' });
-  console.log(`📺 Indexed ${seriesFiles.length} series episode files`);
-  console.log(`✅ Total stream IDs: ${fileIndex.length}`);
+  console.log(`ðŸ“º Indexed ${seriesFiles.length} series episode files`);
+  console.log(`âœ… Total stream IDs: ${fileIndex.length}`);
 }
 function entryPath(entry) { return path.join(entry.dir, entry.file); }
 
-// ── Build instant movie list (sync — reads only from posterCache) ──────────────
+// â”€â”€ Build instant movie list (sync â€” reads only from posterCache) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function buildMovieListSync() {
   const list = [];
   for (let id = 0; id < fileIndex.length; id++) {
@@ -2895,7 +2928,7 @@ function buildMovieListSync() {
   return list;
 }
 
-// ── Build instant series list (sync — reads only from posterCache) ────────────
+// â”€â”€ Build instant series list (sync â€” reads only from posterCache) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function buildSeriesListSync() {
   const showMap = {};
   for (let id = 0; id < fileIndex.length; id++) {
@@ -2934,20 +2967,20 @@ function buildSeriesListSync() {
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-// ── Called once at startup — builds both lists in milliseconds ────────────────
+// â”€â”€ Called once at startup â€” builds both lists in milliseconds â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function buildInstantLists() {
   _movieList  = buildMovieListSync();
   _seriesList = buildSeriesListSync();
-  console.log(`⚡ Instant lists ready: ${_movieList.length} movies, ${_seriesList.length} series (${ 
+  console.log(`âš¡ Instant lists ready: ${_movieList.length} movies, ${_seriesList.length} series (${ 
     _movieList.filter(m => m.poster).length } movies with posters, ${ 
     _seriesList.filter(s => s.poster).length } series with posters)`);
 }
 
-// ── Background TMDB enrichment — runs after startup, fills missing posters ────
+// â”€â”€ Background TMDB enrichment â€” runs after startup, fills missing posters â”€â”€â”€â”€
 async function runBackgroundEnrichment() {
   if (_enrichBusy) return;
   _enrichBusy = true;
-  console.log('🔄 Background enrichment started...');
+  console.log('ðŸ”„ Background enrichment started...');
 
   for (const item of _movieList) {
     if (item.poster) continue;
@@ -2989,12 +3022,12 @@ async function runBackgroundEnrichment() {
   }
 
   _enrichBusy = false;
-  console.log('✅ Background enrichment complete');
+  console.log('âœ… Background enrichment complete');
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // APPLY CARTOON/ANIME FILTER TO ALL DATA (local + FTP) WITH LOGGING
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function filterCartoonsAndAnime() {
   const beforeMovies = _movieList.length;
   const beforeSeries = _seriesList.length;
@@ -3004,20 +3037,26 @@ function filterCartoonsAndAnime() {
   _seriesList = _seriesList.filter(s => !isCartoonOrAnime(s));
   
   // Log removed items
-  console.log(`🧹 Removed ${beforeMovies - _movieList.length} cartoon movies, ${beforeSeries - _seriesList.length} cartoon series.`);
+  console.log(`ðŸ§¹ Removed ${beforeMovies - _movieList.length} cartoon movies, ${beforeSeries - _seriesList.length} cartoon series.`);
   
   // Also filter FTP catalog data used in API responses
   _dedupedMovies = null;  // reset cache so next getCachedMovies() re-filters
   _dedupedSeries = null;
   
-  console.log(`🎬 After cartoon filter: ${_movieList.length} movies, ${_seriesList.length} series remain`);
+  console.log(`ðŸŽ¬ After cartoon filter: ${_movieList.length} movies, ${_seriesList.length} series remain`);
 }
 
-// ── Middleware ────────────────────────────────────────────────────────────────
+// â”€â”€ Middleware â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.use(express.json({ limit: '1mb' }));
 app.use(tracker.requestMiddleware);
 
-app.options('*', (req, res) => res.sendStatus(204));
+app.options('*', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,HEAD,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Range, Authorization');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
+  return res.status(204).end();
+});
 app.use((_, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
@@ -3032,7 +3071,7 @@ app.use(infraTelemetry.requestMiddleware);
 app.use('/api/dashboard', dashboardRoutes);
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ── Poster proxy/cache route used by app.js svOptimizeImageUrl() ──────────────
+// â”€â”€ Poster proxy/cache route used by app.js svOptimizeImageUrl() â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Keeps poster loading working even when the frontend requests /poster-cache?url=...
 app.get('/poster-cache', (req, res) => {
   const target = String(req.query.url || '').trim();
@@ -3070,20 +3109,20 @@ app.get('/poster-cache', (req, res) => {
 });
 
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // API: CHANNELS
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 app.get('/api/channels', (req, res) => {
   res.json(channels);
 });
 
 app.post('/api/channels/reload', (req, res) => {
   channels = loadJSON(CHANNELS_FILE, []);
-  console.log(`🔄 Reloaded ${channels.length} channels`);
+  console.log(`ðŸ”„ Reloaded ${channels.length} channels`);
   res.json({ ok: true, count: channels.length });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // LIVE TV PROXY
 // Robust HLS proxy: rewrites segments, nested playlists, keys, and maps.
 
@@ -3500,7 +3539,7 @@ const FIFA_TEAM_COUNTRY_CODES = {
   tunisia: 'TN',
   turkiye: 'TR',
   turkey: 'TR',
-  'türkiye': 'TR',
+  'tÃ¼rkiye': 'TR',
   'united states': 'US',
   unitedstates: 'US',
   usa: 'US',
@@ -5507,7 +5546,7 @@ app.get('/api/live-test/:channelId', async (req, res) => {
 });
 
 // API: MOVIES (with cartoon filter applied)
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 const mobileHlsSessions = new Map();
 const heavyCompatHlsSessions = new Map();
 
@@ -6063,7 +6102,7 @@ function normalizeDetailTitle(title, fallbackYear = '') {
     .replace(/\s+/g, ' ')
     .trim();
   let year = String(fallbackYear || '').match(/(?:19|20)\d{2}/)?.[0] || '';
-  const parenYear = raw.match(/[\(\[\{]\s*((?:19|20)\d{2})\s*(?:[–-]\s*)?[\)\]\}]?/);
+  const parenYear = raw.match(/[\(\[\{]\s*((?:19|20)\d{2})\s*(?:[â€“-]\s*)?[\)\]\}]?/);
   if (parenYear) {
     if (!year) year = parenYear[1];
     raw = raw.replace(parenYear[0], ' ');
@@ -7144,7 +7183,7 @@ async function streamFfmpegMp4(req, res, options) {
 }
 
 
-// ── Homepage section APIs restored/protected ─────────────────────────────────
+// â”€â”€ Homepage section APIs restored/protected â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // These use ONLY the normal catalog. Massive 500k catalog is never used here.
 const SV_HOME_SECTIONS = [
   ['netflixRow','netflix','Netflix Originals'],
@@ -7167,9 +7206,9 @@ const SV_HOME_SECTIONS = [
   ['indieGemsRow','indieGems','Indie Gems'], ['hiddenMasterpiecesRow','hiddenMasterpieces','Hidden Masterpieces'],
   ['liveConcertsRow','liveConcerts','Live Concerts'], ['documentaryRow','documentaryVault','Documentary Vault'],
   ['ghibliRow','ghibli','Studio Ghibli'], ['romanticRow','romanceMidnight','Romance After Midnight'], ['comingSoonRow','comingSoon','Coming Soon'],
-  ['dramaRow','drama','Drama & Emotion'], ['spanishRow','spanish','Spanish & Latino'], ['highRatedRow','topRated','⭐ Top Rated (8+)'],
+  ['dramaRow','drama','Drama & Emotion'], ['spanishRow','spanish','Spanish & Latino'], ['highRatedRow','topRated','â­ Top Rated (8+)'],
   ['allRow','allMovies','All Movies'], ['recentlyAddedRow','recentlyAdded','Recently Added'], ['mostWatchedTodayRow','mostWatchedToday','Most Watched Today'],
-  ['trendingRow','trending','🔥 Trending Now'], ['seriesRow','series','Series'], ['newRow','new','New to StreamVault']
+  ['trendingRow','trending','ðŸ”¥ Trending Now'], ['seriesRow','series','Series'], ['newRow','new','New to StreamVault']
 ];
 
 const SV_PREBUILT_HOME_FEED_FILE = path.join(__dirname, 'home-feed.json');
@@ -7832,9 +7871,9 @@ app.get('/api/movies/keywords', (req, res) => {
   }));
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // API: SERIES (with cartoon filter applied)
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 app.get('/api/series', (req, res) => {
   try {
     const localSeries = _seriesList || buildSeriesListSync();
@@ -7903,10 +7942,10 @@ app.get('/api/series', (req, res) => {
   } catch (e) { console.error('/api/series error:', e.message); res.json([]); }
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// TMDB — episode data (titles, thumbnails, overviews)
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// TMDB â€” episode data (titles, thumbnails, overviews)
 // GET /api/episode-titles?show=Breaking+Bad&season=1
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 const EP_CACHE_FILE = path.join(__dirname, 'episode-title-cache.json');
 let epTitleCache = {};
 try { if (fs.existsSync(EP_CACHE_FILE)) epTitleCache = JSON.parse(fs.readFileSync(EP_CACHE_FILE, 'utf8')); } catch {}
@@ -8677,10 +8716,10 @@ app.get('/api/episode-titles', async (req, res) => {
   }
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // API: MEDIA INFO
 // Probed on demand and cached so seek math can use the real source duration.
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 app.get('/api/media-info/:id', async (req, res) => {
   const idx = parseInt(req.params.id, 10);
   const entry = fileIndex[idx];
@@ -8741,7 +8780,7 @@ app.get('/api/media-info/:id', async (req, res) => {
   }
 });
 
-// ── Duration info ────
+// â”€â”€ Duration info â”€â”€â”€â”€
 app.get('/api/duration/:id', async (req, res) => {
   const idx = parseInt(req.params.id, 10);
   const entry = fileIndex[idx];
@@ -8758,7 +8797,7 @@ app.get('/api/duration/:id', async (req, res) => {
   }
 });
 
-// ── Quality info ──────────────────────────────────────────────────────────────
+// â”€â”€ Quality info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get('/api/qualities/:id', (req, res) => {
   const idx = parseInt(req.params.id, 10);
   const entry = fileIndex[idx];
@@ -8776,7 +8815,7 @@ app.get('/api/qualities/:id', (req, res) => {
   res.json({ available: ['auto', '1080p', '720p', '480p', '360p'], native, sizeMB });
 });
 
-// ── Subtitles ─────────────────────────────────────────────────────────────────
+// â”€â”€ Subtitles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get('/api/subtitles/:id', (req, res) => {
   const idx = parseInt(req.params.id, 10);
   const entry = fileIndex[idx];
@@ -8785,7 +8824,7 @@ app.get('/api/subtitles/:id', (req, res) => {
   res.json(tracks);
 });
 
-// ── Watch history ─────────────────────────────────────────────────────────────
+// â”€â”€ Watch history â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get('/api/history', (req, res) => res.json(watchHistory));
 app.post('/api/history', (req, res) => {
   const { id, progress, name, poster, duration } = req.body;
@@ -8803,7 +8842,7 @@ app.delete('/api/history/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// ── Refresh poster ────────────────────────────────────────────────────────────
+// â”€â”€ Refresh poster â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get('/api/refresh-poster/:id', async (req, res) => {
   const idx = parseInt(req.params.id, 10);
   const entry = fileIndex[idx];
@@ -8816,9 +8855,9 @@ app.get('/api/refresh-poster/:id', async (req, res) => {
   else res.json({ error: 'Not found on TMDB' });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // DIRECT STREAM ENDPOINT (NO HLS FOR NOW - FASTEST)
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function localPlaybackPlan(id, req, entry, filePath, duration = 0, audioSelection = null) {
   const requestedMode = req.query.forceHls === '1' ? 'hls' : normalizePlaybackMode(req.query.mode, 'direct');
   const startSec = playbackStartFromReq(req);
@@ -9346,7 +9385,7 @@ app.get('/stream/:id', async (req, res) => {
   }
 });
 
-// Seekable stream for non‑MP4 local files
+// Seekable stream for nonâ€‘MP4 local files
 app.get('/api/stream-seek/:id', async (req, res) => {
   const idx = parseInt(req.params.id, 10);
   const entry = fileIndex[idx];
@@ -9682,9 +9721,9 @@ function transcodeStream(req, res, filePath, mediaInfo, entry) {
   });
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // SUBTITLES
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 app.get('/subtitles/:id/embedded/:streamIdx.vtt', (req, res) => {
   const idx = parseInt(req.params.id, 10);
   const streamIdx = parseInt(req.params.streamIdx, 10);
@@ -9797,9 +9836,9 @@ function assTime(t) {
   return `${h.padStart(2,'0')}:${m.padStart(2,'0')}:${sec.padStart(2,'0')}.${(cs||'0').padEnd(3,'0')}`;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // WATCH PARTY
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 const rooms = {};
 function getRoom(id) {
   if (!rooms[id]) rooms[id] = { clients: new Set(), state: { streamId: null, playing: false, time: 0, updatedAt: Date.now() }, chat: [], createdAt: Date.now() };
@@ -9863,12 +9902,12 @@ function broadcast(room, data) {
   for (const client of room.clients) { try { client.write(msg); } catch { room.clients.delete(client); } }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// FTP STREAM — pure HTTP/HTTPS proxy, no FFmpeg metadata extraction
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// FTP STREAM â€” pure HTTP/HTTPS proxy, no FFmpeg metadata extraction
 // Compatibility: /api/ftp/info and /api/ftp/media-info now validate first
 // Reason: ffprobe on MKV files with multiple audio/subtitle tracks caused
 //         1-2s+ delays on every FTP video start and broke seek bar behaviour.
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function streamRemotePlaybackProxy(req, res, media, matched, srcUrl = media.decodedUrl, redirectsLeft = 5) {
   const headers = {
@@ -10592,7 +10631,7 @@ app.get('/api/ftp/duration', async (req, res) => {
   }
 });
 
-// ── Trending Cache (also filtered) ─────────────────────────────────────────
+// â”€â”€ Trending Cache (also filtered) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let _trendingCache = null, _trendingCacheTime = 0;
 
 app.get('/api/ftp/test', async (req, res) => {
@@ -10650,7 +10689,7 @@ app.get('/api/ftp/test', async (req, res) => {
 
 
 
-// ── Software / downloads API restored safely ─────────────────────────────────
+// â”€â”€ Software / downloads API restored safely â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Isolated from homepage/media/search. It only powers downloads.js and /download/:id.
 const SV_SOFTWARE_CATALOG_PATHS = [
   path.join(__dirname, 'software-catalog.json'),
@@ -10787,13 +10826,13 @@ function svReadSoftwareJsonCatalog() {
   }
   _svSoftwareCache = items;
   _svSoftwareCacheMtime = newestMtime;
-  console.log(`📦 Software catalog loaded: ${items.length} downloads from ${files.length} catalog file(s)`);
+  console.log(`ðŸ“¦ Software catalog loaded: ${items.length} downloads from ${files.length} catalog file(s)`);
   return { items, mtime: newestMtime, source: files.join(', ') };
 }
 
 function svGetSoftwareDownloads() {
   try { return svReadSoftwareJsonCatalog().items; }
-  catch (e) { console.warn('⚠️ Software catalog unavailable:', e.message); return []; }
+  catch (e) { console.warn('âš ï¸ Software catalog unavailable:', e.message); return []; }
 }
 
 app.get('/api/downloads', (req, res) => {
@@ -10866,7 +10905,7 @@ app.get('/api/trending', async (req, res) => {
   } catch(e) { res.json({ movies:[], series:[] }); }
 });
 
-// ── Catch-all & error handler ─────────────────────────────────────────────────
+// â”€â”€ Catch-all & error handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Read-only infrastructure telemetry. These routes intentionally expose no
 // application data, configuration values, secrets, or filesystem paths.
 function requireInfraAccess(req, res, next) {
@@ -10914,12 +10953,12 @@ process.on('unhandledRejection', reason => {
   setImmediate(() => { throw (reason instanceof Error ? reason : new Error(String(reason))); });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // STARTUP
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 buildFileIndex();
-buildInstantLists();                                   // ⚡ instant — sync, ~10ms
-filterCartoonsAndAnime();                              // 🧹 remove cartoons/anime (with logging)
+buildInstantLists();                                   // âš¡ instant â€” sync, ~10ms
+filterCartoonsAndAnime();                              // ðŸ§¹ remove cartoons/anime (with logging)
 svGetBootSearchIndex();                                // instant search boot payload, no massive catalog
 try { svDetailCatalogIndex(); }                        // warm playable recommendations before first detail click
 catch (e) { console.warn('Detail recommendation warmup failed:', e.message); }
@@ -10927,10 +10966,10 @@ if (process.env.SV_SEARCH_WARMUP === '1') {
   const searchWarmupDelay = Math.max(30000, parseInt(process.env.SV_SEARCH_WARMUP_DELAY_MS || '120000', 10) || 120000);
   setTimeout(() => {
     try { svGetFastSearchIndex(); }
-    catch (e) { console.warn('⚠ Search index warmup failed:', e.message); }
+    catch (e) { console.warn('âš  Search index warmup failed:', e.message); }
   }, searchWarmupDelay);
 }
-setTimeout(() => runBackgroundEnrichment(), 60000);    // 🔄 fill missing posters after startup settles
+setTimeout(() => runBackgroundEnrichment(), 60000);    // ðŸ”„ fill missing posters after startup settles
 
 const os = require('os');
 function getLanIP() {
@@ -10943,22 +10982,28 @@ function getLanIP() {
 const server = app.listen(3000, '0.0.0.0', () => {
   const lan = getLanIP();
   const configured = channels.filter(c => c.url).length;
-  console.log(`\n🎬 StreamVault Enhanced → http://0.0.0.0:${PORT}`);
-  console.log(`📱 iPhone/iPad support → http://${lan}:${PORT}`);
-  console.log(`🔄 Auto-transcoding enabled for iOS devices`);
-  console.log(`📁 Movies  : ${MOVIES_DIR}`);
-  console.log(`📺 Series  : ${SERIES_DIR}`);
-  console.log(`📡 Channels: ${channels.length} loaded, ${configured} with URLs configured`);
-  if (configured === 0) console.log(`   ⚠️  Open channels.json and add .m3u8 URLs from the ISP portal (F12 → Network tab)`);
-  console.log(TMDB_TOKEN ? '✅ TMDB enabled (HD posters + backdrops)' : '⚠️  TMDB token missing');
-  console.log(`📡 Stream IDs: 0–${fileIndex.length - 1}`);
-  console.log(`\n📲 Using DIRECT STREAMING (fastest playback, no HLS delay)`);
-  console.log(`✨ Seeking, pausing, and all controls work instantly\n`);
-  console.log(`🧹 Cartoon/Anime filter active — only real movies & series are shown`);
-  console.log('ðŸ“¡ Infra telemetry active at /infra/live');
+  console.log(`\nðŸŽ¬ StreamVault Enhanced â†’ http://0.0.0.0:${PORT}`);
+  console.log(`ðŸ“± iPhone/iPad support â†’ http://${lan}:${PORT}`);
+  console.log(`ðŸ”„ Auto-transcoding enabled for iOS devices`);
+  console.log(`ðŸ“ Movies  : ${MOVIES_DIR}`);
+  console.log(`ðŸ“º Series  : ${SERIES_DIR}`);
+  console.log(`ðŸ“¡ Channels: ${channels.length} loaded, ${configured} with URLs configured`);
+  if (configured === 0) console.log(`   âš ï¸  Open channels.json and add .m3u8 URLs from the ISP portal (F12 â†’ Network tab)`);
+  console.log(TMDB_TOKEN ? 'âœ… TMDB enabled (HD posters + backdrops)' : 'âš ï¸  TMDB token missing');
+  console.log(`ðŸ“¡ Stream IDs: 0â€“${fileIndex.length - 1}`);
+  console.log(`\nðŸ“² Using DIRECT STREAMING (fastest playback, no HLS delay)`);
+  console.log(`âœ¨ Seeking, pausing, and all controls work instantly\n`);
+  console.log(`ðŸ§¹ Cartoon/Anime filter active â€” only real movies & series are shown`);
+  console.log('Ã°Å¸â€œÂ¡ Infra telemetry active at /infra/live');
   setTimeout(() => svWarmFifaLiveCache('startup'), 750);
   setTimeout(() => {
     svGetFifaNewsPayload().catch(err => svFifaWarn('startup news warmup failed', err));
   }, 2500);
 });
 infraTelemetry.attachWebSocket(server);
+
+
+
+
+
+

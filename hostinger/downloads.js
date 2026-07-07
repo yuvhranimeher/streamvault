@@ -1,4 +1,5 @@
-﻿(function(){
+﻿window.API_BASE = "https://streamvault.fit";
+(function(){
   const state = {
     loaded: false,
     loading: false,
@@ -270,5 +271,6 @@
     if (hasDownloadsHash()) setTimeout(() => switchTab('downloads'), 0);
   }, { once: true });
 })();
+
 
 

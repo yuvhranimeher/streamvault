@@ -1,4 +1,5 @@
-﻿(function(){
+﻿window.API_BASE = "https://streamvault.fit";
+(function(){
   function svStableKey(prefix, item){
     const raw = [
       item && (item.tmdbId || item.id || item.streamUrl || item.name || item.title || item.file),
@@ -160,5 +161,6 @@
     el.innerHTML = visibleItems.map(render).join('');
   };
 })();
+
 
 

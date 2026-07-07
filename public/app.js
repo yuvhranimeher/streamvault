@@ -4284,12 +4284,7 @@ async function showVlcPlaybackNotice(url, title=''){
     return;
   }
   if(!svAssertNoLiveSourceForMedia(streamUrl, {fallbackReason:'browser stream fallback'}))return;
-  if(!isMobilePlaybackClient()){
-    vid._desktopOriginalOnlyFailed = true;
-    document.getElementById('playerSpinner')?.classList.remove('on');
-    showPlayerNotice('Playback fallback could not start in this browser.');
-    return;
-  }
+  
   if(vid._browserStreamFallbackActive)return;
   vid._browserStreamFallbackActive = true;
   document.getElementById('playerSpinner')?.classList.add('on');
@@ -9268,5 +9263,6 @@ function buildRows(){
 
   svApplyHomeOrder();
 }
+
 
 

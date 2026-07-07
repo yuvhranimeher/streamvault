@@ -1,12 +1,16 @@
-const http = require("http");
+const express = require("express");
+const path = require("path");
+
+const app = express();
 
 const PORT = process.env.PORT || 3000;
 
-http.createServer((req, res) => {
-  res.writeHead(200, {
-    "Content-Type": "text/plain"
-  });
-  res.end("Frontend deployment placeholder");
-}).listen(PORT, () => {
-  console.log(`Frontend placeholder running on ${PORT}`);
+app.use(express.static(__dirname));
+
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
+
+app.listen(PORT, () => {
+  console.log(`Frontend running on ${PORT}`);
 });

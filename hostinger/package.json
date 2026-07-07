@@ -1,0 +1,11 @@
+{
+  "name": "streamvault-frontend",
+  "version": "1.0.0",
+  "main": "frontend-server.js",
+  "scripts": {
+    "start": "node frontend-server.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}

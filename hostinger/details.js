@@ -165,3 +165,131 @@
 
 
 
+
+/* HOSTINGER DETAIL RESTORE V2 */
+(function(){
+  window.API_BASE = window.API_BASE || "https://streamvault.fit";
+
+  function norm(v){
+    return String(v || "")
+      .toLowerCase()
+      .replace(/\b(tv series|series|dual audio|multi audio|hindi|english|1080p|720p|480p|web[- ]?dl|webrip|bluray|x264|x265|hevc|aac|esub|msubs)\b/g," ")
+      .replace(/\((?:19|20)\d{2}[^\)]*\)/g," ")
+      .replace(/\[[^\]]*\]/g," ")
+      .replace(/[^\w]+/g," ")
+      .replace(/\s+/g," ")
+      .trim();
+  }
+
+  function hasEpisodes(s){
+    return !!(s && s.seasons && Object.values(s.seasons).some(eps=>Array.isArray(eps) && eps.length));
+  }
+
+  function pageMode(){
+    document.body.classList.add("sv-detail-page-mode");
+    window.scrollTo(0,0);
+  }
+
+  function exitPageMode(){
+    document.body.classList.remove("sv-detail-page-mode");
+  }
+
+  function injectCss(){
+    if(document.getElementById("sv-detail-page-css")) return;
+    const st=document.createElement("style");
+    st.id="sv-detail-page-css";
+    st.textContent=`
+      body.sv-detail-page-mode{overflow:hidden!important}
+      body.sv-detail-page-mode #seriesModal.open,
+      body.sv-detail-page-mode #movieDetailModal.open{
+        position:fixed!important; inset:0!important; width:100vw!important; height:100vh!important;
+        max-width:none!important; max-height:none!important; margin:0!important; border-radius:0!important;
+        background:#000!important; z-index:999999!important; overflow-y:auto!important;
+      }
+      body.sv-detail-page-mode .series-modal-inner,
+      body.sv-detail-page-mode .detail-body{max-width:1180px!important;margin:0 auto!important}
+      body.sv-detail-page-mode .sm-hero,
+      body.sv-detail-page-mode .detail-hero{min-height:560px!important}
+    `;
+    document.head.appendChild(st);
+  }
+
+  async function fetchFullSeries(show){
+    if(hasEpisodes(show)) return show;
+
+    const target = norm(show.name || show.title || show.file || "");
+    if(!target) return show;
+
+    const urls = [
+      window.API_BASE + "/api/series?q=" + encodeURIComponent(target) + "&limit=200&massive=1",
+      window.API_BASE + "/api/series"
+    ];
+
+    for(const url of urls){
+      try{
+        const data = await fetch(url,{cache:"no-store"}).then(r=>r.json());
+        const list = Array.isArray(data) ? data : (data.series || []);
+        const exact = list.find(x => norm(x.name || x.title || x.file || "") === target && hasEpisodes(x));
+        if(exact) return exact;
+      }catch(e){}
+    }
+    return show;
+  }
+
+  function install(){
+    if(typeof openSeriesDetail!=="function" || typeof showSeriesDetail!=="function" || typeof openMovieDetail!=="function"){
+      setTimeout(install,100);
+      return;
+    }
+
+    injectCss();
+
+    const nativeShowSeriesDetail = showSeriesDetail;
+    showSeriesDetail = function(show){
+      nativeShowSeriesDetail(show);
+      pageMode();
+    };
+
+    const nativeOpenSeriesDetail = openSeriesDetail;
+    openSeriesDetail = async function(key){
+      try{
+        const show = _seriesDetailRegistry && _seriesDetailRegistry.get(key);
+        if(!show) return nativeOpenSeriesDetail(key);
+
+        const full = await fetchFullSeries(show);
+        _seriesDetailRegistry.set(key, full);
+
+        if(Array.isArray(series)){
+          const i = series.findIndex(s => norm(s.name || s.title || s.file) === norm(full.name || full.title || full.file));
+          if(i >= 0) series[i] = full;
+          else series.push(full);
+        }
+
+        showSeriesDetail(full);
+      }catch(e){
+        console.error("[detail restore v2 failed]", e);
+        nativeOpenSeriesDetail(key);
+      }
+    };
+
+    const nativeOpenMovieDetail = openMovieDetail;
+    openMovieDetail = function(key){
+      nativeOpenMovieDetail(key);
+      pageMode();
+    };
+
+    const nativeCloseSeriesModal = closeSeriesModal;
+    closeSeriesModal = function(){
+      nativeCloseSeriesModal();
+      exitPageMode();
+    };
+
+    const nativeCloseMovieDetail = closeMovieDetail;
+    closeMovieDetail = function(){
+      nativeCloseMovieDetail();
+      exitPageMode();
+    };
+  }
+
+  install();
+})();

@@ -267,7 +267,7 @@
     const readJson = r=>r.ok ? r.json() : Promise.reject(new Error('home feed failed'));
     svHomePayloadPromise = fetch('/home-feed.json?v=20260620-player-tracks-sections-final1', { cache:'force-cache' })
       .then(readJson)
-      .catch(()=>fetch(`https://streamvault.fit(https://streamvault.fit/api/home-feed?limit=${requestedLimit}`).then(readJson))
+      .catch(()=>fetch(`/api/home-feed?limit=${requestedLimit}`).then(readJson))
       .then(data=>{
         data._limit = requestedLimit;
         svHomePayload = data;
@@ -281,7 +281,7 @@
   function svFetchHomeSection(meta, options={}){
     const limit = options.limit || SV_HOME_ROW_LIMIT;
     const summary = options.summary === true ? '1' : '0';
-    return fetch(`https://streamvault.fit(https://streamvault.fit/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=${limit}&summary=${summary}&v=20260620-player-tracks-sections-final1`)
+    return fetch(`/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=${limit}&summary=${summary}&v=20260620-player-tracks-sections-final1`)
       .then(r=>r.ok ? r.json() : Promise.reject(new Error(`section ${meta.sectionKey} failed`)))
       .then(data=>{
         const items = Array.isArray(data?.items) ? data.items : [];
@@ -1422,7 +1422,7 @@
     const id = encodeURIComponent(String(match?.id || ''));
     const params = new URLSearchParams();
     if(match?.leagueSlug)params.set('league', match.leagueSlug);
-    return `https://streamvault.fit(https://streamvault.fit/api/fifa-live/match/${provider}/${id}${params.toString() ? `?${params}` : ''}`;
+    return `/api/fifa-live/match/${provider}/${id}${params.toString() ? `?${params}` : ''}`;
   }
 
   function svLockFifaPageScroll(){
@@ -2682,7 +2682,7 @@
     svFifaLiveState.newsLoading = true;
     if(svFifaLiveState.newsController)svFifaLiveState.newsController.abort();
     svFifaLiveState.newsController = new AbortController();
-    fetch('https://streamvault.fithttps://streamvault.fit(https://streamvault.fit/api/fifa-live/news', {
+    fetch('/api/fifa-live/news', {
       cache:'no-store',
       headers:{ Accept:'application/json' },
       signal:svFifaLiveState.newsController.signal
@@ -2845,7 +2845,7 @@
     const params = new URLSearchParams();
     if(svFifaPayloadHasActiveMatch(svFifaLiveState.payload))params.set('live', '1');
     params.set('_', String(Date.now()));
-    return `https://streamvault.fit(https://streamvault.fit/api/fifa-live?${params.toString()}`;
+    return `/api/fifa-live?${params.toString()}`;
   }
 
   function svFetchFifaLive(background){
@@ -3078,7 +3078,7 @@
     const grid = document.getElementById('sectionGrid');
     grid.innerHTML = '<div class="sv-skeleton-card"></div><div class="sv-skeleton-card"></div><div class="sv-skeleton-card"></div>';
     svSectionState = { key:meta.sectionKey, page:0, pages:1, items:[], rowId };
-    fetch(`https://streamvault.fit(https://streamvault.fit/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=${SV_HOME_ROW_LIMIT}&summary=0`)
+    fetch(`/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=${SV_HOME_ROW_LIMIT}&summary=0`)
       .then(r=>r.json())
       .then(data=>{
         svSectionState.page = data.page || 0;
@@ -3094,7 +3094,7 @@
   window.svLoadMoreSection = function(){
     const nextPage = (svSectionState.page || 0) + 1;
     if(nextPage >= svSectionState.pages)return;
-    fetch(`https://streamvault.fit(https://streamvault.fit/api/section/${encodeURIComponent(svSectionState.key)}?page=${nextPage}&limit=${SV_HOME_ROW_LIMIT}&summary=0`)
+    fetch(`/api/section/${encodeURIComponent(svSectionState.key)}?page=${nextPage}&limit=${SV_HOME_ROW_LIMIT}&summary=0`)
       .then(r=>r.json())
       .then(data=>{
         svSectionState.page = data.page || nextPage;
@@ -3136,7 +3136,7 @@
       if(Array.isArray(channels) && channels.length)return Promise.resolve(channels);
     }catch(_){}
     if(svLiveMatchChannelsPromise)return svLiveMatchChannelsPromise;
-    svLiveMatchChannelsPromise = fetch('https://streamvault.fithttps://streamvault.fit(https://streamvault.fit/api/channels', { cache:'no-store' })
+    svLiveMatchChannelsPromise = fetch('/api/channels', { cache:'no-store' })
       .then(response=>response.ok ? response.json() : Promise.reject(new Error('channels unavailable')))
       .then(list=>{
         try{ channels = Array.isArray(list) ? list : []; }catch(_){}
@@ -3226,5 +3226,3 @@
     });
   }
 })();
-
-

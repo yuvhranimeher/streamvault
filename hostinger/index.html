@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -121,7 +121,7 @@
     </button>
     <div class="search-box">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="rgba(255,255,255,.35)" style="flex-shrink:0"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-      <input type="text" id="searchInputDesktop" placeholder="Search…" oninput="handleSearch(this.value)" autocomplete="off">
+      <input type="text" id="searchInputDesktop" placeholder="Searchâ€¦" oninput="handleSearch(this.value)" autocomplete="off">
       <button class="search-clear-btn" type="button" onclick="clearGlobalSearch()" aria-label="Clear search">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41-6.3-6.29-6.3 6.29-1.41-1.41L9.17 12 2.88 5.71l1.41-1.42 6.3 6.3 6.3-6.3 1.41 1.42z"/></svg>
       </button>
@@ -140,7 +140,7 @@
   <div class="search-overlay-row">
     <div class="search-overlay-box">
       <svg viewBox="0 0 24 24" width="18" height="18" fill="rgba(255,255,255,.3)"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-      <input type="search" id="searchInputMobile" placeholder="Search movies &amp; series…" oninput="handleSearch(this.value)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      <input type="search" id="searchInputMobile" placeholder="Search movies &amp; seriesâ€¦" oninput="handleSearch(this.value)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
       <button class="search-clear-btn" type="button" onclick="clearGlobalSearch()" aria-label="Clear search">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41-6.3-6.29-6.3 6.29-1.41-1.41L9.17 12 2.88 5.71l1.41-1.42 6.3 6.3 6.3-6.3 1.41 1.42z"/></svg>
       </button>
@@ -211,32 +211,32 @@
       <div class="row-title">
         <span class="row-title-live-dot"></span>Watch Live TV
       </div>
-      <div class="row-explore" onclick="switchTab('live')">All Channels →</div>
+      <div class="row-explore" onclick="switchTab('live')">All Channels â†’</div>
     </div>
     <div class="live-home-track" id="liveHomeTrack"></div>
   </div>
   <div class="row" id="netflixRow" style="display:none">
-    <div class="row-header"><div class="row-title"><span class="row-title-accent">🔴</span> Netflix Originals</div></div>
+    <div class="row-header"><div class="row-title"><span class="row-title-accent">ðŸ”´</span> Netflix Originals</div></div>
     <div class="cards-track" id="netflixTrack"></div>
   </div>
   <div class="row" id="marvelRow" style="display:none">
-    <div class="row-header"><div class="row-title"><span class="row-title-accent">⚡</span> Marvel Studios</div></div>
+    <div class="row-header"><div class="row-title"><span class="row-title-accent">âš¡</span> Marvel Studios</div></div>
     <div class="cards-track" id="marvelTrack"></div>
   </div>
   <div class="row" id="dcRow" style="display:none">
-    <div class="row-header"><div class="row-title"><span class="row-title-accent">🦇</span> DC</div></div>
+    <div class="row-header"><div class="row-title"><span class="row-title-accent">ðŸ¦‡</span> DC</div></div>
     <div class="cards-track" id="dcTrack"></div>
   </div>
   <div class="row" id="disneyRow" style="display:none">
-    <div class="row-header"><div class="row-title"><span class="row-title-accent">🏰</span> Disney & Pixar</div></div>
+    <div class="row-header"><div class="row-title"><span class="row-title-accent">ðŸ°</span> Disney & Pixar</div></div>
     <div class="cards-track" id="disneyTrack"></div>
   </div>
   <div class="row" id="trendingRow" style="display:none">
-    <div class="row-header"><div class="row-title">🔥 Trending Now</div></div>
+    <div class="row-header"><div class="row-title">ðŸ”¥ Trending Now</div></div>
     <div class="cards-track" id="trendingTrack"></div>
   </div>
   <div class="row" id="mobilePlayableRow" style="display:none">
-    <div class="row-header"><div class="row-title">📱 Playable on Mobiles</div><div class="row-explore" onclick="switchTab('mobile-mp4')">Browse All →</div></div>
+    <div class="row-header"><div class="row-title">ðŸ“± Playable on Mobiles</div><div class="row-explore" onclick="switchTab('mobile-mp4')">Browse All â†’</div></div>
     <div class="cards-track" id="mobilePlayableTrack"></div>
   </div>
   <div class="row" id="continueRow" style="display:none">
@@ -246,7 +246,7 @@
   <div class="row" id="becauseRow" style="display:none">
     <div class="row-header">
       <div class="row-title because-title">
-        <span style="color:var(--red);font-size:.9rem;flex-shrink:0">✦</span>
+        <span style="color:var(--red);font-size:.9rem;flex-shrink:0">âœ¦</span>
         <span class="because-label">Because you watched</span>
         <span id="becauseTitle" class="because-name"></span>
       </div>
@@ -254,7 +254,7 @@
     <div class="cards-track" id="becauseTrack"></div>
   </div>
   <div class="row" id="seriesRow" style="display:none">
-    <div class="row-header"><div class="row-title">Series</div><div class="row-explore" onclick="switchTab('series')">Browse All →</div></div>
+    <div class="row-header"><div class="row-title">Series</div><div class="row-explore" onclick="switchTab('series')">Browse All â†’</div></div>
     <div class="cards-track" id="seriesTrack"></div>
   </div>
   <div class="row" id="newRow" style="display:none">
@@ -366,19 +366,19 @@
     <div class="cards-track" id="hollywoodTrack"></div>
   </div>
   <div class="row" id="universalRow" style="display:none">
-    <div class="row-header"><div class="row-title"><span class="row-title-accent">🌍</span> Universal Pictures</div></div>
+    <div class="row-header"><div class="row-title"><span class="row-title-accent">ðŸŒ</span> Universal Pictures</div></div>
     <div class="cards-track" id="universalTrack"></div>
   </div>
   <div class="row" id="dreamworksRow" style="display:none">
-    <div class="row-header"><div class="row-title"><span class="row-title-accent">🎣</span> DreamWorks</div></div>
+    <div class="row-header"><div class="row-title"><span class="row-title-accent">ðŸŽ£</span> DreamWorks</div></div>
     <div class="cards-track" id="dreamworksTrack"></div>
   </div>
   <div class="row" id="a24Row" style="display:none">
-    <div class="row-header"><div class="row-title"><span class="row-title-accent">🎬</span> A24</div></div>
+    <div class="row-header"><div class="row-title"><span class="row-title-accent">ðŸŽ¬</span> A24</div></div>
     <div class="cards-track" id="a24Track"></div>
   </div>
   <div class="row" id="paramountRow" style="display:none">
-    <div class="row-header"><div class="row-title"><span class="row-title-accent">⛰️</span> Paramount Pictures</div></div>
+    <div class="row-header"><div class="row-title"><span class="row-title-accent">â›°ï¸</span> Paramount Pictures</div></div>
     <div class="cards-track" id="paramountTrack"></div>
   </div>
   <div class="row" id="tamilRow" style="display:none">
@@ -406,7 +406,7 @@
     <div class="cards-track" id="spanishTrack"></div>
   </div>
   <div class="row" id="highRatedRow" style="display:none">
-    <div class="row-header"><div class="row-title">⭐ Top Rated (8+)</div></div>
+    <div class="row-header"><div class="row-title">â­ Top Rated (8+)</div></div>
     <div class="cards-track" id="highRatedTrack"></div>
   </div>
   <div class="row" id="allRow" style="display:none">
@@ -476,39 +476,39 @@
     </select>
     <select class="movies-select" id="moviesYearFilter" onchange="filterMoviesPage()">
       <option value="">All Years</option>
-      <option value="2024-2025">2024 – 2025</option>
-      <option value="2020-2023">2020 – 2023</option>
-      <option value="2015-2019">2015 – 2019</option>
-      <option value="2010-2014">2010 – 2014</option>
-      <option value="2000-2009">2000 – 2009</option>
-      <option value="1990-1999">1990 – 1999</option>
+      <option value="2024-2025">2024 â€“ 2025</option>
+      <option value="2020-2023">2020 â€“ 2023</option>
+      <option value="2015-2019">2015 â€“ 2019</option>
+      <option value="2010-2014">2010 â€“ 2014</option>
+      <option value="2000-2009">2000 â€“ 2009</option>
+      <option value="1990-1999">1990 â€“ 1999</option>
       <option value="0-1989">Before 1990</option>
     </select>
     <select class="movies-select" id="moviesRatingFilter" onchange="filterMoviesPage()">
       <option value="">Any Rating</option>
-      <option value="8">★ 8.0 and above</option>
-      <option value="7">★ 7.0 and above</option>
-      <option value="6">★ 6.0 and above</option>
-      <option value="5">★ 5.0 and above</option>
+      <option value="8">â˜… 8.0 and above</option>
+      <option value="7">â˜… 7.0 and above</option>
+      <option value="6">â˜… 6.0 and above</option>
+      <option value="5">â˜… 5.0 and above</option>
     </select>
     <select class="movies-select" id="moviesPublisherFilter" onchange="filterMoviesPage()">
       <option value="">All Studios</option>
-      <option value="disney">🏰 Disney / Pixar</option>
-      <option value="marvel">⚡ Marvel Studios</option>
-      <option value="dc">🦇 DC / Warner Bros</option>
-      <option value="universal">🌍 Universal</option>
-      <option value="dreamworks">🎣 DreamWorks</option>
-      <option value="netflix">🔴 Netflix</option>
-      <option value="a24">🎬 A24</option>
-      <option value="paramount">⛰️ Paramount</option>
+      <option value="disney">ðŸ° Disney / Pixar</option>
+      <option value="marvel">âš¡ Marvel Studios</option>
+      <option value="dc">ðŸ¦‡ DC / Warner Bros</option>
+      <option value="universal">ðŸŒ Universal</option>
+      <option value="dreamworks">ðŸŽ£ DreamWorks</option>
+      <option value="netflix">ðŸ”´ Netflix</option>
+      <option value="a24">ðŸŽ¬ A24</option>
+      <option value="paramount">â›°ï¸ Paramount</option>
     </select>
     <select class="movies-select" id="moviesSortFilter" onchange="filterMoviesPage()">
       <option value="default">Sort: Default</option>
       <option value="rating-desc">Sort: Top Rated</option>
       <option value="year-desc">Sort: Newest First</option>
       <option value="year-asc">Sort: Oldest First</option>
-      <option value="az">Sort: A → Z</option>
-      <option value="za">Sort: Z → A</option>
+      <option value="az">Sort: A â†’ Z</option>
+      <option value="za">Sort: Z â†’ A</option>
     </select>
   </div>
   </div>
@@ -570,28 +570,28 @@
     </select>
     <select class="movies-select" id="seriesYearFilter" onchange="filterSeriesPage()">
       <option value="">All Years</option>
-      <option value="2024-2025">2024 – 2025</option>
-      <option value="2020-2023">2020 – 2023</option>
-      <option value="2015-2019">2015 – 2019</option>
-      <option value="2010-2014">2010 – 2014</option>
-      <option value="2000-2009">2000 – 2009</option>
-      <option value="1990-1999">1990 – 1999</option>
+      <option value="2024-2025">2024 â€“ 2025</option>
+      <option value="2020-2023">2020 â€“ 2023</option>
+      <option value="2015-2019">2015 â€“ 2019</option>
+      <option value="2010-2014">2010 â€“ 2014</option>
+      <option value="2000-2009">2000 â€“ 2009</option>
+      <option value="1990-1999">1990 â€“ 1999</option>
       <option value="0-1989">Before 1990</option>
     </select>
     <select class="movies-select" id="seriesRatingFilter" onchange="filterSeriesPage()">
       <option value="">Any Rating</option>
-      <option value="8">★ 8.0 and above</option>
-      <option value="7">★ 7.0 and above</option>
-      <option value="6">★ 6.0 and above</option>
-      <option value="5">★ 5.0 and above</option>
+      <option value="8">â˜… 8.0 and above</option>
+      <option value="7">â˜… 7.0 and above</option>
+      <option value="6">â˜… 6.0 and above</option>
+      <option value="5">â˜… 5.0 and above</option>
     </select>
     <select class="movies-select" id="seriesSortFilter" onchange="filterSeriesPage()">
       <option value="default">Sort: Default</option>
       <option value="rating-desc">Sort: Top Rated</option>
       <option value="year-desc">Sort: Newest First</option>
       <option value="year-asc">Sort: Oldest First</option>
-      <option value="az">Sort: A → Z</option>
-      <option value="za">Sort: Z → A</option>
+      <option value="az">Sort: A â†’ Z</option>
+      <option value="za">Sort: Z â†’ A</option>
     </select>
   </div>
   </div>
@@ -893,7 +893,7 @@
           <div class="player-tool-wrap speed-tool" style="position:relative;flex-shrink:0">
             <button class="ctrl" id="speedBtn" onclick="openDropdown('speedDD',this)" title="Speed">
               <svg viewBox="0 0 24 24"><path d="M20.38 8.57l-1.23 1.85a8 8 0 0 1-.22 7.58H5.07A8 8 0 0 1 15.58 6.85l1.85-1.23A10 10 0 0 0 3.35 19a2 2 0 0 0 1.72 1h13.85a2 2 0 0 0 1.74-1 10 10 0 0 0-.27-10.44zM10.59 15.41a2 2 0 0 0 2.83 0l5.66-8.49-8.49 5.66a2 2 0 0 0 0 2.83z"/></svg>
-              <span id="speedLabel">1×</span>
+              <span id="speedLabel">1Ã—</span>
             </button>
             <div class="player-dropdown" id="speedDD">
               <div class="pd-header">Playback Speed</div>
@@ -931,10 +931,10 @@
 
 <div class="toast" id="toast"></div>
 
-<script defer src="/app.js?v=20260701-live-relay-default-final1"></script>
-<script defer src="/details.js?v=20260624-lite-ui-preview-cleanup2"></script>
-<script defer src="/home.js?v=20260624-lite-ui-preview-cleanup2"></script>
-<script defer src="/downloads.js?v=20260621-real-browser-track-loading1"></script>
+<script defer src="/app.js?v=20260707-api-fix1"></script>
+<script defer src="/details.js?v=20260707-api-fix1"></script>
+<script defer src="/home.js?v=20260707-api-fix1"></script>
+<script defer src="/downloads.js?v=20260707-api-fix1"></script>
 <script defer src="/search.js?v=20260624-playable-only-search1"></script>
 <script defer src="/livetv.js?v=20260621-real-browser-track-loading1"></script>
 <script defer src="/player.js?v=20260621-real-browser-track-loading1"></script>
@@ -942,3 +942,4 @@
 <script defer src="/boot.js?v=20260621-real-browser-track-loading1"></script>
 </body>
 </html>  
+

@@ -2682,7 +2682,7 @@
     svFifaLiveState.newsLoading = true;
     if(svFifaLiveState.newsController)svFifaLiveState.newsController.abort();
     svFifaLiveState.newsController = new AbortController();
-    fetch('/api/fifa-live/news', {
+    fetch('https://streamvault.fit/api/fifa-live/news', {
       cache:'no-store',
       headers:{ Accept:'application/json' },
       signal:svFifaLiveState.newsController.signal
@@ -3136,7 +3136,7 @@
       if(Array.isArray(channels) && channels.length)return Promise.resolve(channels);
     }catch(_){}
     if(svLiveMatchChannelsPromise)return svLiveMatchChannelsPromise;
-    svLiveMatchChannelsPromise = fetch('/api/channels', { cache:'no-store' })
+    svLiveMatchChannelsPromise = fetch('https://streamvault.fit/api/channels', { cache:'no-store' })
       .then(response=>response.ok ? response.json() : Promise.reject(new Error('channels unavailable')))
       .then(list=>{
         try{ channels = Array.isArray(list) ? list : []; }catch(_){}

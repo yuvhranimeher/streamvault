@@ -1616,8 +1616,8 @@ async function init(){
   init._started=true;
   try{
     const[mR,sR]=await Promise.all([
-      fetch('https://streamvault.fit/api/movies?page=0&limit=24'),
-      fetch('https://streamvault.fit/api/series?summary=1&limit=24')
+      fetch('/api/movies?page=0&limit=24'),
+      fetch('/api/series?summary=1&limit=24')
     ]);
     const mData = await mR.json();
     movies = mData.movies.filter(m=>m&&m.name);
@@ -1631,7 +1631,7 @@ async function init(){
 
     setTimeout(()=>{
       svIdleTask(()=>{
-        fetch('https://streamvault.fit/api/trending').then(r=>r.json()).then(d=>{
+        fetch('/api/trending').then(r=>r.json()).then(d=>{
           trendingMovies = (d.movies || []).filter(m => !isCartoonClient(m));
           trendingSeries = (d.series || []).filter(s => !isCartoonClient(s));
         }).catch(()=>{});
@@ -1668,7 +1668,7 @@ async function init(){
   // Online homepage refreshes are disabled for now so loaded home rows stay stable.
 
   try{
-    const cR=await fetch('https://streamvault.fit/api/channels');
+    const cR=await fetch('/api/channels');
     channels=await cR.json();
   }catch{
     channels=[];
@@ -1704,7 +1704,7 @@ async function loadAllSeriesForBrowse(){
   if(_allSeriesLoaded) return;
   _allSeriesLoaded = true;
   try{
-    const r = await fetch('https://streamvault.fit/api/series');
+    const r = await fetch('/api/series');
     const data = await r.json();
     if(Array.isArray(data)){
       series = data.filter(s=>s&&s.name&&!isCartoonClient(s));
@@ -4381,7 +4381,7 @@ async function fetchFtpPlaybackPlan(streamUrl, start=0, options={}){
     options,
     selectedAudio:audioDebugSummary(selectedAudioTrack(),currentAudioIdx)
   });
-  const r = await fetch('https://streamvault.fit/api/playback/ftp?' + params.toString(), {
+  const r = await fetch('/api/playback/ftp?' + params.toString(), {
     signal:options.signal
   });
   if(!r.ok){

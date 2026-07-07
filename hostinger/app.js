@@ -680,8 +680,8 @@ function svMediaSourceMatchesExpected(src, expected={}){
     const id=String(expected.localId);
     const parts=parsed.pathname.split('/').filter(Boolean).map(part=>svDecodeForGuard(part));
     if(parsed.pathname.startsWith('/stream/'))return parts[1] === id;
-    if(parsed.pathname.startsWith('https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/playback/local/'))return parts[3] === id;
-    if(parsed.pathname.startsWith('https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/mobile-hls/local/'))return parts[3] === id;
+    if(parsed.pathname.startsWith('https://streamvault.fit(https://streamvault.fit/api/playback/local/'))return parts[3] === id;
+    if(parsed.pathname.startsWith('https://streamvault.fit(https://streamvault.fit/api/mobile-hls/local/'))return parts[3] === id;
   }
   if(expected.ftpUrl){
     const nested=parsed.searchParams.get('url') || parsed.searchParams.get('streamUrl') || parsed.searchParams.get('movie') || parsed.searchParams.get('movieUrl') || parsed.searchParams.get('src');
@@ -1349,7 +1349,7 @@ async function loadAudioTracks(id, options={}){
     renderAudioTracks();
   }
   try{
-    const r = await fetch(`https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/media-info/${id}`);
+    const r = await fetch(`https://streamvault.fit(https://streamvault.fit/api/media-info/${id}`);
     if(!r.ok)return null;
     const data = await r.json();
     const tracks = Array.isArray(data.audioTracks) ? data.audioTracks : [];
@@ -1616,8 +1616,8 @@ async function init(){
   init._started=true;
   try{
     const[mR,sR]=await Promise.all([
-      fetch('https://streamvault.fithttps://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/movies?page=0&limit=24'),
-      fetch('https://streamvault.fithttps://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/series?summary=1&limit=24')
+      fetch('https://streamvault.fithttps://streamvault.fit(https://streamvault.fit/api/movies?page=0&limit=24'),
+      fetch('https://streamvault.fithttps://streamvault.fit(https://streamvault.fit/api/series?summary=1&limit=24')
     ]);
     const mData = await mR.json();
     movies = mData.movies.filter(m=>m&&m.name);
@@ -1631,7 +1631,7 @@ async function init(){
 
     setTimeout(()=>{
       svIdleTask(()=>{
-        fetch('https://streamvault.fithttps://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/trending').then(r=>r.json()).then(d=>{
+        fetch('https://streamvault.fithttps://streamvault.fit(https://streamvault.fit/api/trending').then(r=>r.json()).then(d=>{
           trendingMovies = (d.movies || []).filter(m => !isCartoonClient(m));
           trendingSeries = (d.series || []).filter(s => !isCartoonClient(s));
         }).catch(()=>{});
@@ -1643,7 +1643,7 @@ async function init(){
     let _bgPagesLoaded = 0;
     for(let p=1; p<=homeBgPages; p++){
       setTimeout(()=>{
-        fetch(`https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/movies?page=${p}&limit=100`)
+        fetch(`https://streamvault.fit(https://streamvault.fit/api/movies?page=${p}&limit=100`)
           .then(r=>r.json())
           .then(d=>{
             let newMovies = d.movies.filter(m=>m&&m.name);
@@ -1668,7 +1668,7 @@ async function init(){
   // Online homepage refreshes are disabled for now so loaded home rows stay stable.
 
   try{
-    const cR=await fetch('https://streamvault.fithttps://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/channels');
+    const cR=await fetch('https://streamvault.fithttps://streamvault.fit(https://streamvault.fit/api/channels');
     channels=await cR.json();
   }catch{
     channels=[];
@@ -1685,7 +1685,7 @@ function loadAllMoviesForBrowse(){
   const total=Math.max(0,_totalMoviePages-startPage);
   for(let p=startPage; p<_totalMoviePages; p++){
     setTimeout(()=>{
-      fetch(`https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/movies?page=${p}&limit=${_movieBrowsePageSize}`)
+      fetch(`https://streamvault.fit(https://streamvault.fit/api/movies?page=${p}&limit=${_movieBrowsePageSize}`)
         .then(r=>r.json())
         .then(d=>{
           let newMovies = d.movies.filter(m=>m&&m.name);
@@ -1704,7 +1704,7 @@ async function loadAllSeriesForBrowse(){
   if(_allSeriesLoaded) return;
   _allSeriesLoaded = true;
   try{
-    const r = await fetch('https://streamvault.fithttps://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/series');
+    const r = await fetch('https://streamvault.fithttps://streamvault.fit(https://streamvault.fit/api/series');
     const data = await r.json();
     if(Array.isArray(data)){
       series = data.filter(s=>s&&s.name&&!isCartoonClient(s));
@@ -2271,7 +2271,7 @@ async function buildStudioRow(trackId, rowId, publisher, keywords, priorityPatte
 
   let ftpMatched = [];
   try {
-    const r = await fetch(`https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/movies/keywords?q=${encodeURIComponent(keywords.join(','))}`);
+    const r = await fetch(`https://streamvault.fit(https://streamvault.fit/api/movies/keywords?q=${encodeURIComponent(keywords.join(','))}`);
     const data = await r.json();
     ftpMatched = data.filter(m => {
       const key = (m.name||'').toLowerCase().split('(')[0].trim();
@@ -3036,7 +3036,7 @@ function renderEpisodes(show,season){
   document.getElementById('epList').innerHTML=eps.map((ep,epIdx)=>{
     const prog=watchProgress[ep.streamId],pct=prog?Math.round(prog.progress*100):0;
     const lbl=`${esc(show.name)} S${String(season).padStart(2,'0')}E${String(ep.episode).padStart(2,'0')}${ep.epTitle?' – '+esc(ep.epTitle):''}`;
-    const thumb=ep.thumb||ep.thumbnail||ep.poster||(ep.streamId!=null?`https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/thumbnail/${ep.streamId}`:fallbackRaw);
+    const thumb=ep.thumb||ep.thumbnail||ep.poster||(ep.streamId!=null?`https://streamvault.fit(https://streamvault.fit/api/thumbnail/${ep.streamId}`:fallbackRaw);
     const existingBrief=ep.overview||ep.description||ep.synopsis||'';
     let displayTitle = ep.epTitle||'';
     displayTitle = displayTitle.replace(new RegExp('^'+show.name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*','i'),'').trim();
@@ -3068,7 +3068,7 @@ function renderEpisodes(show,season){
 
 async function fetchOmdbEpisodeTitles(showName, season, eps){
   try{
-    const r = await fetchWithTimeout(`https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/episode-titles?show=${encodeURIComponent(showName)}&season=${season}`, {}, 3500);
+    const r = await fetchWithTimeout(`https://streamvault.fit(https://streamvault.fit/api/episode-titles?show=${encodeURIComponent(showName)}&season=${season}`, {}, 3500);
     if(!r.ok) return;
     const titles = await r.json();
     if(!titles.length){ console.log('[TMDB] No episode data for', showName, 'S'+season); return; }
@@ -4269,7 +4269,7 @@ function vlcPlaylistSrc(url, title=''){
   const params = new URLSearchParams();
   params.set('url', url);
   if(title)params.set('title', title);
-  return 'https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/vlc-playlist?' + params.toString();
+  return 'https://streamvault.fit(https://streamvault.fit/api/vlc-playlist?' + params.toString();
 }
 
 function openInVlc(url, title=''){
@@ -4338,7 +4338,7 @@ async function fetchLocalPlaybackPlan(id, start=0, options={}){
   if(options.forceAudio)params.set('mode','audio');
   if(options.mode)params.set('mode', options.mode);
   const query = params.toString();
-  const r = await fetch(`https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/playback/local/${encodeURIComponent(id)}${query ? '?' + query : ''}`, {
+  const r = await fetch(`https://streamvault.fit(https://streamvault.fit/api/playback/local/${encodeURIComponent(id)}${query ? '?' + query : ''}`, {
     signal:options.signal
   });
   if(!r.ok){
@@ -4381,7 +4381,7 @@ async function fetchFtpPlaybackPlan(streamUrl, start=0, options={}){
     options,
     selectedAudio:audioDebugSummary(selectedAudioTrack(),currentAudioIdx)
   });
-  const r = await fetch('https://streamvault.fithttps://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/playback/ftp?' + params.toString(), {
+  const r = await fetch('https://streamvault.fithttps://streamvault.fit(https://streamvault.fit/api/playback/ftp?' + params.toString(), {
     signal:options.signal
   });
   if(!r.ok){
@@ -4457,12 +4457,12 @@ function validPlaybackSourceUrl(src){
     const url = new URL(value, window.location.href);
     if(url.origin !== window.location.origin)return /^https?:$/i.test(url.protocol);
     return url.pathname.startsWith('/stream/')
-      || url.pathname.startsWith('https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/playback/local/')
-      || url.pathname === 'https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/playback/ftp'
-      || url.pathname === 'https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/ftp/proxy'
-      || url.pathname === 'https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/ftp/stream'
-      || url.pathname.startsWith('https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/heavy-compat-hls/')
-      || url.pathname.startsWith('https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/mobile-hls/');
+      || url.pathname.startsWith('https://streamvault.fit(https://streamvault.fit/api/playback/local/')
+      || url.pathname === 'https://streamvault.fit(https://streamvault.fit/api/playback/ftp'
+      || url.pathname === 'https://streamvault.fit(https://streamvault.fit/api/ftp/proxy'
+      || url.pathname === 'https://streamvault.fit(https://streamvault.fit/api/ftp/stream'
+      || url.pathname.startsWith('https://streamvault.fit(https://streamvault.fit/api/heavy-compat-hls/')
+      || url.pathname.startsWith('https://streamvault.fit(https://streamvault.fit/api/mobile-hls/');
   }catch(_){
     return false;
   }
@@ -4483,7 +4483,7 @@ function ftpProxySrc(url){
   const params=new URLSearchParams();
   params.set('url', url);
   params.set('playbackType', 'media');
-  return 'https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/ftp/proxy?' + params.toString();
+  return 'https://streamvault.fit(https://streamvault.fit/api/ftp/proxy?' + params.toString();
 }
 
 function ftpPlaybackRouteSrc(url, mode='redirect', fallbackReason=''){
@@ -4492,7 +4492,7 @@ function ftpPlaybackRouteSrc(url, mode='redirect', fallbackReason=''){
   params.set('playbackType', 'media');
   if(fallbackReason)params.set('fallbackReason', fallbackReason);
   if(mode)params.set('mode', mode);
-  return 'https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/playback/ftp?' + params.toString();
+  return 'https://streamvault.fit(https://streamvault.fit/api/playback/ftp?' + params.toString();
 }
 
 function localFtpPlaybackPlan(url, options={}){
@@ -4521,7 +4521,7 @@ function ftpRawSrc(url){
   const params=new URLSearchParams();
   params.set('url', url);
   params.set('playbackType', 'media');
-  return 'https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/ftp/raw?' + params.toString();
+  return 'https://streamvault.fit(https://streamvault.fit/api/ftp/raw?' + params.toString();
 }
 
 function desktopFtpPlaybackSrc(url){
@@ -4539,7 +4539,7 @@ function ftpTranscodeSrc(url, start=0, fallbackReason='', options={}){
   if(options.smooth)params.set('smooth','1');
   if(start > 0)params.set('start', Math.floor(start));
   appendSelectedAudioParams(params);
-  return 'https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/ftp/stream?' + params.toString();
+  return 'https://streamvault.fit(https://streamvault.fit/api/ftp/stream?' + params.toString();
 }
 
 function ftpStreamPlaybackPlan(url, start=0, fallbackReason='stream', options={}){
@@ -4568,7 +4568,7 @@ function ftpHeavyCompatHlsSrc(url, start=0, fallbackReason='heavy 4K compatibili
   if(fallbackReason)params.set('fallbackReason', fallbackReason);
   if(start > 0)params.set('start', Math.floor(start));
   appendSelectedAudioParams(params);
-  return 'https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/heavy-compat-hls/ftp/index.m3u8?' + params.toString();
+  return 'https://streamvault.fit(https://streamvault.fit/api/heavy-compat-hls/ftp/index.m3u8?' + params.toString();
 }
 
 function ftpHeavyCompatHlsPlaybackPlan(url, start=0, fallbackReason='heavy 4K compatibility cache'){
@@ -4650,7 +4650,7 @@ function ftpSubtitleSrc(idx){
   params.set('url', _ftpStreamUrl);
   params.set('playbackType', 'media');
   if(Number.isFinite(streamIndex))params.set('stream', streamIndex);
-  return `https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/ftp/subtitle/${idx}.vtt?${params.toString()}`;
+  return `https://streamvault.fit(https://streamvault.fit/api/ftp/subtitle/${idx}.vtt?${params.toString()}`;
 }
 
 function resolveFtpPlayUrl(streamUrl){
@@ -4695,7 +4695,7 @@ async function loadFtpTrackOptions(streamUrl){
     const params=new URLSearchParams();
     params.set('url', requestedUrl);
     params.set('playbackType', 'media');
-    const r = await fetch(`https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/ftp/media-info?${params.toString()}`, {
+    const r = await fetch(`https://streamvault.fit(https://streamvault.fit/api/ftp/media-info?${params.toString()}`, {
       signal: controller.signal,
       cache:'no-store',
       headers:{'Cache-Control':'no-cache'}
@@ -4908,7 +4908,7 @@ async function loadPlayerDuration(id){
   vid._durationToken = token;
   vid._durationPending = true;
   try{
-    const r = await fetch(`https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/duration/${encodeURIComponent(id)}`, {
+    const r = await fetch(`https://streamvault.fit(https://streamvault.fit/api/duration/${encodeURIComponent(id)}`, {
       signal:playbackRequestController?.signal
     });
     if(token !== vid._durationToken || !r.ok)return;
@@ -4938,7 +4938,7 @@ async function loadFtpDuration(streamUrl){
     const params=new URLSearchParams();
     params.set('url', streamUrl);
     params.set('playbackType', 'media');
-    const r = await fetch(`https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/ftp/duration?${params.toString()}`, {
+    const r = await fetch(`https://streamvault.fit(https://streamvault.fit/api/ftp/duration?${params.toString()}`, {
       signal:playbackRequestController?.signal
     });
     if(token !== vid._durationToken || !r.ok)return;
@@ -5341,7 +5341,7 @@ async function playMedia(id, name, year){
   }, { once: true });
 
   // Now assign the source → the handler will fire reliably
-  // Source is selected through https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/playback/local after the player shell is visible.
+  // Source is selected through https://streamvault.fit(https://streamvault.fit/api/playback/local after the player shell is visible.
 
   // UI updates
   document.getElementById('playerTitle').textContent = name;
@@ -6682,7 +6682,7 @@ function closePlayer(){
 async function loadQualityOptions(id){
   let data={available:['auto','1080p','720p','480p','360p'],native:'auto'};
   try{
-    const r=await fetch(`https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/qualities/${id}`);
+    const r=await fetch(`https://streamvault.fit(https://streamvault.fit/api/qualities/${id}`);
     if(r.ok){
       data=await r.json();
     }
@@ -6722,7 +6722,7 @@ async function loadSubtitleTracks(id){
   let externalSubs = [];
   let probedEmbeddedSubs = [];
   try{
-    const r=await fetch(`https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/subtitles/${id}`);
+    const r=await fetch(`https://streamvault.fit(https://streamvault.fit/api/subtitles/${id}`);
     if(r.ok){
       const data=await r.json();
       externalSubs=Array.isArray(data)?data:[];
@@ -6731,7 +6731,7 @@ async function loadSubtitleTracks(id){
     console.warn('[Subtitles] Load error:',e.message);
   }
   try{
-    const r=await fetch(`https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/media-info/${id}`);
+    const r=await fetch(`https://streamvault.fit(https://streamvault.fit/api/media-info/${id}`);
     if(r.ok){
       const data=await r.json();
       const subtitleTracks=Array.isArray(data.subtitleTracks)?data.subtitleTracks:[];
@@ -7450,7 +7450,7 @@ async function fetchTitleDetails(item, type, options={}){
   const routeType = type === 'tv' || item?.type === 'tv' || item?.type === 'series' ? 'series' : 'movie';
   const routeId = encodeURIComponent(item?.tmdbId || item?.id || cleanTitle);
   const query = params.toString().replace(/\+/g, '%20');
-  const url = `https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/details/${routeType}/${routeId}?${query}`;
+  const url = `https://streamvault.fit(https://streamvault.fit/api/details/${routeType}/${routeId}?${query}`;
   const r = await fetchWithTimeout(url, {signal:options.signal}, 8000);
   const data = r.ok ? await r.json() : null;
 
@@ -7504,7 +7504,7 @@ function svFetchMediaInfoData(url, timeout=9000){
 }
 
 function svLocalAudioInfoUrl(id){
-  return `https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/media-info/${encodeURIComponent(id)}?playbackType=media`;
+  return `https://streamvault.fit(https://streamvault.fit/api/media-info/${encodeURIComponent(id)}?playbackType=media`;
 }
 
 function svFtpAudioInfoUrl(streamUrl){
@@ -7512,7 +7512,7 @@ function svFtpAudioInfoUrl(streamUrl){
     url:String(streamUrl || ''),
     playbackType:'media'
   });
-  return `https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/ftp/media-info?${params.toString()}`;
+  return `https://streamvault.fit(https://streamvault.fit/api/ftp/media-info?${params.toString()}`;
 }
 
 function svPrewarmPlaybackMetadata(item){
@@ -7909,7 +7909,7 @@ async function hydrateMoviePlayback(movie){
     const params = new URLSearchParams();
     if(movie.name)params.set('title', movie.name);
     if(movie.year)params.set('year', movie.year);
-    const r = await fetchWithTimeout(`https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/playback/movie/${encodeURIComponent(movie.id || movie.name || '')}?${params.toString()}`, {}, 2500);
+    const r = await fetchWithTimeout(`https://streamvault.fit(https://streamvault.fit/api/playback/movie/${encodeURIComponent(movie.id || movie.name || '')}?${params.toString()}`, {}, 2500);
     if(r && r.ok){
       const data = await r.json();
       if(data && data.ok){
@@ -8831,7 +8831,7 @@ async function buildStudioRow(trackId, rowId, publisher, keywords, priorityPatte
 
   let ftpMatched = [];
   try {
-    const r = await fetch(`https://streamvault.fit(https://streamvault.fithttps://streamvault.fit/api/movies/keywords?q=${encodeURIComponent(keywords.join(','))}`);
+    const r = await fetch(`https://streamvault.fit(https://streamvault.fit/api/movies/keywords?q=${encodeURIComponent(keywords.join(','))}`);
     const data = await r.json();
     ftpMatched = data.filter(m => {
       const key = (m.name||'').toLowerCase().split('(')[0].trim();
@@ -9270,4 +9270,5 @@ function buildRows(){
 
   svApplyHomeOrder();
 }
+
 

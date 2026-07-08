@@ -1,7 +1,7 @@
 window.API_BASE = location.hostname.includes('hostingersite.com') ? 'https://streamvault.fit' : '';
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260708-hostinger-playback-fix2';
+const SV_ASSET_VERSION = '20260708-hostinger-playback-fix3';
 const SV_SMOOTH_BUFFER_TRIGGER_COUNT = Math.max(1, Number(window.SMOOTH_BUFFER_TRIGGER_COUNT || 3) || 3);
 const svNativeConsoleLog = (()=>{try{return console.log.bind(console);}catch(_){return ()=>{};}})();
 function svLiveConsoleLog(...args){

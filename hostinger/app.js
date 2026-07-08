@@ -4564,7 +4564,7 @@ function ftpHeavyCompatHlsSrc(url, start=0, fallbackReason='heavy 4K compatibili
   if(fallbackReason)params.set('fallbackReason', fallbackReason);
   if(start > 0)params.set('start', Math.floor(start));
   appendSelectedAudioParams(params);
-  return '/api/heavy-compat-hls/ftp/index.m3u8?' + params.toString();
+  return 'https://streamvault.fit/api/heavy-compat-hls/ftp/index.m3u8?' + params.toString();
 }
 
 function ftpHeavyCompatHlsPlaybackPlan(url, start=0, fallbackReason='heavy 4K compatibility cache'){

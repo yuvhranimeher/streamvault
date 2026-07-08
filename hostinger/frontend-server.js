@@ -3,15 +3,16 @@ const path = require("path");
 
 const app = express();
 
+const ROOT = __dirname;
+
+app.use(express.static(ROOT));
+
+app.get("*", (req,res)=>{
+  res.sendFile(path.join(ROOT,"index.html"));
+});
+
 const PORT = process.env.PORT || 3000;
 
-app.use(express.static(__dirname));
-
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "index.html"));
-});
-
-app.listen(PORT, () => {
+app.listen(PORT,()=>{
   console.log(`Frontend running on ${PORT}`);
 });
-

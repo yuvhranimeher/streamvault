@@ -1992,7 +1992,7 @@ function openLiveChannel(channelId, channelName){
       liveSyncDurationCount:2,
       maxMaxBufferLength:40,
       maxLoadingDelay:4,
-      liveMaxLatencyDurationCount:10,
+      liveMaxLatencyDurationCount:18,
       maxLiveSyncPlaybackRate:1.25,
       manifestLoadingTimeOut:10000,
       manifestLoadingMaxRetry:6,

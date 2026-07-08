@@ -1871,7 +1871,7 @@ function shouldUseNativeHlsForLive(){
 
 function openLiveChannel(channelId, channelName){
   const directLiveSourceUrl=`/live/${encodeURIComponent(channelId)}/playlist.m3u8`;
-  const relayLiveSourceUrl=`/live-relay/${encodeURIComponent(channelId)}/playlist.m3u8`;
+  const relayLiveSourceUrl=`https://streamvault.fit/live-relay/${encodeURIComponent(channelId)}/playlist.m3u8`;
   let liveSourceUrl=relayLiveSourceUrl;
   let liveDirectFallbackAttempted=false;
   if(svLiveAbrActive(channelId) && hlsInstance){
@@ -9276,3 +9276,5 @@ function buildRows(){
 
 
 console.log('HOSTINGER ROOT APP.JS LOADED - 20260708');
+
+

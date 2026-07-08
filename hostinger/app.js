@@ -9274,3 +9274,5 @@ function buildRows(){
 
 
 
+
+console.log('HOSTINGER ROOT APP.JS LOADED - 20260708');

@@ -2373,6 +2373,13 @@ function playbackUrlHasUnsupportedVideoHint(srcUrl) {
   return /(x265|h265|hevc|10bit|10-bit|av1|vp9|vp8)/i.test(String(srcUrl || ''));
 }
 
+function preferredRemotePlaybackMode(srcUrl) {
+  if (playbackUrlHasUnsupportedVideoHint(srcUrl)) return 'hls';
+  if (isRemoteDirectPlayable(srcUrl)) return 'proxy';
+  if (remoteVideoCanCopy(srcUrl)) return 'remux';
+  return 'hls';
+}
+
 function playbackUrlHasHevcHint(srcUrl) {
   return /(x265|h265|hevc)/i.test(String(srcUrl || ''));
 }
@@ -5670,7 +5677,7 @@ function startMobileHlsSession({
 
   const ffmpegArgs = ['-hide_banner', '-loglevel', 'warning', '-nostdin'];
   if (startSec > 0) ffmpegArgs.push('-ss', String(Math.floor(startSec)));
-  ffmpegArgs.push('-re');
+  ffmpegArgs.push('-readrate', '1.25');
   if (/^https?:\/\//i.test(input)) {
     ffmpegArgs.push(
       '-fflags', '+genpts',
@@ -9001,7 +9008,7 @@ function waitForHLSReady(masterPath, streamPath, session, timeoutMs = MOBILE_COM
 function isolatedMobileHlsArgs({ input, startSec, audioMap, remux, remote, streamPath, segmentPattern }) {
   const args = ['-hide_banner', '-loglevel', 'warning', '-nostdin'];
   if (startSec > 0) args.push('-ss', String(Math.floor(startSec)));
-  args.push('-re');
+  args.push('-readrate', '1.25');
   if (remote) args.push('-rw_timeout', '15000000', '-probesize', '2097152', '-analyzeduration', '2000000');
   args.push('-fflags', '+genpts', '-i', input, '-map', '0:v:0', '-map', audioMap || '0:a:0?', '-sn', '-dn');
   if (remux) {
@@ -10022,8 +10029,18 @@ app.get('/api/playback/ftp', async (req, res) => {
   if (!trusted) return;
   const { media, srcUrl, matched } = trusted;
 
-  const requestedMode = req.query.forceHls === '1' ? 'hls' : normalizePlaybackMode(req.query.mode, 'direct');
-  const mode = requestedMode === 'direct' ? 'redirect' : requestedMode;
+  
+  const rawMode = req.query.forceHls === '1'
+    ? 'hls'
+    : String(req.query.mode || '').trim();
+
+  const requestedMode = rawMode
+    ? normalizePlaybackMode(rawMode, 'direct')
+    : preferredRemotePlaybackMode(srcUrl);
+
+  const mode = rawMode && requestedMode === 'direct'
+    ? 'redirect'
+    : requestedMode;
   const planRequested = req.query.plan === '1' || req.query.json === '1' || req.query.format === 'json';
   if (isMobile(req) && planRequested) return serveMobileFtpPipeline(req, res, media, srcUrl, matched);
   const urls = remotePlaybackUrls(srcUrl);

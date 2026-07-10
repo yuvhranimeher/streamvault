@@ -292,3 +292,137 @@
     }
   };
 })();
+
+/* SV_EXACT_DETAIL_BINDING_PATCH_V2 */
+(function(){
+  if (window.__svExactDetailBindingPatchV2) return;
+  window.__svExactDetailBindingPatchV2 = true;
+
+  const movieKeys = new WeakMap();
+  const seriesKeys = new WeakMap();
+  let movieSeq = 0;
+  let seriesSeq = 0;
+  let seriesRequest = 0;
+
+  function bindExactKey(map, prefix, item, seq){
+    if (!item || typeof item !== 'object') return '';
+    let key = map.get(item);
+    if (!key){
+      key = prefix + '-exact-' + seq();
+      map.set(item, key);
+    }
+    return key;
+  }
+
+  registerMovieForDetail = function(movie){
+    const key = bindExactKey(movieKeys, 'md', movie, () => ++movieSeq);
+    if (key) _movieDetailRegistry.set(key, movie);
+    return key;
+  };
+
+  registerSeriesForDetail = function(show){
+    const key = bindExactKey(seriesKeys, 'sd', show, () => ++seriesSeq);
+    if (key) _seriesDetailRegistry.set(key, show);
+    return key;
+  };
+
+  function normalizedTitle(value){
+    let text = String(value || '');
+    try {
+      if (typeof cleanDisplayTitle === 'function') text = cleanDisplayTitle(text);
+    } catch {}
+
+    return text
+      .normalize('NFKD')
+      .toLowerCase()
+      .replace(/\[[^\]]*\]/g, ' ')
+      .replace(/\([^)]*(?:tv series|mini series|series|720p|1080p|2160p|480p|4k|web|bluray|x264|x265|hevc|19\d{2}|20\d{2})[^)]*\)/g, ' ')
+      .replace(/\b(?:tv series|mini series|series|complete|dual audio|multi audio|web[- ]?dl|webrip|bluray|brrip|hdrip|hdtv|x264|x265|hevc|aac|ddp|nf|amzn|hmax|dsnp|2160p|1080p|720p|480p|4k)\b/g, ' ')
+      .replace(/\b(?:19|20)\d{2}\b/g, ' ')
+      .replace(/\bs\d{1,2}\b/g, ' ')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function yearOf(item){
+    return String(item && item.year || '').match(/(?:19|20)\d{2}/)?.[0] || '';
+  }
+
+  function episodeCount(item){
+    return Object.values(item && item.seasons || {})
+      .reduce((total, episodes) => total + (Array.isArray(episodes) ? episodes.length : 0), 0);
+  }
+
+  function sameExactSeries(a, b){
+    const aId = String(a && a.tmdbId || '').trim();
+    const bId = String(b && b.tmdbId || '').trim();
+    if (aId && bId && aId !== bId) return false;
+
+    const aTitle = normalizedTitle(a && (a.name || a.title));
+    const bTitle = normalizedTitle(b && (b.name || b.title));
+    if (!aTitle || aTitle !== bTitle) return false;
+
+    const aYear = yearOf(a);
+    const bYear = yearOf(b);
+    return !(aYear && bYear && aYear !== bYear);
+  }
+
+  async function fetchExactSeries(show){
+    const name = show && (show.name || show.title) || '';
+    if (!name) return null;
+
+    const params = new URLSearchParams({
+      q: name,
+      page: '0',
+      limit: '200',
+      massive: '1'
+    });
+
+    const response = await fetchWithTimeout('/api/series?' + params.toString(), {}, 12000);
+    if (!response || !response.ok) return null;
+
+    const payload = await response.json();
+    const list = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload && payload.series) ? payload.series : [];
+
+    return list
+      .filter(item => sameExactSeries(item, show))
+      .sort((a, b) => episodeCount(b) - episodeCount(a))[0] || null;
+  }
+
+  openSeriesDetail = async function(key){
+    const show = _seriesDetailRegistry.get(key);
+    if (!show) return;
+
+    const requestId = ++seriesRequest;
+    showSeriesDetail(show);
+
+    if (episodeCount(show) > 0) return;
+
+    try {
+      showToast('Loading episodes...');
+      const full = await fetchExactSeries(show);
+
+      if (requestId !== seriesRequest) return;
+      if (currentShow !== show) return;
+      if (!document.getElementById('seriesModal')?.classList.contains('open')) return;
+
+      if (full && sameExactSeries(full, show) && episodeCount(full) > 0){
+        _seriesDetailRegistry.set(key, full);
+
+        const index = Array.isArray(series)
+          ? series.findIndex(item => sameExactSeries(item, show))
+          : -1;
+
+        if (index >= 0) series[index] = full;
+        else if (Array.isArray(series)) series.push(full);
+
+        showSeriesDetail(full);
+      }
+    } catch (error) {
+      console.warn('[Series detail] Exact hydration failed:', error && error.message || error);
+    }
+  };
+})();

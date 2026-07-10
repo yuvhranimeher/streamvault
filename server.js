@@ -5677,7 +5677,7 @@ function startMobileHlsSession({
 
   const ffmpegArgs = ['-hide_banner', '-loglevel', 'warning', '-nostdin'];
   if (startSec > 0) ffmpegArgs.push('-ss', String(Math.floor(startSec)));
-  ffmpegArgs.push('-readrate', '1.5');
+  // Unlimited read-ahead for media HLS buffering
   if (/^https?:\/\//i.test(input)) {
     ffmpegArgs.push(
       '-fflags', '+genpts',
@@ -9008,7 +9008,7 @@ function waitForHLSReady(masterPath, streamPath, session, timeoutMs = MOBILE_COM
 function isolatedMobileHlsArgs({ input, startSec, audioMap, remux, remote, streamPath, segmentPattern }) {
   const args = ['-hide_banner', '-loglevel', 'warning', '-nostdin'];
   if (startSec > 0) args.push('-ss', String(Math.floor(startSec)));
-  args.push('-readrate', '1.5');
+  // Unlimited read-ahead for media HLS buffering
   if (remote) args.push('-rw_timeout', '15000000', '-probesize', '2097152', '-analyzeduration', '2000000');
   args.push('-fflags', '+genpts', '-i', input, '-map', '0:v:0', '-map', audioMap || '0:a:0?', '-sn', '-dn');
   if (remux) {

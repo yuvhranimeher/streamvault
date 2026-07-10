@@ -2204,81 +2204,6 @@ function selectionFromAbsoluteAudio(req, track, source = 'first-playable-audio',
   };
 }
 
-
-/* SV_FOLDER_AUDIO_SERVER_V15 */
-function svPreferredFolderAudio(input=''){
-  let text=String(input||'');
-
-  for(let i=0;i<5;i++){
-    try{
-      const next=decodeURIComponent(text);
-      if(next===text)break;
-      text=next;
-    }catch(_){break;}
-  }
-
-  const parts=text
-    .replace(/\\/g,'/')
-    .split(/[?#]/)[0]
-    .split('/')
-    .filter(Boolean)
-    .slice(0,-1);
-
-  for(let i=parts.length-1;i>=0;i--){
-    const value=parts[i].toLowerCase();
-    const english=/(^|[^a-z])(english|hollywood)([^a-z]|$)/.test(value);
-    const hindi=/(^|[^a-z])(hindi|bollywood)([^a-z]|$)/.test(value);
-
-    if(english&&!hindi)return 'eng';
-    if(hindi&&!english)return 'hin';
-  }
-
-  return '';
-}
-
-function svAudioTrackText(track={}){
-  return [
-    track.language,
-    track.lang,
-    track.title,
-    track.label
-  ].filter(Boolean).join(' ').toLowerCase();
-}
-
-function svOrderedFolderAudioTracks(tracks=[],preferred=''){
-  if(!preferred)return tracks.slice();
-
-  const scored=tracks.map((track,index)=>{
-    const text=svAudioTrackText(track);
-    const lang=String(track.language||track.lang||'')
-      .toLowerCase()
-      .replace(/[^a-z]/g,'');
-
-    let score=0;
-
-    if(preferred==='eng'){
-      if(/^(en|eng|english)$/.test(lang))score+=1000;
-      if(/\b(english|eng)\b/.test(text))score+=700;
-      if(/^(hi|hin|hindi)$/.test(lang))score-=1200;
-      if(/\b(hindi|hin)\b/.test(text))score-=900;
-    }else{
-      if(/^(hi|hin|hindi)$/.test(lang))score+=1000;
-      if(/\b(hindi|hin)\b/.test(text))score+=700;
-      if(/^(en|eng|english)$/.test(lang))score-=1200;
-      if(/\b(english|eng)\b/.test(text))score-=900;
-    }
-
-    if(/commentary|audio description|descriptive|director/.test(text)){
-      score-=500;
-    }
-
-    return {track,index,score};
-  });
-
-  scored.sort((a,b)=>b.score-a.score||a.index-b.index);
-  return scored.map(item=>item.track);
-}
-
 async function resolvePlaybackAudioSelection(req, input, label = 'media') {
   const selection = playbackAudioSelectionFromReq(req);
   const isFtpInput = isFtpPlaybackInput(input);
@@ -2302,90 +2227,14 @@ async function resolvePlaybackAudioSelection(req, input, label = 'media') {
   }
 
   if (isFtpInput) {
-    const explicitStream=selection.audioStreamIdx;
-    const explicitRelative=String(req.query.audio ?? '').trim();
-    let requestedTrack=null;
-
-    if(explicitStream!==null){
-      requestedTrack=tracks.find(track=>
-        serverAudioTrackAbsoluteIndex(track)===explicitStream
-      )||null;
-    }else if(explicitRelative!==''){
-      const relative=Number(explicitRelative);
-
-      requestedTrack=tracks.find(track=>
-        Number(track.relativeIndex)===relative
-      )||null;
-    }
-
-    if(requestedTrack){
-      const explicitValidated=
-        await firstValidDecodedAudioStream(
-          input,
-          [requestedTrack],
-          label
-        );
-
-      if(explicitValidated.selectedTrack){
-        const selectedIndex=tracks.indexOf(
-          explicitValidated.selectedTrack
-        );
-
-        return {
-          ...selectionFromAbsoluteAudio(
-            req,
-            explicitValidated.selectedTrack,
-            'ftp-explicit-audio',
-            videoStartTime,
-            videoStreamIdx,
-            info?.videoCodec||''
-          ),
-          defaultAudioIndex:selectedIndex,
-          audioIndex:selectedIndex,
-          ftpAudioValidated:true,
-        };
-      }
-    }
-
-    const preferred=svPreferredFolderAudio(input);
-    const orderedTracks=svOrderedFolderAudioTracks(
-      tracks,
-      preferred
-    );
-
-    const validated=await firstValidDecodedAudioStream(
-      input,
-      orderedTracks,
-      label
-    );
-
-    const selectedTrack=validated.selectedTrack;
-    if(!selectedTrack)return selection;
-
-    const selectedIndex=tracks.indexOf(selectedTrack);
-
-    console.log(
-      '[Audio Default v15]',
-      'folder='+preferred,
-      'index='+selectedIndex,
-      'language='+(selectedTrack.language||selectedTrack.lang||''),
-      'title='+(selectedTrack.title||selectedTrack.label||'')
-    );
-
+    const validated = await firstValidDecodedAudioStream(input, tracks, label);
+    const selectedTrack = validated.selectedTrack;
+    if (!selectedTrack) return selection;
     return {
-      ...selectionFromAbsoluteAudio(
-        req,
-        selectedTrack,
-        preferred
-          ? 'ftp-folder-'+preferred
-          : 'ftp-decoded-stream',
-        videoStartTime,
-        videoStreamIdx,
-        info?.videoCodec||''
-      ),
-      defaultAudioIndex:selectedIndex,
-      audioIndex:selectedIndex,
-      ftpAudioValidated:true,
+      ...selectionFromAbsoluteAudio(req, selectedTrack, 'ftp-decoded-stream', videoStartTime, videoStreamIdx, info?.videoCodec || ''),
+      defaultAudioIndex: validated.selectedIndex,
+      audioIndex: validated.selectedIndex,
+      ftpAudioValidated: true,
     };
   }
 
@@ -5828,7 +5677,7 @@ function startMobileHlsSession({
 
   const ffmpegArgs = ['-hide_banner', '-loglevel', 'warning', '-nostdin'];
   if (startSec > 0) ffmpegArgs.push('-ss', String(Math.floor(startSec)));
-  // Unlimited read-ahead for media HLS buffering
+  ffmpegArgs.push('-readrate', '1.5');
   if (/^https?:\/\//i.test(input)) {
     ffmpegArgs.push(
       '-fflags', '+genpts',
@@ -9159,7 +9008,7 @@ function waitForHLSReady(masterPath, streamPath, session, timeoutMs = MOBILE_COM
 function isolatedMobileHlsArgs({ input, startSec, audioMap, remux, remote, streamPath, segmentPattern }) {
   const args = ['-hide_banner', '-loglevel', 'warning', '-nostdin'];
   if (startSec > 0) args.push('-ss', String(Math.floor(startSec)));
-  // Unlimited read-ahead for media HLS buffering
+  args.push('-readrate', '1.5');
   if (remote) args.push('-rw_timeout', '15000000', '-probesize', '2097152', '-analyzeduration', '2000000');
   args.push('-fflags', '+genpts', '-i', input, '-map', '0:v:0', '-map', audioMap || '0:a:0?', '-sn', '-dn');
   if (remux) {

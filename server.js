@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const fs      = require('fs');
 const path    = require('path');
 const https   = require('https');
@@ -5633,7 +5633,7 @@ function cleanupMobileHlsSessions(reason = 'idle') {
 
 setInterval(() => cleanupMobileHlsSessions(), Math.min(MOBILE_HLS_IDLE_MS, 30000)).unref?.();
 
-function waitForHlsPlaylist(playlistPath, timeoutMs = 15000, sessionId = '') {
+function waitForHlsPlaylist(playlistPath, timeoutMs = 25000, sessionId = '') {
   const started = Date.now();
   return new Promise((resolve, reject) => {
     const check = () => {
@@ -5641,7 +5641,7 @@ function waitForHlsPlaylist(playlistPath, timeoutMs = 15000, sessionId = '') {
       if (session?.error) return reject(new Error(session.error));
       if (fs.existsSync(playlistPath)) {
         const content = fs.readFileSync(playlistPath, 'utf8');
-        if (content.includes('.ts')) return resolve(content);
+        if ((content.match(/\.ts/g) || []).length >= 2) return resolve(content);
       }
       if (Date.now() - started >= timeoutMs) return reject(new Error('Mobile HLS startup timed out'));
       setTimeout(check, 250);
@@ -5677,7 +5677,7 @@ function startMobileHlsSession({
 
   const ffmpegArgs = ['-hide_banner', '-loglevel', 'warning', '-nostdin'];
   if (startSec > 0) ffmpegArgs.push('-ss', String(Math.floor(startSec)));
-  ffmpegArgs.push('-readrate', '1.25');
+  // Unlimited read-ahead for media HLS buffering
   if (/^https?:\/\//i.test(input)) {
     ffmpegArgs.push(
       '-fflags', '+genpts',
@@ -9008,7 +9008,7 @@ function waitForHLSReady(masterPath, streamPath, session, timeoutMs = MOBILE_COM
 function isolatedMobileHlsArgs({ input, startSec, audioMap, remux, remote, streamPath, segmentPattern }) {
   const args = ['-hide_banner', '-loglevel', 'warning', '-nostdin'];
   if (startSec > 0) args.push('-ss', String(Math.floor(startSec)));
-  args.push('-readrate', '1.25');
+  // Unlimited read-ahead for media HLS buffering
   if (remote) args.push('-rw_timeout', '15000000', '-probesize', '2097152', '-analyzeduration', '2000000');
   args.push('-fflags', '+genpts', '-i', input, '-map', '0:v:0', '-map', audioMap || '0:a:0?', '-sn', '-dn');
   if (remux) {

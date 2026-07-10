@@ -24,12 +24,10 @@
     return key;
   };
 
-  window._svEagerImageBudget = Number.isFinite(window._svEagerImageBudget)
-    ? window._svEagerImageBudget
-    : ((window._svWeakDevice || innerWidth < 760) ? 5 : 8);
+  window._svEagerImageBudget = 9999;
 
   svConsumeImageAttrs = function(priority=false, immediate=false){
-    const eager = priority || immediate || window._svEagerImageBudget-- > 0;
+    const eager = true;
     const fetchPriority = priority ? 'high' : (eager ? 'auto' : 'low');
     return eager
       ? `loading="eager" fetchpriority="${fetchPriority}" decoding="async" onload="this.dataset.svLoaded='1';this.classList.add('poster-loaded','is-loaded')"`
@@ -158,5 +156,139 @@
     if(section)section.style.display='';
     const render = item => (item.type === 'tv' || item.seasons) ? sCardHTML(item) : cardHTML(item);
     el.innerHTML = visibleItems.map(render).join('');
+  };
+})();
+
+/* SV_EXACT_DETAIL_BINDING_PATCH_V1 */
+(function(){
+  if(window.__svExactDetailBindingPatchV1)return;
+  window.__svExactDetailBindingPatchV1=true;
+
+  const movieKeys=new WeakMap(),seriesKeys=new WeakMap();
+  let movieSeq=0,seriesSeq=0,seriesRequest=0;
+
+  function bindKey(map,prefix,item,next){
+    if(!item||typeof item!=='object')return '';
+    let key=map.get(item);
+    if(!key){
+      key=`${prefix}-exact-${next()}`;
+      map.set(item,key);
+    }
+    return key;
+  }
+
+  registerMovieForDetail=function(movie){
+    const key=bindKey(movieKeys,'md',movie,()=>++movieSeq);
+    if(key)_movieDetailRegistry.set(key,movie);
+    return key;
+  };
+
+  registerSeriesForDetail=function(show){
+    const key=bindKey(seriesKeys,'sd',show,()=>++seriesSeq);
+    if(key)_seriesDetailRegistry.set(key,show);
+    return key;
+  };
+
+  function titleKey(value){
+    let s=String(value||'');
+    try{
+      if(typeof cleanDisplayTitle==='function')s=cleanDisplayTitle(s);
+    }catch{}
+
+    return s.normalize('NFKD').toLowerCase()
+      .replace(/\[[^\]]*\]/g,' ')
+      .replace(/\((?=[^)]*(?:tv series|series|720p|1080p|2160p|480p|4k|web|bluray|x264|x265|hevc|(?:19|20)\d{2}))[^)]*\)/g,' ')
+      .replace(/\b(?:tv series|series|season|complete|dual audio|multi audio|web[- ]?dl|webrip|bluray|brrip|hdrip|hdtv|x264|x265|hevc|aac|ddp|nf|amzn|hmax|dsnp|2160p|1080p|720p|480p|4k)\b/g,' ')
+      .replace(/\b(?:19|20)\d{2}(?:\s*[-–]\s*(?:19|20)\d{2})?\b/g,' ')
+      .replace(/[^\p{L}\p{N}]+/gu,' ')
+      .replace(/\s+/g,' ')
+      .trim();
+  }
+
+  function yearKey(item){
+    return String(item?.year||'').match(/(?:19|20)\d{2}/)?.[0]||'';
+  }
+
+  function episodeCount(item){
+    return Object.values(item?.seasons||{})
+      .reduce((count,eps)=>count+(Array.isArray(eps)?eps.length:0),0);
+  }
+
+  function sameSeries(a,b){
+    const aid=String(a?.tmdbId||'').trim();
+    const bid=String(b?.tmdbId||'').trim();
+
+    if(aid&&bid&&aid!==bid)return false;
+    if(titleKey(a?.name||a?.title)!==titleKey(b?.name||b?.title))return false;
+
+    const ay=yearKey(a),by=yearKey(b);
+    return !(ay&&by&&ay!==by);
+  }
+
+  async function fetchExactSeries(show){
+    const name=show?.name||show?.title||'';
+    if(!name)return null;
+
+    const params=new URLSearchParams({
+      q:name,
+      page:'0',
+      limit:'120',
+      massive:'1'
+    });
+
+    const response=await fetchWithTimeout(
+      `/api/series?${params.toString()}`,
+      {},
+      12000
+    );
+
+    if(!response?.ok)return null;
+
+    const body=await response.json();
+    const list=Array.isArray(body)
+      ? body
+      : Array.isArray(body?.series) ? body.series : [];
+
+    return list
+      .filter(item=>sameSeries(item,show))
+      .sort((a,b)=>
+        episodeCount(b)-episodeCount(a) ||
+        Number(!!b.isFtp)-Number(!!a.isFtp)
+      )[0]||null;
+  }
+
+  openSeriesDetail=async function(key){
+    const show=_seriesDetailRegistry.get(key);
+    if(!show)return;
+
+    const request=++seriesRequest;
+
+    // Always open the exact card clicked.
+    showSeriesDetail(show);
+
+    if(episodeCount(show)>0)return;
+
+    try{
+      showToast('Loading episodes...');
+
+      const full=await fetchExactSeries(show);
+
+      // Ignore an older response after another title was clicked.
+      if(request!==seriesRequest)return;
+      if(!document.getElementById('seriesModal')?.classList.contains('open'))return;
+
+      // Never accept a different or fuzzy-matched series.
+      if(full&&sameSeries(full,show)&&episodeCount(full)>0){
+        _seriesDetailRegistry.set(key,full);
+
+        const index=series.findIndex(item=>sameSeries(item,show));
+        if(index>=0)series[index]=full;
+        else series.push(full);
+
+        showSeriesDetail(full);
+      }
+    }catch(error){
+      console.warn('[Series detail] Exact hydration failed:',error.message);
+    }
   };
 })();

@@ -66,8 +66,8 @@ const MASSIVE_CATALOG_FILE = path.join(__dirname, 'scan-output', 'clean-catalog.
 const SV_CACHE_DIR = path.join(__dirname, 'cache');
 const SV_BOOT_SEARCH_FILE = path.join(SV_CACHE_DIR, 'boot-search-index.json');
 const MOBILE_HLS_DIR = path.join(__dirname, 'cache', 'mobile-hls');
-const MOBILE_HLS_IDLE_MS = Number(process.env.MOBILE_HLS_IDLE_MS || 45000);
-const MOBILE_HLS_MAX_SESSIONS = Number(process.env.MOBILE_HLS_MAX_SESSIONS || 2);
+const MOBILE_HLS_IDLE_MS = Number(process.env.MOBILE_HLS_IDLE_MS || 900000);
+const MOBILE_HLS_MAX_SESSIONS = Number(process.env.MOBILE_HLS_MAX_SESSIONS || 6);
 const MOBILE_HLS_FFMPEG_THREADS = String(process.env.MOBILE_HLS_FFMPEG_THREADS || 1);
 const MOBILE_HLS_PROFILE = String(process.env.MOBILE_HLS_PROFILE || 'mobile-hls-v4-av-sync');
 const MOBILE_HLS_MAX_WIDTH = Number(process.env.MOBILE_HLS_MAX_WIDTH || 854);
@@ -85,19 +85,19 @@ const HEAVY_COMPAT_HLS_DIR = path.join(__dirname, 'cache', 'heavy-compat-hls');
 const HEAVY_COMPAT_HLS_PROFILE = String(process.env.HEAVY_COMPAT_HLS_PROFILE || 'heavy-compat-hls-v2-av-sync');
 const HEAVY_COMPAT_HLS_IDLE_MS = Number(process.env.HEAVY_COMPAT_HLS_IDLE_MS || 30 * 60 * 1000);
 const HEAVY_COMPAT_HLS_MAX_SESSIONS = Number(process.env.HEAVY_COMPAT_HLS_MAX_SESSIONS || 4);
-const HEAVY_COMPAT_HLS_STARTUP_SEGMENTS = Math.max(1, Math.min(6, Number(process.env.HEAVY_COMPAT_HLS_STARTUP_SEGMENTS || 2) || 2));
+const HEAVY_COMPAT_HLS_STARTUP_SEGMENTS = 1;
 const HEAVY_COMPAT_HLS_STARTUP_MS = Number(process.env.HEAVY_COMPAT_HLS_STARTUP_MS || 45000);
-const HEAVY_COMPAT_HLS_SEGMENT_TIME = Math.max(2, Math.min(8, Number(process.env.HEAVY_COMPAT_HLS_SEGMENT_TIME || 4) || 4));
+const HEAVY_COMPAT_HLS_SEGMENT_TIME = 2;
 const HEAVY_COMPAT_HLS_VIDEO_CRF = String(process.env.HEAVY_COMPAT_HLS_VIDEO_CRF || '23');
-const HEAVY_COMPAT_HLS_VIDEO_MAXRATE = String(process.env.HEAVY_COMPAT_HLS_VIDEO_MAXRATE || '6M');
-const HEAVY_COMPAT_HLS_VIDEO_BUFSIZE = String(process.env.HEAVY_COMPAT_HLS_VIDEO_BUFSIZE || '12M');
+const HEAVY_COMPAT_HLS_VIDEO_MAXRATE = String(process.env.HEAVY_COMPAT_HLS_VIDEO_MAXRATE || '2500k');
+const HEAVY_COMPAT_HLS_VIDEO_BUFSIZE = String(process.env.HEAVY_COMPAT_HLS_VIDEO_BUFSIZE || '5000k');
 const HEAVY_COMPAT_HLS_AUDIO_BITRATE = String(process.env.HEAVY_COMPAT_HLS_AUDIO_BITRATE || '128k');
 const SMOOTH_MAX_WIDTH = Math.max(480, Math.min(3840, Number(process.env.SMOOTH_MAX_WIDTH || 1920) || 1920));
 const SMOOTH_VIDEO_BITRATE = String(process.env.SMOOTH_VIDEO_BITRATE || '5000k');
 const SMOOTH_VIDEO_BUFSIZE = String(process.env.SMOOTH_VIDEO_BUFSIZE || '10000k');
 const SMOOTH_AUDIO_BITRATE = String(process.env.SMOOTH_AUDIO_BITRATE || '128k');
 const SMOOTH_BUFFER_TRIGGER_COUNT = Math.max(1, Number(process.env.SMOOTH_BUFFER_TRIGGER_COUNT || 3) || 3);
-const MEDIA_FFMPEG_STREAM_MAX = Number(process.env.MEDIA_FFMPEG_STREAM_MAX || 4);
+const MEDIA_FFMPEG_STREAM_MAX = Number(process.env.MEDIA_FFMPEG_STREAM_MAX || 5);
 const MEDIA_FFMPEG_STARTUP_MS = Number(process.env.MEDIA_FFMPEG_STARTUP_MS || 15000);
 const MEDIA_AUDIO_OFFSET_THRESHOLD_SEC = Number(process.env.MEDIA_AUDIO_OFFSET_THRESHOLD_SEC || 0.05);
 const MEDIA_PACKET_PROBE_WINDOW_SEC = Number(process.env.MEDIA_PACKET_PROBE_WINDOW_SEC || 20);
@@ -5323,7 +5323,7 @@ function svLiveRelayPlaylistState(session) {
     const segments = lines.map(line => line.trim()).filter(line => line && !line.startsWith('#'));
     const readySegments = segments.filter(file => fs.existsSync(path.join(session.dir, path.basename(file))));
     const normalizedText = lines.map(line => line.trim() && !line.trim().startsWith('#') ? path.basename(line.trim()) : line).join('\n');
-    return { ready: text.includes('#EXTM3U') && readySegments.length >= 2, stat, text: normalizedText, segments: readySegments.length };
+    return { ready: text.includes('#EXTM3U') && readySegments.length >= 1, stat, text: normalizedText, segments: readySegments.length };
   } catch {
     return { ready: false, stat: null, text: '', segments: 0 };
   }
@@ -5366,7 +5366,7 @@ function svStartLiveRelay(channelId, reason = 'start', candidateIndex = 0) {
     '-rw_timeout', '15000000', '-fflags', '+genpts+discardcorrupt',
     '-i', source,
     '-map', '0:v:0?', '-map', '0:a:0?', '-c', 'copy', '-max_muxing_queue_size', '2048',
-    '-f', 'hls', '-hls_time', '4', '-hls_list_size', '8',
+    '-f', 'hls', '-hls_time', '2', '-hls_list_size', '12',
     '-hls_flags', 'delete_segments+omit_endlist+independent_segments+temp_file',
     '-hls_segment_filename', path.join(dir, 'seg_%09d.ts'),
     playlistPath,
@@ -5705,7 +5705,7 @@ function startMobileHlsSession({
     '-ac', '2',
     '-af', COMPAT_AUDIO_PTS_FILTER,
     '-f', 'hls',
-    '-hls_time', '3',
+    '-hls_time', '2',
     '-hls_list_size', '0',
     '-hls_flags', 'independent_segments',
     '-hls_segment_filename', path.join(sessionDir, 'seg_%05d.ts'),
@@ -5734,7 +5734,7 @@ function startMobileHlsSession({
 
 function sendMobileHlsPlaylist(res, scope, key, playlistPath) {
   touchMobileHlsSession(scope, key);
-  waitForHlsPlaylist(playlistPath, 15000, hlsSessionId(scope, key))
+  waitForHlsPlaylist(playlistPath, 9000, hlsSessionId(scope, key))
     .then(content => {
       touchMobileHlsSession(scope, key);
       const rewritten = content.replace(/^(seg_[^\r\n]+\.ts)$/gm, `/api/mobile-hls/${scope}/${key}/$1`);
@@ -6354,30 +6354,42 @@ function playbackTitleYear(value) {
 
 function findPlaybackCatalogItem(items, requestedId, requestedTitle, requestedYear, isPlayable) {
   const available = (items || []).filter(item => item && isPlayable(item));
-  const id = String(requestedId || '');
-  const direct = available.find(item => String(item.id || '') === id);
-  if (direct) return direct;
-
+  const id = String(requestedId || '').trim();
   const title = String(requestedTitle || '').trim();
-  if (!title) return null;
-  const key = normalizedTitleKey(title);
   const year = playbackTitleYear(requestedYear || title);
-  const exact = available.filter(item => normalizedTitleKey(item.name || item.title || item.file) === key);
-  if (exact.length) {
-    return exact.find(item => !year || playbackTitleYear(item.year || item.name || item.title) === year) || exact[0];
+
+  if (title) {
+    const key = normalizedTitleKey(title);
+    const exact = available.filter(item =>
+      normalizedTitleKey(item.name || item.title || item.file) === key
+    );
+
+    if (exact.length) {
+      const sameYear = year
+        ? exact.filter(item =>
+            playbackTitleYear(item.year || item.name || item.title) === year
+          )
+        : exact;
+
+      const pool = sameYear.length ? sameYear : exact;
+
+      return pool.find(item =>
+        id && (
+          String(item.id || '') === id ||
+          String(item.tmdbId || '') === id
+        )
+      ) || pool[0];
+    }
+
+    return null;
   }
 
-  let best = null;
-  let bestScore = 0;
-  for (const item of available) {
-    const score = looseTitleScore(title, item.name || item.title || item.file)
-      + (year && playbackTitleYear(item.year || item.name || item.title) === year ? 0.08 : 0);
-    if (score > bestScore) {
-      best = item;
-      bestScore = score;
-    }
-  }
-  return bestScore >= 0.72 ? best : null;
+  if (!id) return null;
+
+  return available.find(item =>
+    String(item.id || '') === id ||
+    String(item.tmdbId || '') === id
+  ) || null;
 }
 
 // Lightweight home cards intentionally omit stream URLs. Resolve the trusted
@@ -6503,81 +6515,55 @@ function svMergePlayableDetailData(item, mediaType, title, detailData, localOnly
 }
 
 function findLocalDetailItem(mediaType, rawId, title) {
-  const id = decodeURIComponent(String(rawId || ''));
-  const normalizedRequest = normalizeDetailTitle(title || id);
-  const requestTitle = normalizedRequest.title.toLowerCase();
-  const requestYear = normalizedRequest.year;
-  const matchesNormalized = item => {
-    const name = item.name || item.title || item.filename || '';
-    const normalized = normalizeDetailTitle(name, item.year);
-    if (String(item.tmdbId || '') && String(item.tmdbId) === id) return true;
-    if (requestTitle && normalized.title.toLowerCase() === requestTitle) return true;
-    if (requestTitle && requestYear && normalized.title.toLowerCase() === requestTitle && String(normalized.year || item.year || '').slice(0, 4) === requestYear) return true;
-    return requestTitle && looseTitleScore(name, requestTitle) >= 0.72;
-  };
-  if (mediaType === 'tv') {
-    const local = (_seriesList || buildSeriesListSync()).find(item =>
-      String(item.id || '') === id ||
-      String(item.tmdbId || '') === id ||
-      matchesNormalized(item)
-    );
-    if (local) return local;
-    const raw = (ftpCatalog.series || []).find(item =>
-      String(item.tmdbId || '') === id ||
-      matchesNormalized(item)
-    );
-    if (raw) return {
-      name: raw.title,
-      poster: raw.poster || null,
-      backdrop: raw.backdrop || raw.poster || null,
-      tmdbId: raw.tmdbId || null,
-      imdbId: raw.imdbId || '',
-      overview: raw.overview || '',
-      year: raw.year || '',
-      rating: raw.rating || null,
-      genre: raw.genre || '',
-      category: raw.category || '',
-      language: raw.language || '',
-      productionCompanies: raw.productionCompanies || [],
-      isFtp: true,
-      seasons: {},
-    };
-    return { id, name: title || id, type: mediaType };
+  const id = decodeURIComponent(String(rawId || '')).trim();
+  const source = mediaType === 'tv'
+    ? allApiSeriesForDetails()
+    : allApiMoviesForDetails();
+
+  const normalized = normalizeDetailTitle(title || '', '');
+  const requestTitle = normalized.title.toLowerCase();
+  const requestYear = normalized.year || playbackTitleYear(title);
+
+  if (requestTitle) {
+    const exact = source.filter(item => {
+      const itemTitle = normalizeDetailTitle(
+        item.name || item.title || item.file || '',
+        item.year || ''
+      ).title.toLowerCase();
+
+      return itemTitle === requestTitle;
+    });
+
+    if (exact.length) {
+      const sameYear = requestYear
+        ? exact.filter(item =>
+            playbackTitleYear(item.year || item.name || item.title) === requestYear
+          )
+        : exact;
+
+      const pool = sameYear.length ? sameYear : exact;
+
+      return pool.find(item =>
+        id && (
+          String(item.id || '') === id ||
+          String(item.tmdbId || '') === id
+        )
+      ) || pool[0];
+    }
   }
 
-  const local = (_movieList || buildMovieListSync()).find(item =>
-    String(item.id || '') === id ||
-    String(item.tmdbId || '') === id ||
-    matchesNormalized(item)
+  const direct = source.find(item =>
+    id && (
+      String(item.id || '') === id ||
+      String(item.tmdbId || '') === id
+    )
   );
-  if (local) return local;
-  const raw = (ftpCatalog.movies || []).find((item, i) =>
-    `ftp_${i}` === id ||
-    String(item.tmdbId || '') === id ||
-    matchesNormalized(item)
-  );
-  if (raw) return {
+
+  return direct || {
     id,
-    name: raw.title,
-    file: raw.filename,
-    poster: raw.poster || null,
-    backdrop: raw.backdrop || raw.poster || null,
-    tmdbId: raw.tmdbId || null,
-    imdbId: raw.imdbId || '',
-    overview: raw.overview || '',
-    year: raw.year || '',
-    rating: raw.rating || null,
-    type: 'movie',
-    genre: raw.genre || '',
-    category: raw.category || '',
-    runtime: raw.runtime || '',
-    director: raw.director || '',
-    language: raw.language || '',
-    productionCompanies: raw.productionCompanies || [],
-    streamUrl: raw.streamUrl,
-    isFtp: true,
+    name: title || id,
+    type: mediaType
   };
-  return { id, name: title || id, type: mediaType };
 }
 
 app.get('/api/details/debug', async (req, res) => {
@@ -11007,3 +10993,15 @@ infraTelemetry.attachWebSocket(server);
 
 
 
+
+
+/* SV_INSTANT_LIVE_PREWARM_PATCH */
+setTimeout(() => {
+  try {
+    if (typeof svEnsureLiveRelay === 'function') {
+      ['tsports','shomoy','jamuna','channel24'].forEach(id => {
+        try { svEnsureLiveRelay(id); } catch {}
+      });
+    }
+  } catch {}
+}, 2500);

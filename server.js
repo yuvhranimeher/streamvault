@@ -66,10 +66,10 @@ const MASSIVE_CATALOG_FILE = path.join(__dirname, 'scan-output', 'clean-catalog.
 const SV_CACHE_DIR = path.join(__dirname, 'cache');
 const SV_BOOT_SEARCH_FILE = path.join(SV_CACHE_DIR, 'boot-search-index.json');
 const MOBILE_HLS_DIR = path.join(__dirname, 'cache', 'mobile-hls');
-const MOBILE_HLS_IDLE_MS = Number(process.env.MOBILE_HLS_IDLE_MS || 900000);
-const MOBILE_HLS_MAX_SESSIONS = Number(process.env.MOBILE_HLS_MAX_SESSIONS || 6);
-const MOBILE_HLS_FFMPEG_THREADS = String(process.env.MOBILE_HLS_FFMPEG_THREADS || 1);
-const MOBILE_HLS_PROFILE = String(process.env.MOBILE_HLS_PROFILE || 'mobile-hls-v4-av-sync');
+const MOBILE_HLS_IDLE_MS = Number(process.env.MOBILE_HLS_IDLE_MS || 120000);
+const MOBILE_HLS_MAX_SESSIONS = Number(process.env.MOBILE_HLS_MAX_SESSIONS || 2);
+const MOBILE_HLS_FFMPEG_THREADS = String(process.env.MOBILE_HLS_FFMPEG_THREADS || 2);
+const MOBILE_HLS_PROFILE = String(process.env.MOBILE_HLS_PROFILE || 'hostinger-hls-v24');
 const MOBILE_HLS_MAX_WIDTH = Number(process.env.MOBILE_HLS_MAX_WIDTH || 854);
 const MOBILE_HLS_MAX_FPS = Number(process.env.MOBILE_HLS_MAX_FPS || 24);
 const MOBILE_HLS_VIDEO_MAXRATE = String(process.env.MOBILE_HLS_VIDEO_MAXRATE || '1200k');
@@ -5641,10 +5641,10 @@ function waitForHlsPlaylist(playlistPath, timeoutMs = 25000, sessionId = '') {
       if (session?.error) return reject(new Error(session.error));
       if (fs.existsSync(playlistPath)) {
         const content = fs.readFileSync(playlistPath, 'utf8');
-        if ((content.match(/\.ts/g) || []).length >= 2) return resolve(content);
+        if ((content.match(/\.ts/g) || []).length >= 1) return resolve(content);
       }
       if (Date.now() - started >= timeoutMs) return reject(new Error('Mobile HLS startup timed out'));
-      setTimeout(check, 250);
+      setTimeout(check, 100);
     };
     check();
   });
@@ -5681,8 +5681,8 @@ function startMobileHlsSession({
   if (/^https?:\/\//i.test(input)) {
     ffmpegArgs.push(
       '-fflags', '+genpts',
-      '-probesize', '1048576',
-      '-analyzeduration', '1000000',
+      '-probesize', '524288',
+      '-analyzeduration', '500000',
       '-rw_timeout', '15000000'
     );
   }
@@ -5703,8 +5703,8 @@ function startMobileHlsSession({
     '-maxrate', preset.videoMaxrate,
     '-bufsize', preset.videoBufsize,
     '-pix_fmt', 'yuv420p',
-    '-g', '48',
-    '-keyint_min', '48',
+    '-g', '24',
+    '-keyint_min', '24',
     '-sc_threshold', '0',
     '-c:a', 'aac',
     '-b:a', kghkAudio ? '128k' : preset.audioBitrate,
@@ -5712,9 +5712,10 @@ function startMobileHlsSession({
     '-ac', '2',
     '-af', COMPAT_AUDIO_PTS_FILTER,
     '-f', 'hls',
-    '-hls_time', '2',
-    '-hls_list_size', '0',
-    '-hls_flags', 'independent_segments',
+    '-hls_time', '1',
+    '-hls_list_size', '30',
+    '-hls_delete_threshold', '5',
+    '-hls_flags', 'delete_segments+independent_segments+temp_file',
     '-hls_segment_filename', path.join(sessionDir, 'seg_%05d.ts'),
     playlistPath
   );

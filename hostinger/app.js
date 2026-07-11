@@ -4358,6 +4358,18 @@ async function fetchLocalPlaybackPlan(id, start=0, options={}){
 }
 
 async function fetchFtpPlaybackPlan(streamUrl, start=0, options={}){
+  /* SV_DESKTOP_PROXY_FAST_V19 */
+  if(
+    !isMobilePlaybackClient() &&
+    !options.forceHls &&
+    !options.forceRemux &&
+    !options.forceAudio &&
+    !options.forceProxy &&
+    !options.forceStream &&
+    !options.mode
+  ){
+    return localFtpPlaybackPlan(streamUrl,{forceProxy:true});
+  }
   const params = new URLSearchParams();
   params.set('url', streamUrl);
   params.set('plan','1');

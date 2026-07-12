@@ -1,4 +1,4 @@
-window.API_BASE = location.hostname.includes('hostingersite.com') ? 'https://streamvault.fit' : '';
+window.API_BASE = window.StreamVaultConfig?.apiOrigin || 'https://backend.streamvault.fit';
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
 const SV_ASSET_VERSION = '20260708-hostinger-playback-fix3';
@@ -1615,11 +1615,14 @@ function renderSortedTrack(trackId, list, sp=false) {
 async function init(){
   if(init._started)return;
   init._started=true;
+  buildRows();
+  buildSpeedList();
   try{
     const[mR,sR]=await Promise.all([
-      fetch(API_BASE + '/api/movies?page=0&limit=24'),
-      fetch(API_BASE + '/api/series?summary=1&limit=24')
+      fetchWithTimeout(API_BASE + '/api/movies?page=0&limit=24', {}, 4500),
+      fetchWithTimeout(API_BASE + '/api/series?summary=1&limit=24', {}, 4500)
     ]);
+    if(!mR.ok || !sR.ok)throw new Error('catalog API unavailable');
     const mData = await mR.json();
     movies = mData.movies.filter(m=>m&&m.name);
     series = await sR.json();
@@ -1660,9 +1663,13 @@ async function init(){
       }, p * 600);
     }
     setTimeout(()=>{ _homeMoviesLoaded=true; }, homeBgPages * 600 + 200);
-  }catch{
+  }catch(error){
     const heroTitle = document.getElementById('heroTitle');
-    if(heroTitle)heroTitle.textContent='Could not connect to server';
+    if(heroTitle && !document.querySelector('.card,.live-ch-card'))heroTitle.textContent='Browse StreamVault';
+    console.warn('[StreamVault] backend unavailable; using static homepage:', error?.message || error);
+    channels=[];
+    buildLiveTV();
+    buildLiveHomeRow();
     return;
   }
   buildHero();buildRows();buildSpeedList();
@@ -1870,8 +1877,8 @@ function shouldUseNativeHlsForLive(){
 }
 
 function openLiveChannel(channelId, channelName){
-  const directLiveSourceUrl=`/live/${encodeURIComponent(channelId)}/playlist.m3u8`;
-  const relayLiveSourceUrl=`https://streamvault.fit/live-relay/${encodeURIComponent(channelId)}/playlist.m3u8`;
+  const directLiveSourceUrl=`${API_BASE}/live/${encodeURIComponent(channelId)}/playlist.m3u8`;
+  const relayLiveSourceUrl=`${API_BASE}/live-relay/${encodeURIComponent(channelId)}/playlist.m3u8`;
   let liveSourceUrl=relayLiveSourceUrl;
   let liveDirectFallbackAttempted=false;
   if(svLiveAbrActive(channelId) && hlsInstance){
@@ -3037,7 +3044,7 @@ function renderEpisodes(show,season){
   document.getElementById('epList').innerHTML=eps.map((ep,epIdx)=>{
     const prog=watchProgress[ep.streamId],pct=prog?Math.round(prog.progress*100):0;
     const lbl=`${esc(show.name)} S${String(season).padStart(2,'0')}E${String(ep.episode).padStart(2,'0')}${ep.epTitle?' â€“ '+esc(ep.epTitle):''}`;
-    const thumb=ep.thumb||ep.thumbnail||ep.poster||(ep.streamId!=null?`/api/thumbnail/${ep.streamId}`:fallbackRaw);
+    const thumb=ep.thumb||ep.thumbnail||ep.poster||(ep.streamId!=null?`${API_BASE}/api/thumbnail/${ep.streamId}`:fallbackRaw);
     const existingBrief=ep.overview||ep.description||ep.synopsis||'';
     let displayTitle = ep.epTitle||'';
     displayTitle = displayTitle.replace(new RegExp('^'+show.name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*','i'),'').trim();
@@ -4270,7 +4277,7 @@ function vlcPlaylistSrc(url, title=''){
   const params = new URLSearchParams();
   params.set('url', url);
   if(title)params.set('title', title);
-  return '/api/vlc-playlist?' + params.toString();
+  return API_BASE + '/api/vlc-playlist?' + params.toString();
 }
 
 function openInVlc(url, title=''){
@@ -4318,7 +4325,7 @@ function streamUrlFor(id, start=0){
   if(currentQuality && currentQuality !== 'auto')params.set('quality', currentQuality);
   if(start > 0)params.set('start', Math.floor(start));
   const query = params.toString();
-  return `/stream/${id}${query ? '?' + query : ''}`;
+  return `${API_BASE}/stream/${id}${query ? '?' + query : ''}`;
 }
 
 async function fetchLocalPlaybackPlan(id, start=0, options={}){
@@ -4479,7 +4486,7 @@ function ftpProxySrc(url){
   const params=new URLSearchParams();
   params.set('url', url);
   params.set('playbackType', 'media');
-  return 'https://streamvault.fit/api/ftp/proxy?' + params.toString();
+  return API_BASE + '/api/ftp/proxy?' + params.toString();
 }
 
 function ftpPlaybackRouteSrc(url, mode='redirect', fallbackReason=''){
@@ -4488,7 +4495,7 @@ function ftpPlaybackRouteSrc(url, mode='redirect', fallbackReason=''){
   params.set('playbackType', 'media');
   if(fallbackReason)params.set('fallbackReason', fallbackReason);
   if(mode)params.set('mode', mode);
-  return 'https://streamvault.fit/api/playback/ftp?' + params.toString();
+  return API_BASE + '/api/playback/ftp?' + params.toString();
 }
 
 function localFtpPlaybackPlan(url, options={}){
@@ -4517,7 +4524,7 @@ function ftpRawSrc(url){
   const params=new URLSearchParams();
   params.set('url', url);
   params.set('playbackType', 'media');
-  return 'https://streamvault.fit/api/ftp/raw?' + params.toString();
+  return API_BASE + '/api/ftp/raw?' + params.toString();
 }
 
 function desktopFtpPlaybackSrc(url){
@@ -4535,7 +4542,7 @@ function ftpTranscodeSrc(url, start=0, fallbackReason='', options={}){
   if(options.smooth)params.set('smooth','1');
   if(start > 0)params.set('start', Math.floor(start));
   appendSelectedAudioParams(params);
-  return 'https://streamvault.fit/api/ftp/stream?' + params.toString();
+  return API_BASE + '/api/ftp/stream?' + params.toString();
 }
 
 function ftpStreamPlaybackPlan(url, start=0, fallbackReason='stream', options={}){
@@ -4564,7 +4571,7 @@ function ftpHeavyCompatHlsSrc(url, start=0, fallbackReason='heavy 4K compatibili
   if(fallbackReason)params.set('fallbackReason', fallbackReason);
   if(start > 0)params.set('start', Math.floor(start));
   appendSelectedAudioParams(params);
-  return 'https://streamvault.fit/api/heavy-compat-hls/ftp/index.m3u8?' + params.toString();
+  return API_BASE + '/api/heavy-compat-hls/ftp/index.m3u8?' + params.toString();
 }
 
 function ftpHeavyCompatHlsPlaybackPlan(url, start=0, fallbackReason='heavy 4K compatibility cache'){
@@ -4594,7 +4601,7 @@ function localTranscodeSrc(id, start=0, fallbackReason=''){
   if(currentQuality && currentQuality !== 'auto')params.set('quality', currentQuality);
   appendSelectedAudioParams(params);
   if(start > 0)params.set('start', Math.floor(start));
-  return `/stream/${encodeURIComponent(id)}?${params.toString()}`;
+  return `${API_BASE}/stream/${encodeURIComponent(id)}?${params.toString()}`;
 }
 
 function localDirectPlayable(file){
@@ -4646,7 +4653,7 @@ function ftpSubtitleSrc(idx){
   params.set('url', _ftpStreamUrl);
   params.set('playbackType', 'media');
   if(Number.isFinite(streamIndex))params.set('stream', streamIndex);
-  return `https://streamvault.fit/api/ftp/subtitle/${idx}.vtt?${params.toString()}`;
+  return `${API_BASE}/api/ftp/subtitle/${idx}.vtt?${params.toString()}`;
 }
 
 function resolveFtpPlayUrl(streamUrl){
@@ -6018,7 +6025,7 @@ function localSmoothTranscodeSrc(id,start=0,fallbackReason='smooth buffering fal
   if(fallbackReason)params.set('fallbackReason',fallbackReason);
   if(start > 0)params.set('start',Math.floor(start));
   appendSelectedAudioParams(params);
-  return `/stream/${encodeURIComponent(id)}?${params.toString()}`;
+  return `${API_BASE}/stream/${encodeURIComponent(id)}?${params.toString()}`;
 }
 
 function ftpSmoothTranscodeSrc(url,start=0,fallbackReason='smooth buffering fallback'){
@@ -6738,7 +6745,7 @@ async function loadSubtitleTracks(id){
         embedded:true,
         sourceIndex:track.index,
         streamIndex:track.streamIndex ?? track.index,
-        src:`/subtitles/${id}/embedded/${track.index}.vtt`,
+        src:`${API_BASE}/subtitles/${id}/embedded/${track.index}.vtt`,
         label:track.title || mediaLanguageLabel(track.language) || `Embedded ${i + 1}`,
         lang:track.language || 'en',
       }));
@@ -7500,7 +7507,7 @@ function svFetchMediaInfoData(url, timeout=9000){
 }
 
 function svLocalAudioInfoUrl(id){
-  return `/api/media-info/${encodeURIComponent(id)}?playbackType=media`;
+  return `${API_BASE}/api/media-info/${encodeURIComponent(id)}?playbackType=media`;
 }
 
 function svFtpAudioInfoUrl(streamUrl){
@@ -7508,7 +7515,7 @@ function svFtpAudioInfoUrl(streamUrl){
     url:String(streamUrl || ''),
     playbackType:'media'
   });
-  return `https://streamvault.fit/api/ftp/media-info?${params.toString()}`;
+  return `${API_BASE}/api/ftp/media-info?${params.toString()}`;
 }
 
 function svPrewarmPlaybackMetadata(item){
@@ -8420,8 +8427,7 @@ function svOptimizeImageUrl(src='', wide=false){
   if(!url.includes('image.tmdb.org/t/p/'))return url;
   const width = wide ? 780 : (_svWeakDevice || innerWidth < 760 ? 185 : 342);
   const size = `w${width}`;
-  const normalized = url.replace(/\/t\/p\/(?:original|w\d+)\//, `/t/p/${size}/`);
-  return `${window.API_BASE || "https://streamvault.fit"}/poster-cache?url=${encodeURIComponent(normalized)}&w=${width}`;
+  return url.replace(/\/t\/p\/(?:original|w\d+)\//, `/t/p/${size}/`);
 }
 function svMediaArt(item, wide=false){
   if(!item)return '';
@@ -8614,20 +8620,10 @@ function svStartPosterObserver(){
 }
 if(document.readyState === 'loading')document.addEventListener('DOMContentLoaded', svStartPosterObserver, { once:true });
 else svStartPosterObserver();
-async function svClearServiceWorkersAndCaches(){
-  try{
-    if('serviceWorker' in navigator){
-      const registrations=await navigator.serviceWorker.getRegistrations();
-      await Promise.all(registrations.map(registration=>registration.unregister()));
-    }
-    if('caches' in window){
-      const keys=await caches.keys();
-      await Promise.all(keys.filter(key=>key.startsWith('streamvault-')).map(key=>caches.delete(key)));
-    }
-    mediaFixLog('cleared service workers and caches',{assetVersion:SV_ASSET_VERSION});
-  }catch(_){}
+function svRegisterServiceWorker(){
+  window.StreamVaultConfig?.registerServiceWorker?.().catch(()=>{});
 }
-window.addEventListener('load', svClearServiceWorkersAndCaches, { once:true });
+window.addEventListener('load', svRegisterServiceWorker, { once:true });
 function svChannelColor(ch={}){
   const direct = ch.color || ch.brandColor || ch.primaryColor;
   if(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(String(direct||'')))return direct;

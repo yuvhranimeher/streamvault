@@ -1,16 +1,29 @@
 ﻿(function(){
-  window.API_BASE = window.API_BASE || "https://streamvault.fit";
+  window.API_BASE = window.StreamVaultConfig?.apiOrigin || 'https://backend.streamvault.fit';
+
+  const FALLBACK_POSTER = '/fallback.webp';
 
   function fixUrl(u){
     if(!u) return u;
-    if(u.startsWith("/poster-cache") || u.startsWith("/image-proxy")){
-      return window.API_BASE + u;
+    try{
+      const parsed = new URL(u, location.href);
+      if(parsed.pathname === '/poster-cache' || parsed.pathname === '/image-proxy'){
+        const source = parsed.searchParams.get('url');
+        if(source && /^https:\/\/image\.tmdb\.org\/t\/p\//i.test(source))return source;
+        return FALLBACK_POSTER;
+      }
+    }catch(_error){
+      return FALLBACK_POSTER;
     }
     return u;
   }
 
   function fixImgs(root){
-    (root || document).querySelectorAll("img").forEach(img=>{
+    const scope = root || document;
+    const images = [];
+    if(scope.matches?.('img'))images.push(scope);
+    scope.querySelectorAll?.('img').forEach(img=>images.push(img));
+    images.forEach(img=>{
       ["src","data-src","data-sv-src"].forEach(a=>{
         const v=img.getAttribute(a);
         if(v) img.setAttribute(a, fixUrl(v));
@@ -27,10 +40,8 @@
     });
   }
 
-  window.addEventListener("load",()=>{
-    fixImgs(document);
-    setInterval(()=>fixImgs(document),1200);
-  });
+  if(document.readyState === 'loading')document.addEventListener('DOMContentLoaded', ()=>fixImgs(document), { once:true });
+  else fixImgs(document);
 
   new MutationObserver(ms=>{
     ms.forEach(m=>m.addedNodes.forEach(n=>{

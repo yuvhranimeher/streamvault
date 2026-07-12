@@ -1,4 +1,4 @@
-﻿window.API_BASE = "https://streamvault.fit";
+﻿window.API_BASE = window.StreamVaultConfig?.apiOrigin || 'https://backend.streamvault.fit';
 (function(){
   const state = {
     loaded: false,

@@ -1,4 +1,4 @@
-window.API_BASE = "https://streamvault.fit";
+window.API_BASE = window.StreamVaultConfig?.apiOrigin || 'https://backend.streamvault.fit';
 (function(){
   var SV_PERF_HOME_LEGACY_MAIN = [
     { rowId:'netflixRow', trackId:'netflixTrack', sectionKey:'netflix', title:'Netflix Originals' },
@@ -266,7 +266,7 @@ window.API_BASE = "https://streamvault.fit";
     if(svHomePayload && (svHomePayload._limit || 0) >= requestedLimit)return Promise.resolve(svHomePayload);
     if(svHomePayloadPromise)return svHomePayloadPromise;
     const readJson = r=>r.ok ? r.json() : Promise.reject(new Error('home feed failed'));
-    svHomePayloadPromise = fetch('/home-feed.json?v=20260707', { cache:'no-store' })
+    svHomePayloadPromise = fetch('/home-feed.json?v=20260712-hostinger-static-v2', { cache:'force-cache' })
       .then(readJson)
       .catch(()=>fetch(`${API_BASE}/api/home-feed?limit=${requestedLimit}`).then(readJson))
       .then(data=>{

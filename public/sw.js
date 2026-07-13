@@ -1,163 +1,243 @@
-const SV_CACHE_VERSION = '20260701-live-relay-default-final1';
-const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_POSTER_CACHE = `streamvault-posters-${SV_CACHE_VERSION}`;
-const SV_ASSET_CACHE = `streamvault-assets-${SV_CACHE_VERSION}`;
-const SV_API_CACHE = `streamvault-api-${SV_CACHE_VERSION}`;
-const SV_HOME_FEED_TTL = 60 * 1000;
-const SV_BOOT_SEARCH_TTL = 24 * 60 * 60 * 1000;
+const CACHE_VERSION = '20260713-hostinger-frontend-v3';
+const CACHE_PREFIX = 'streamvault-';
+const SHELL_CACHE = `${CACHE_PREFIX}shell-${CACHE_VERSION}`;
+const STATIC_CACHE = `${CACHE_PREFIX}static-${CACHE_VERSION}`;
+const POSTER_CACHE = `${CACHE_PREFIX}posters-${CACHE_VERSION}`;
+const POSTER_CACHE_LIMIT = 300;
 
-self.addEventListener('install', event => {
-  event.waitUntil(self.skipWaiting());
-});
+const SHELL_ASSETS = [
+  '/index.html',
+  '/runtime-config.js',
+  '/styles.css',
+  '/fifa-fast.js',
+  '/app-v3.js',
+  '/details-exact-v5.js',
+  '/home.js',
+  '/downloads.js',
+  '/search.js',
+  '/livetv.js',
+  '/player.js',
+  '/live-fast.js',
+  '/boot.js',
+  '/hostinger-poster-fix.js',
+  '/series-modal-episodes-v7.js',
+  '/media-popup-polish-v8.js',
+  '/series-instant-prefetch-v9.js',
+  '/movie-play-button-v10.js',
+  '/instant-remux-v23.js',
+  '/offline-ui.js',
+  '/home-feed.json',
+  '/boot-search-index.json',
+  '/channels.json',
+  '/manifest.webmanifest',
+  '/fallback.webp',
+  '/assets/insomnia-tapes-logo.png',
+  '/copyright.html',
+  '/disclaimer.html',
+  '/legal.html',
+  '/privacy.html',
+  '/terms.html'
+];
 
-self.addEventListener('activate', event => {
-  event.waitUntil((async () => {
-    const keys = await caches.keys();
-    await Promise.all(keys.filter(key => key.startsWith('streamvault-')).map(key => caches.delete(key)));
-    await self.registration.unregister();
+const STATIC_FILE_PATTERN = /\.(?:css|js|json|webmanifest|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|otf)$/i;
+const MEDIA_FILE_PATTERN = /\.(?:m3u8|ts|m4s|mp4|m4v|mkv|webm|mov|avi|mp3|m4a|aac|flac|wav|vtt)(?:$|\?)/i;
+const BACKEND_PATHS = ['/api', '/download', '/live', '/live-relay', '/proxy', '/stream', '/subtitles'];
+const NEVER_CACHE_PATHS = ['/api/heavy-compat-hls', '/api/mobile-hls', '/api/ftp/stream'];
+const STATIC_JSON_PATHS = new Set(['/home-feed.json', '/boot-search-index.json', '/channels.json', '/catalog.json']);
+
+function successful(response){
+  return Boolean(response && response.ok);
+}
+
+function htmlResponse(response){
+  const contentType=response?.headers?.get('content-type') || '';
+  return successful(response) && contentType.toLowerCase().includes('text/html');
+}
+
+function cacheableStatic(response){
+  return successful(response) && !htmlResponse(response);
+}
+
+function cacheablePoster(response){
+  return Boolean(response && (response.ok || response.type === 'opaque'));
+}
+
+function pathMatches(pathname,prefix){
+  return pathname === prefix || pathname.startsWith(prefix + '/');
+}
+
+function isBackendRequest(url){
+  return url.hostname === 'backend.streamvault.fit'
+    || BACKEND_PATHS.some(prefix=>pathMatches(url.pathname,prefix));
+}
+
+function isMediaRequest(request,url){
+  const accept=request.headers.get('accept') || '';
+  return request.headers.has('range')
+    || request.destination === 'video'
+    || request.destination === 'audio'
+    || /^(?:video|audio)\//i.test(accept)
+    || MEDIA_FILE_PATTERN.test(url.pathname)
+    || NEVER_CACHE_PATHS.some(prefix=>pathMatches(url.pathname,prefix));
+}
+
+function isPosterRequest(request,url){
+  return request.method === 'GET'
+    && request.destination === 'image'
+    && url.hostname === 'image.tmdb.org';
+}
+
+function isStaticRequest(request,url){
+  if(url.origin !== self.location.origin || request.method !== 'GET')return false;
+  if(url.pathname.startsWith('/assets/'))return true;
+  return ['style','script','font','image'].includes(request.destination)
+    || STATIC_FILE_PATTERN.test(url.pathname);
+}
+
+function staticCacheKey(url){
+  return new Request(`${url.origin}${url.pathname}`);
+}
+
+async function trimCache(cacheName,limit){
+  const cache=await caches.open(cacheName);
+  const keys=await cache.keys();
+  if(keys.length <= limit)return;
+  await Promise.all(keys.slice(0,keys.length-limit).map(key=>cache.delete(key)));
+}
+
+async function cacheShellAsset(cache,path){
+  try{
+    const response=await fetch(new Request(path,{cache:'reload'}));
+    const canCache=path.endsWith('.html') ? htmlResponse(response) : cacheableStatic(response);
+    if(canCache)await cache.put(path,response);
+  }catch(_error){
+    // A later successful request can populate an asset unavailable during install.
+  }
+}
+
+self.addEventListener('install',event=>{
+  event.waitUntil((async()=>{
+    const cache=await caches.open(SHELL_CACHE);
+    await Promise.allSettled(SHELL_ASSETS.map(path=>cacheShellAsset(cache,path)));
+    await self.skipWaiting();
   })());
 });
 
-function sameOrigin(url) {
-  return url.origin === self.location.origin;
-}
-
-function isStaticAsset(url) {
-  return sameOrigin(url) && (/\.(?:js|css)$/i.test(url.pathname) || url.pathname === '/home-feed.json');
-}
-
-function isMediaStreamRequest(request, url) {
-  return request.destination === 'video'
-    || request.headers.has('range')
-    || url.pathname.startsWith('/stream/')
-    || url.pathname.startsWith('/subtitles/')
-    || url.pathname.startsWith('/api/ftp/subtitle/')
-    || url.pathname === '/api/ftp/stream'
-    || url.pathname.startsWith('/api/playback/local/')
-    || url.pathname.startsWith('/api/heavy-compat-hls/')
-    || url.pathname.startsWith('/api/mobile-hls/')
-    || url.pathname === '/api/playback/ftp'
-    || url.pathname === '/api/ftp/proxy';
-}
-
-async function cacheFirst(request, cacheName) {
-  const cache = await caches.open(cacheName);
-  const cached = await cache.match(request);
-  if (cached) return cached;
-  const fresh = await fetch(request);
-  if (fresh && fresh.ok) cache.put(request, fresh.clone());
-  return fresh;
-}
-
-async function networkFirst(request, cacheName) {
-  const cache = await caches.open(cacheName);
-  try {
-    const fresh = await fetch(new Request(request, { cache: 'reload' }));
-    if (fresh && fresh.ok) cache.put(request, fresh.clone());
-    return fresh;
-  } catch (err) {
-    const cached = await cache.match(request);
-    if (cached) return cached;
-    throw err;
-  }
-}
-
-async function brieflyCachedHomeFeed(request) {
-  const cache = await caches.open(SV_API_CACHE);
-  const cached = await cache.match(request);
-  const cachedAt = Number(cached?.headers.get('x-sv-cached-at') || 0);
-  if (cached && cachedAt && Date.now() - cachedAt < SV_HOME_FEED_TTL) return cached;
-
-  try {
-    const fresh = await fetch(request);
-    if (fresh && fresh.ok) {
-      const headers = new Headers(fresh.headers);
-      headers.set('x-sv-cached-at', String(Date.now()));
-      const copy = new Response(await fresh.clone().blob(), {
-        status: fresh.status,
-        statusText: fresh.statusText,
-        headers
-      });
-      cache.put(request, copy.clone());
-    }
-    return fresh;
-  } catch (err) {
-    if (cached) return cached;
-    throw err;
-  }
-}
-
-async function cachedBootSearchIndex(request) {
-  const cache = await caches.open(SV_API_CACHE);
-  const cached = await cache.match(request);
-  const cachedAt = Number(cached?.headers.get('x-sv-cached-at') || 0);
-  if (cached && cachedAt && Date.now() - cachedAt < SV_BOOT_SEARCH_TTL) return cached;
-
-  try {
-    const fresh = await fetch(request);
-    if (fresh && fresh.ok) {
-      const headers = new Headers(fresh.headers);
-      headers.set('x-sv-cached-at', String(Date.now()));
-      const copy = new Response(await fresh.clone().blob(), {
-        status: fresh.status,
-        statusText: fresh.statusText,
-        headers
-      });
-      cache.put(request, copy.clone());
-    }
-    return fresh;
-  } catch (err) {
-    if (cached) return cached;
-    throw err;
-  }
-}
-
-async function networkOnly(request) {
-  return fetch(new Request(request, { cache: 'no-store' }));
-}
-
-self.addEventListener('message', event => {
-  if (event.data?.type !== 'SV_CLEAR_ASSET_CACHE') return;
-  event.waitUntil((async () => {
-    const keys = await caches.keys();
-    await Promise.all(keys
-      .filter(key => key.startsWith('streamvault-assets-') && key !== SV_ASSET_CACHE)
-      .map(key => caches.delete(key)));
+self.addEventListener('activate',event=>{
+  event.waitUntil((async()=>{
+    const names=await caches.keys();
+    const current=new Set([SHELL_CACHE,STATIC_CACHE,POSTER_CACHE]);
+    await Promise.all(names
+      .filter(name=>name.startsWith(CACHE_PREFIX) && !current.has(name))
+      .map(name=>caches.delete(name)));
+    await self.clients.claim();
   })());
 });
 
-self.addEventListener('fetch', event => {
-  const request = event.request;
-  if (request.method !== 'GET') return;
+async function networkOnly(request){
+  return fetch(request,{cache:'no-store'});
+}
 
-  const url = new URL(request.url);
-  if (!sameOrigin(url)) return;
-
-  // Let media and byte-range requests go straight to the network. In
-  // particular, never store a 206 response as if it were the whole video.
-  if (isMediaStreamRequest(request, url)) return;
-
-  if (url.pathname === '/poster-cache') {
-    event.respondWith(cacheFirst(request, SV_POSTER_CACHE));
-    return;
+async function navigationNetworkFirst(request){
+  const url=new URL(request.url);
+  let networkResponse;
+  try{
+    networkResponse=await fetch(request,{cache:'no-cache'});
+    if(htmlResponse(networkResponse)){
+      const cache=await caches.open(SHELL_CACHE);
+      const key=url.pathname === '/' ? '/index.html' : url.pathname;
+      await cache.put(key,networkResponse.clone());
+      return networkResponse;
+    }
+    if(successful(networkResponse))return networkResponse;
+  }catch(_error){
+    // Fall through to the verified Hostinger shell.
   }
 
-  if (isStaticAsset(url)) {
-    event.respondWith(networkFirst(request, SV_ASSET_CACHE));
-    return;
-  }
+  const cache=await caches.open(SHELL_CACHE);
+  const exact=await cache.match(url.pathname === '/' ? '/index.html' : url.pathname);
+  if(htmlResponse(exact))return exact;
+  const index=await cache.match('/index.html');
+  if(htmlResponse(index))return index;
+  return networkResponse || Response.error();
+}
 
-  if (url.pathname === '/api/fifa-live' || url.pathname === '/api/fifa-live/news' || url.pathname.startsWith('/api/fifa-live/match/')) {
+async function jsonNetworkFirst(request,url){
+  const cache=await caches.open(STATIC_CACHE);
+  const key=staticCacheKey(url);
+  try{
+    const response=await fetch(request,{cache:'no-cache'});
+    if(cacheableStatic(response)){
+      await cache.put(key,response.clone());
+      return response;
+    }
+    const cached=await cache.match(key) || await caches.match(key);
+    return cached || response;
+  }catch(_error){
+    const cached=await cache.match(key) || await caches.match(key);
+    return cached || Response.error();
+  }
+}
+
+async function staticStaleWhileRevalidate(event,request,url){
+  const cache=await caches.open(STATIC_CACHE);
+  const key=staticCacheKey(url);
+  const cached=await cache.match(key) || await caches.match(key);
+  const update=fetch(request,{cache:'no-cache'})
+    .then(async response=>{
+      if(cacheableStatic(response))await cache.put(key,response.clone());
+      return response;
+    });
+  if(cached){
+    event.waitUntil(update.catch(()=>{}));
+    return cached;
+  }
+  return update;
+}
+
+async function posterStaleWhileRevalidate(event,request){
+  const cache=await caches.open(POSTER_CACHE);
+  const cached=await cache.match(request);
+  const update=fetch(request)
+    .then(async response=>{
+      if(cacheablePoster(response)){
+        await cache.put(request,response.clone());
+        await trimCache(POSTER_CACHE,POSTER_CACHE_LIMIT);
+      }
+      return response;
+    });
+  if(cached){
+    event.waitUntil(update.catch(()=>{}));
+    return cached;
+  }
+  return update;
+}
+
+self.addEventListener('fetch',event=>{
+  const request=event.request;
+  const url=new URL(request.url);
+
+  if(request.method !== 'GET' || isMediaRequest(request,url) || isBackendRequest(url)){
     event.respondWith(networkOnly(request));
     return;
   }
 
-  if (url.pathname === '/api/home-feed') {
-    event.respondWith(brieflyCachedHomeFeed(request));
+  if(request.mode === 'navigate'){
+    event.respondWith(navigationNetworkFirst(request));
     return;
   }
 
-  if (url.pathname === '/boot-search-index.json' || url.pathname === '/api/boot-search-index') {
-    event.respondWith(cachedBootSearchIndex(request));
+  if(isPosterRequest(request,url)){
+    event.respondWith(posterStaleWhileRevalidate(event,request));
+    return;
+  }
+
+  if(url.origin === self.location.origin && STATIC_JSON_PATHS.has(url.pathname)){
+    event.respondWith(jsonNetworkFirst(request,url));
+    return;
+  }
+
+  if(isStaticRequest(request,url)){
+    event.respondWith(staticStaleWhileRevalidate(event,request,url));
   }
 });

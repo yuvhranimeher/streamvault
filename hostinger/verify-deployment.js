@@ -107,6 +107,10 @@ if (/https:\/\/(?:www\.)?streamvault\.fit\/(?:api|download|live|live-relay|proxy
 }
 
 const sw = read('sw.js');
+const publicSwPath = path.resolve(ROOT, '..', 'public', 'sw.js');
+if (!fs.existsSync(publicSwPath) || fs.readFileSync(publicSwPath, 'utf8').replace(/\r\n/g, '\n') !== sw.replace(/\r\n/g, '\n')) {
+  fail('public/sw.js must mirror hostinger/sw.js because Hostinger publishes it at /sw.js');
+}
 for (const exclusion of ['range', '/api/heavy-compat-hls', '/api/mobile-hls', '/live-relay', 'm3u8', 'POSTER_CACHE']) {
   if (!sw.toLowerCase().includes(exclusion.toLowerCase())) fail(`service worker exclusion/cache rule is missing: ${exclusion}`);
 }

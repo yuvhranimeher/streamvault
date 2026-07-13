@@ -10,6 +10,10 @@ Hostinger's deployment source/subdirectory must therefore remain set to `hosting
 not copied into `hostinger/`, and existing files are retained until the Hostinger
 deployment has been verified in production.
 
+Hostinger's current deployment hook has one compatibility exception: it publishes
+`public/sw.js` at `/sw.js`. That file is therefore an exact verified mirror of
+`hostinger/sw.js`; the Hostinger build fails if the two workers diverge.
+
 ## Build and verification
 
 From the repository root:

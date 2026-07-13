@@ -132,10 +132,13 @@
         if(res.ok)return res.json();
         throw new Error(`boot index HTTP ${res.status}`);
       })
-      .catch(()=>fetch(BOOT_INDEX_API_URL, {
-        cache:'force-cache',
-        headers:{ Accept:'application/json' }
-      }).then(res=>res.ok ? res.json() : null)))
+      .catch(()=>{
+        if(window.StreamVaultConfig?.backendStatus?.available !== true)return null;
+        return fetchWithTimeout(BOOT_INDEX_API_URL, {
+          cache:'force-cache',
+          headers:{ Accept:'application/json' }
+        }, 3500).then(res=>res.ok ? res.json() : null);
+      }))
       .then(adoptBootIndex)
       .catch(err=>{
         console.warn('[Search] boot index unavailable:', err?.message || err);
@@ -200,13 +203,14 @@
   }
 
   async function fetchBootQuery(q, limit, kind='mixed'){
+    if(window.StreamVaultConfig?.backendStatus?.available !== true)return null;
     const key = cacheKey(q, 1, limit, `boot-${kind}`);
     if(bootQueryCache.has(key))return bootQueryCache.get(key);
     const params = new URLSearchParams({ q, kind, limit:String(limit), v:BOOT_SEARCH_VERSION });
-    const promise = fetch(`/api/boot-search-index?${params.toString()}`, {
+    const promise = fetchWithTimeout(`/api/boot-search-index?${params.toString()}`, {
       cache:'force-cache',
       headers:{ Accept:'application/json' }
-    })
+    }, 3500)
       .then(res=>res.ok ? res.json() : null)
       .catch(err=>{
         console.warn('[Search] boot query failed:', err?.message || err);
@@ -244,12 +248,13 @@
   }
 
   async function fetchResults(q, page, limit, kind='mixed'){
+    if(window.StreamVaultConfig?.backendStatus?.available !== true)throw new Error('Backend offline');
     const key = cacheKey(q, page, limit, kind);
     if(cache.has(key))return cache.get(key);
     if(controller)controller.abort();
     controller = new AbortController();
     const params = new URLSearchParams({ q, kind, page:String(page), limit:String(limit), massive:'0', background:'1' });
-    const res = await fetch(`/api/search?${params.toString()}`, { cache:'no-store', signal:controller.signal });
+    const res = await fetchWithTimeout(`/api/search?${params.toString()}`, { cache:'no-store', signal:controller.signal }, 3500);
     if(!res.ok)throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     cache.set(key, data);
@@ -350,6 +355,7 @@
 
   function scheduleRefinedSearch(query, opts={}){
     clearTimeout(refineTimer);
+    if(window.StreamVaultConfig?.backendStatus?.available !== true)return;
     const seq = opts.seq ?? searchSeq;
     refineTimer = setTimeout(()=>{
       runRefinedSearch(query, { ...opts, seq, append:false });

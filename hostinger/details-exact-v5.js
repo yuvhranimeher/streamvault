@@ -98,9 +98,9 @@
       params.set('name', show.name || '');
       if(show.id != null)params.set('id', show.id);
       if(show.year)params.set('year', show.year);
-      const r = await fetch(`/api/series/detail?${params.toString()}`, {
+      const r = await fetchWithTimeout(`/api/series/detail?${params.toString()}`, {
         signal:detailRequestController?.signal
-      });
+      }, 3500);
       if(r.ok){
         const full = await r.json();
         if(full && full.name && document.getElementById('seriesModal')?.classList.contains('open') && currentShow === show){
@@ -238,7 +238,7 @@
     const response=await fetchWithTimeout(
       `/api/series?${params.toString()}`,
       {},
-      12000
+      3500
     );
 
     if(!response?.ok)return null;
@@ -378,7 +378,7 @@
       massive: '1'
     });
 
-    const response = await fetchWithTimeout('/api/series?' + params.toString(), {}, 12000);
+    const response = await fetchWithTimeout('/api/series?' + params.toString(), {}, 3500);
     if (!response || !response.ok) return null;
 
     const payload = await response.json();
@@ -449,9 +449,10 @@
       params.set('name',String(show.name||show.title||''));
       if(show.year)params.set('year',String(show.year));
 
-      const response=await fetch(
+      const response=await fetchWithTimeout(
         '/api/series/detail?'+params.toString(),
-        {cache:'no-store'}
+        {cache:'no-store'},
+        3500
       );
 
       if(!response.ok)throw new Error('HTTP '+response.status);
@@ -755,9 +756,10 @@
         params.set("year", String(summary.year));
       }
 
-      const response = await fetch(
+      const response = await fetchWithTimeout(
         "/api/series/detail?" + params.toString(),
-        { cache: "no-store" }
+        { cache: "no-store" },
+        3500
       );
 
       if(!response.ok){

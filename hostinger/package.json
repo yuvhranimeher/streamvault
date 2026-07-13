@@ -3,9 +3,10 @@
   "version": "1.0.0",
   "main": "frontend-server.js",
   "scripts": {
-    "build": "node build-static-data.js",
+    "build": "node build-static-data.js && node verify-deployment.js",
     "start": "node frontend-server.js",
-    "verify": "node verify-deployment.js"
+    "verify": "node verify-deployment.js",
+    "test": "node test-frontend-boundary.js"
   },
   "dependencies": {
     "express": "^5.1.0"

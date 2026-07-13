@@ -1,4 +1,4 @@
-window.API_BASE = window.StreamVaultConfig?.apiOrigin || 'https://backend.streamvault.fit';
+window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE || '';
 (function(){
   var SV_PERF_HOME_LEGACY_MAIN = [
     { rowId:'netflixRow', trackId:'netflixTrack', sectionKey:'netflix', title:'Netflix Originals' },
@@ -266,9 +266,13 @@ window.API_BASE = window.StreamVaultConfig?.apiOrigin || 'https://backend.stream
     if(svHomePayload && (svHomePayload._limit || 0) >= requestedLimit)return Promise.resolve(svHomePayload);
     if(svHomePayloadPromise)return svHomePayloadPromise;
     const readJson = r=>r.ok ? r.json() : Promise.reject(new Error('home feed failed'));
-    svHomePayloadPromise = fetch('/home-feed.json?v=20260712-hostinger-static-v2', { cache:'force-cache' })
-      .then(readJson)
-      .catch(()=>fetch(`${API_BASE}/api/home-feed?limit=${requestedLimit}`).then(readJson))
+    const staticHomeFeed = window.StreamVaultConfig?.staticData?.homeFeed
+      || fetch('/home-feed.json?v=20260713-hostinger-frontend-v3', { cache:'no-cache' }).then(readJson);
+    svHomePayloadPromise = Promise.resolve(staticHomeFeed)
+      .catch(()=>{
+        if(window.StreamVaultConfig?.backendStatus?.available !== true)throw new Error('static home feed unavailable');
+        return fetchWithTimeout(`${API_BASE}/api/home-feed?limit=${requestedLimit}`, {}, 3500).then(readJson);
+      })
       .then(data=>{
         data._limit = requestedLimit;
         svHomePayload = data;
@@ -282,7 +286,10 @@ window.API_BASE = window.StreamVaultConfig?.apiOrigin || 'https://backend.stream
   function svFetchHomeSection(meta, options={}){
     const limit = options.limit || SV_HOME_ROW_LIMIT;
     const summary = options.summary === true ? '1' : '0';
-    return fetch(`${API_BASE}/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=${limit}&summary=${summary}&v=20260620-player-tracks-sections-final1`)
+    if(window.StreamVaultConfig?.backendStatus?.available !== true){
+      return Promise.resolve({ rowId:meta.rowId, items:[] });
+    }
+    return fetchWithTimeout(`${API_BASE}/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=${limit}&summary=${summary}&v=20260620-player-tracks-sections-final1`, {}, 3500)
       .then(r=>r.ok ? r.json() : Promise.reject(new Error(`section ${meta.sectionKey} failed`)))
       .then(data=>{
         const items = Array.isArray(data?.items) ? data.items : [];
@@ -296,6 +303,7 @@ window.API_BASE = window.StreamVaultConfig?.apiOrigin || 'https://backend.stream
   }
 
   function svShouldRefillHomeRow(rowId, items, rowData){
+    if(window.StreamVaultConfig?.backendStatus?.available !== true)return false;
     if(rowData?._svFresh)return false;
     if(!SV_PERF_HOME_BY_ID[rowId])return false;
     const count = Array.isArray(items) ? items.length : 0;
@@ -2673,6 +2681,7 @@ window.API_BASE = window.StreamVaultConfig?.apiOrigin || 'https://backend.stream
   }
 
   function svFetchFifaNews(background){
+    if(window.StreamVaultConfig?.backendStatus?.available === false)return;
     const now = Date.now();
     if(svFifaLiveState.newsLoading)return;
     if(background && svFifaLiveState.newsFetchedAt && now - svFifaLiveState.newsFetchedAt < SV_FIFA_NEWS_CLIENT_TTL){
@@ -2683,11 +2692,11 @@ window.API_BASE = window.StreamVaultConfig?.apiOrigin || 'https://backend.stream
     svFifaLiveState.newsLoading = true;
     if(svFifaLiveState.newsController)svFifaLiveState.newsController.abort();
     svFifaLiveState.newsController = new AbortController();
-    fetch(API_BASE + '/api/fifa-live/news', {
+    fetchWithTimeout(API_BASE + '/api/fifa-live/news', {
       cache:'no-store',
       headers:{ Accept:'application/json' },
       signal:svFifaLiveState.newsController.signal
-    })
+    }, 3500)
       .then(r=>r.ok ? r.json() : Promise.reject(new Error('FIFA news feed failed')))
       .then(data=>{
         const hasHeadlines = Array.isArray(data?.headlines) && data.headlines.length > 0;
@@ -2711,7 +2720,7 @@ window.API_BASE = window.StreamVaultConfig?.apiOrigin || 'https://backend.stream
   function svScheduleFifaNewsRefresh(delay){
     clearTimeout(svFifaLiveState.newsTimer);
     svFifaLiveState.newsTimer = null;
-    if(!svFifaDiscoverVisible())return;
+    if(!svFifaDiscoverVisible() || window.StreamVaultConfig?.backendStatus?.available !== true)return;
     svFifaLiveState.newsTimer = setTimeout(()=>svFetchFifaNews(true), Math.max(30000, delay || SV_FIFA_NEWS_CLIENT_TTL));
   }
 
@@ -2833,7 +2842,7 @@ window.API_BASE = window.StreamVaultConfig?.apiOrigin || 'https://backend.stream
 
   function svScheduleFifaLiveRefresh(){
     clearTimeout(svFifaLiveState.timer);
-    if(!svFifaDiscoverVisible())return;
+    if(!svFifaDiscoverVisible() || window.StreamVaultConfig?.backendStatus?.available !== true)return;
     const hasActive = svFifaPayloadHasActiveMatch(svFifaLiveState.payload);
     const delay = hasActive
       ? (svFifaLiveState.lastFetchFailed ? SV_FIFA_LIVE_ERROR_POLL_MS : SV_FIFA_LIVE_POLL_MS)
@@ -2852,6 +2861,10 @@ window.API_BASE = window.StreamVaultConfig?.apiOrigin || 'https://backend.stream
   function svFetchFifaLive(background){
     const root = svEnsureFifaLiveSection();
     if(!root || !svFifaDiscoverVisible())return;
+    if(window.StreamVaultConfig?.backendStatus?.available === false){
+      if(svFifaLiveState.payload)svRenderFifaLive(svFifaLiveState.payload);
+      return;
+    }
     if(svFifaLiveState.loading)return;
     if(!background && !svFifaLiveState.payload)svRenderFifaLoading();
     svFifaLiveState.loading = true;
@@ -2862,11 +2875,11 @@ window.API_BASE = window.StreamVaultConfig?.apiOrigin || 'https://backend.stream
     }else{
       if(svFifaLiveState.controller)svFifaLiveState.controller.abort();
       svFifaLiveState.controller = new AbortController();
-      request = fetch(svFifaLiveFetchUrl(), {
+      request = fetchWithTimeout(svFifaLiveFetchUrl(), {
         cache:'no-store',
         headers:{ Accept:'application/json' },
         signal:svFifaLiveState.controller.signal
-      }).then(r=>r.ok ? r.json() : Promise.reject(new Error('FIFA live feed failed')));
+      }, 3500).then(r=>r.ok ? r.json() : Promise.reject(new Error('FIFA live feed failed')));
     }
     request
       .then(data=>{
@@ -2938,6 +2951,21 @@ window.API_BASE = window.StreamVaultConfig?.apiOrigin || 'https://backend.stream
   }
 
   window.svStartFifaLiveSection = svStartFifaLiveSection;
+  window.addEventListener('streamvault:backend-status',event=>{
+    if(event.detail?.available){
+      if(svFifaLiveState.started && svFifaDiscoverVisible()){
+        svFetchFifaLive(true);
+        svFetchFifaNews(true);
+      }
+      return;
+    }
+    clearTimeout(svFifaLiveState.timer);
+    clearTimeout(svFifaLiveState.newsTimer);
+    svFifaLiveState.timer=null;
+    svFifaLiveState.newsTimer=null;
+    svFifaLiveState.controller?.abort();
+    svFifaLiveState.newsController?.abort();
+  });
 
   function svRenderHeroCards(items){
     const cardsEl = document.getElementById('heroCards');
@@ -3077,9 +3105,19 @@ window.API_BASE = window.StreamVaultConfig?.apiOrigin || 'https://backend.stream
     page.classList.add('open');
     document.getElementById('sectionTitle').textContent = meta.title;
     const grid = document.getElementById('sectionGrid');
-    grid.innerHTML = '<div class="sv-skeleton-card"></div><div class="sv-skeleton-card"></div><div class="sv-skeleton-card"></div>';
-    svSectionState = { key:meta.sectionKey, page:0, pages:1, items:[], rowId };
-    fetch(`${API_BASE}/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=${SV_HOME_ROW_LIMIT}&summary=0`)
+    const staticItems = Array.isArray(document.getElementById(rowId)?._svItems)
+      ? document.getElementById(rowId)._svItems
+      : [];
+    if(staticItems.length)svRenderGridProgressive(grid, staticItems, svHomeRenderer, SV_HOME_ROW_LIMIT);
+    else grid.innerHTML = '<div class="sv-skeleton-card"></div><div class="sv-skeleton-card"></div><div class="sv-skeleton-card"></div>';
+    svSectionState = { key:meta.sectionKey, page:0, pages:1, items:staticItems, rowId };
+    document.getElementById('sectionLoadWrap').style.display = 'none';
+    if(window.StreamVaultConfig?.backendStatus?.available !== true){
+      if(!staticItems.length)grid.innerHTML = '<div class="empty"><h2>This section is unavailable while the server is offline</h2></div>';
+      window.scrollTo({top:0,behavior:'smooth'});
+      return;
+    }
+    fetchWithTimeout(`${API_BASE}/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=${SV_HOME_ROW_LIMIT}&summary=0`, {}, 3500)
       .then(r=>r.json())
       .then(data=>{
         svSectionState.page = data.page || 0;
@@ -3095,7 +3133,11 @@ window.API_BASE = window.StreamVaultConfig?.apiOrigin || 'https://backend.stream
   window.svLoadMoreSection = function(){
     const nextPage = (svSectionState.page || 0) + 1;
     if(nextPage >= svSectionState.pages)return;
-    fetch(`${API_BASE}/api/section/${encodeURIComponent(svSectionState.key)}?page=${nextPage}&limit=${SV_HOME_ROW_LIMIT}&summary=0`)
+    if(window.StreamVaultConfig?.backendStatus?.available === false){
+      window.StreamVaultConfig.showOfflineMessage('action');
+      return;
+    }
+    fetchWithTimeout(`${API_BASE}/api/section/${encodeURIComponent(svSectionState.key)}?page=${nextPage}&limit=${SV_HOME_ROW_LIMIT}&summary=0`, {}, 3500)
       .then(r=>r.json())
       .then(data=>{
         svSectionState.page = data.page || nextPage;
@@ -3104,7 +3146,8 @@ window.API_BASE = window.StreamVaultConfig?.apiOrigin || 'https://backend.stream
         grid.insertAdjacentHTML('beforeend', items.map(svHomeRenderer).join(''));
         if(typeof svQueuePosterImages === 'function')svQueuePosterImages(grid);
         document.getElementById('sectionLoadWrap').style.display = svSectionState.page + 1 < (data.pages || svSectionState.pages) ? 'flex' : 'none';
-      });
+      })
+      .catch(()=>window.StreamVaultConfig?.showOfflineMessage('action'));
   };
 
   function svFindLiveSportsCategory(){

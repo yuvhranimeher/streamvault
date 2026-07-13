@@ -1,11 +1,33 @@
 DirectoryIndex index.html
 
+<IfModule mod_headers.c>
+  <FilesMatch "\.(?:css|js|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|otf)$">
+    Header always set Cache-Control "public, max-age=86400, stale-while-revalidate=604800"
+  </FilesMatch>
+
+  <FilesMatch "^(?:home-feed|boot-search-index|channels)\.json$">
+    Header always set Cache-Control "no-cache, max-age=0, must-revalidate"
+  </FilesMatch>
+
+  <FilesMatch "^(?:index\.html|sw\.js)$">
+    Header always set Cache-Control "no-cache, no-store, max-age=0, must-revalidate"
+    Header always set Pragma "no-cache"
+    Header always set Expires "0"
+  </FilesMatch>
+</IfModule>
+
 <IfModule mod_rewrite.c>
-RewriteEngine On
+  RewriteEngine On
 
-RewriteCond %{REQUEST_FILENAME} -f [OR]
-RewriteCond %{REQUEST_FILENAME} -d
-RewriteRule ^ - [L]
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
 
-RewriteRule ^ index.html [L]
+  # Backend and download routes belong to backend.streamvault.fit, never the SPA shell.
+  RewriteRule ^(?:api|download|live|live-relay|proxy|stream|subtitles)(?:/|$) - [R=404,L]
+
+  # A missing static file must be a real 404 rather than index.html with the wrong MIME type.
+  RewriteRule \.(?:css|js|json|webmanifest|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|otf|m3u8|ts|mp4|vtt)$ - [R=404,L,NC]
+
+  RewriteRule ^ index.html [L]
 </IfModule>

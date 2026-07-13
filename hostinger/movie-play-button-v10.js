@@ -96,7 +96,9 @@
       }
     }catch(error){
       console.error("[Movie Play v10]",error);
-      showToast("Movie playback could not start");
+      showToast(window.StreamVaultConfig?.backendStatus?.available === false
+        ? "Playback server is currently offline."
+        : "Movie playback could not start");
     }finally{
       button.disabled=false;
       button.innerHTML=

@@ -52,6 +52,10 @@ The project focuses on speed, large catalog handling, direct playback, mobile co
 - TMDB poster optimization
 - Mobile-friendly layout
 
+The production Hostinger frontend is maintained in `hostinger/`; see
+[`hostinger/FRONTEND_DEPLOYMENT.md`](hostinger/FRONTEND_DEPLOYMENT.md) for the
+deployment root, request ownership, build command, and cache boundary.
+
 ### Media Tools
 
 - FFmpeg

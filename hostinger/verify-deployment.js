@@ -3,19 +3,39 @@ const path = require('path');
 
 const ROOT = __dirname;
 const INDEX = path.join(ROOT, 'index.html');
-const API_ORIGIN = 'https://backend.streamvault.fit';
+const BACKEND_ORIGIN = 'https://backend.streamvault.fit';
+const STATIC_JSON = ['home-feed.json', 'boot-search-index.json', 'channels.json', 'catalog.json', 'manifest.webmanifest'];
+const REQUIRED_MESSAGES = [
+  'Playback server is currently offline.',
+  'Live TV server is currently offline.'
+];
+let failures = 0;
 
 function fail(message) {
+  failures += 1;
   console.error(`FAIL: ${message}`);
-  process.exitCode = 1;
+}
+
+function read(name) {
+  return fs.readFileSync(path.join(ROOT, name), 'utf8');
+}
+
+function parseJson(name) {
+  try {
+    return JSON.parse(read(name));
+  } catch (error) {
+    fail(`${name} is invalid JSON: ${error.message}`);
+    return null;
+  }
 }
 
 if (!fs.existsSync(INDEX)) {
   fail('hostinger/index.html is missing');
-  process.exit();
+  process.exitCode = 1;
+  return;
 }
 
-const index = fs.readFileSync(INDEX, 'utf8');
+const index = read('index.html');
 const refs = [...index.matchAll(/(?:src|href)=["']([^"'#?]+)(?:[?#][^"']*)?["']/g)]
   .map(match => match[1])
   .filter(ref => ref.startsWith('/') && !ref.startsWith('//'));
@@ -25,16 +45,41 @@ for (const ref of [...new Set(refs)]) {
   if (!fs.existsSync(localPath)) fail(`referenced asset is missing: ${ref}`);
 }
 
-for (const jsonName of ['home-feed.json', 'boot-search-index.json', 'channels.json', 'catalog.json']) {
-  const filename = path.join(ROOT, jsonName);
-  if (!fs.existsSync(filename)) {
-    fail(`static JSON is missing: ${jsonName}`);
+const firstExternalScript = index.match(/<script[^>]+src=["']([^"']+)/)?.[1] || '';
+if (!firstExternalScript.startsWith('/runtime-config.js')) {
+  fail('runtime-config.js must load before every other external script');
+}
+
+const json = {};
+for (const name of STATIC_JSON) {
+  if (!fs.existsSync(path.join(ROOT, name))) {
+    fail(`static JSON is missing: ${name}`);
     continue;
   }
-  try {
-    JSON.parse(fs.readFileSync(filename, 'utf8'));
-  } catch (error) {
-    fail(`${jsonName} is invalid JSON: ${error.message}`);
+  json[name] = parseJson(name);
+}
+
+const homeFeed = json['home-feed.json'];
+if (homeFeed) {
+  const items = [
+    ...(Array.isArray(homeFeed.hero) ? homeFeed.hero : []),
+    ...(Array.isArray(homeFeed.rows) ? homeFeed.rows.flatMap(row => row.items || []) : [])
+  ];
+  const artwork = items.flatMap(item => [item.poster, item.backdrop]).filter(Boolean);
+  if (artwork.some(url => /backend\.streamvault\.fit|\/poster-cache(?:\?|$)|\/image-proxy(?:\?|$)/i.test(String(url)))) {
+    fail('home-feed.json contains backend-dependent initial artwork');
+  }
+  if (artwork.some(url => /^http:\/\//i.test(String(url)))) {
+    fail('home-feed.json contains mixed-content artwork');
+  }
+}
+
+const channels = json['channels.json'];
+if (Array.isArray(channels)) {
+  for (const channel of channels) {
+    if (!channel?.logo || !String(channel.logo).startsWith('/')) continue;
+    const logo = String(channel.logo).split(/[?#]/, 1)[0].slice(1);
+    if (!fs.existsSync(path.join(ROOT, logo))) fail(`channel logo is missing: ${logo}`);
   }
 }
 
@@ -49,14 +94,34 @@ for (const filename of [...new Set(textFiles)]) {
   if (windowsPath.test(source)) fail(`local Windows path found in ${path.basename(filename)}`);
 }
 
-const runtime = fs.readFileSync(path.join(ROOT, 'runtime-config.js'), 'utf8');
-if (!runtime.includes(API_ORIGIN)) fail('runtime API origin is not centralized on backend.streamvault.fit');
-if (/https:\/\/(?:www\.)?streamvault\.fit\/(?:api|live|live-relay|stream|subtitles)(?:\/|\?|['"`])/.test(
-  activeScripts.map(filename => fs.readFileSync(filename, 'utf8')).join('\n')
-)) {
-  fail('an active script still routes a backend request through the frontend apex');
+const runtime = read('runtime-config.js');
+if (!runtime.includes(BACKEND_ORIGIN)) fail('runtime backend origin is not centralized on backend.streamvault.fit');
+if (!runtime.includes('global.STREAMVAULT_CONFIG = config')) fail('window.STREAMVAULT_CONFIG is missing');
+for (const message of REQUIRED_MESSAGES) {
+  if (!runtime.includes(message)) fail(`offline message is missing: ${message}`);
 }
 
-if (!process.exitCode) {
-  console.log(`Hostinger deployment verified: ${new Set(refs).size} referenced assets, ${activeScripts.length} scripts`);
+const activeSource = activeScripts.map(filename => fs.readFileSync(filename, 'utf8')).join('\n');
+if (/https:\/\/(?:www\.)?streamvault\.fit\/(?:api|download|live|live-relay|proxy|stream|subtitles)(?:\/|\?|["'`])/.test(activeSource)) {
+  fail('an active script still hardcodes a backend request through the frontend apex');
+}
+
+const sw = read('sw.js');
+for (const exclusion of ['range', '/api/heavy-compat-hls', '/api/mobile-hls', '/live-relay', 'm3u8', 'POSTER_CACHE']) {
+  if (!sw.toLowerCase().includes(exclusion.toLowerCase())) fail(`service worker exclusion/cache rule is missing: ${exclusion}`);
+}
+if (!sw.includes("request.destination === 'video'") || !sw.includes("request.destination === 'audio'")) {
+  fail('service worker media responses are not explicitly excluded');
+}
+
+const htaccess = read('.htaccess');
+if (!htaccess.includes('index\\.html|sw\\.js') || !htaccess.includes('no-cache, no-store')) {
+  fail('.htaccess does not mark index.html and sw.js for no-cache/no-store');
+}
+if (!htaccess.includes('backend.streamvault.fit')) fail('.htaccess does not document the backend route boundary');
+
+if (failures) {
+  process.exitCode = 1;
+} else {
+  console.log(`Hostinger deployment verified: ${new Set(refs).size} referenced assets, ${activeScripts.length} active scripts, ${channels?.length || 0} local channel logos`);
 }

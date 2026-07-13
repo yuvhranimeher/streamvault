@@ -1,24 +1,33 @@
 (function configureStreamVault(global) {
   'use strict';
 
-  const API_ORIGIN = 'https://backend.streamvault.fit';
-  const BACKEND_PATHS = ['/api/', '/live/', '/live-relay/', '/stream/', '/subtitles/'];
+  const BUILD_VERSION = '20260713-hostinger-frontend-v3';
+  const BACKEND_ORIGIN = 'https://backend.streamvault.fit';
+  const BACKEND_PATHS = [
+    '/api',
+    '/download',
+    '/live',
+    '/live-relay',
+    '/proxy',
+    '/stream',
+    '/subtitles'
+  ];
   const LEGACY_FRONTEND_ORIGINS = new Set([
     'https://streamvault.fit',
     'https://www.streamvault.fit'
   ]);
-  const OFFLINE_MESSAGE = 'StreamVault backend is temporarily offline.';
+  const MESSAGES = Object.freeze({
+    backend: 'StreamVault backend is temporarily offline.',
+    playback: 'Playback server is currently offline.',
+    liveTv: 'Live TV server is currently offline.',
+    action: 'This backend feature is currently offline.'
+  });
 
   function isBackendPath(pathname) {
-    return pathname === '/api'
-      || pathname === '/live-relay'
-      || pathname === '/live'
-      || pathname === '/stream'
-      || pathname === '/subtitles'
-      || BACKEND_PATHS.some(prefix => pathname.startsWith(prefix));
+    return BACKEND_PATHS.some(prefix => pathname === prefix || pathname.startsWith(prefix + '/'));
   }
 
-  function apiUrl(input) {
+  function backendUrl(input) {
     if (input == null) return input;
     let url;
     try {
@@ -30,7 +39,7 @@
     const shouldRoute = isBackendPath(url.pathname)
       && (url.origin === global.location.origin || LEGACY_FRONTEND_ORIGINS.has(url.origin));
     if (!shouldRoute) return input instanceof URL ? url.toString() : input;
-    return API_ORIGIN + url.pathname + url.search + url.hash;
+    return BACKEND_ORIGIN + url.pathname + url.search + url.hash;
   }
 
   const backendStatus = {
@@ -55,62 +64,118 @@
   const nativeFetch = global.fetch.bind(global);
 
   global.fetch = function streamVaultFetch(input, init) {
+    let backendRequest = false;
     try {
       if (typeof input === 'string' || input instanceof URL) {
-        input = apiUrl(input);
+        const routed = backendUrl(input);
+        input = routed;
+        const requestUrl = new URL(String(routed), global.location.href);
+        backendRequest = requestUrl.origin === BACKEND_ORIGIN && isBackendPath(requestUrl.pathname);
       } else if (input && input.url) {
-        const routed = apiUrl(input.url);
+        const routed = backendUrl(input.url);
+        const requestUrl = new URL(String(routed), global.location.href);
+        backendRequest = requestUrl.origin === BACKEND_ORIGIN && isBackendPath(requestUrl.pathname);
         if (routed !== input.url) input = new Request(routed, input);
       }
     } catch (_error) {
       // Preserve the native request if a nonstandard Request object cannot be cloned.
     }
-    return nativeFetch(input, init);
+    const request = nativeFetch(input, init);
+    if (!backendRequest) return request;
+    return request.catch(error => {
+      if (error?.name !== 'AbortError') publishBackendStatus(false, null);
+      throw error;
+    });
   };
 
   if (global.XMLHttpRequest) {
     const nativeOpen = global.XMLHttpRequest.prototype.open;
     global.XMLHttpRequest.prototype.open = function streamVaultOpen(method, url, ...rest) {
-      return nativeOpen.call(this, method, apiUrl(url), ...rest);
+      return nativeOpen.call(this, method, backendUrl(url), ...rest);
     };
   }
 
-  function checkBackendAvailability(timeoutMs = 3500) {
+  function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
     const controller = new AbortController();
+    const parentSignal = options.signal;
+    const abortFromParent = () => controller.abort(parentSignal?.reason);
+    if (parentSignal?.aborted) abortFromParent();
+    else parentSignal?.addEventListener?.('abort', abortFromParent, { once: true });
     const timer = global.setTimeout(() => controller.abort(), timeoutMs);
-    return nativeFetch(API_ORIGIN + '/api/version', {
+    return nativeFetch(backendUrl(url), { ...options, signal: controller.signal })
+      .finally(() => {
+        global.clearTimeout(timer);
+        parentSignal?.removeEventListener?.('abort', abortFromParent);
+      });
+  }
+
+  function loadStaticJson(path) {
+    return fetchWithTimeout(path, {
+      cache: 'no-cache',
+      headers: { Accept: 'application/json' }
+    }, 5000).then(response => {
+      if (!response.ok) throw new Error(`${path} HTTP ${response.status}`);
+      return response.json();
+    });
+  }
+
+  const staticData = Object.freeze({
+    homeFeed: loadStaticJson('/home-feed.json'),
+    channels: loadStaticJson('/channels.json')
+  });
+
+  function checkBackendAvailability(timeoutMs = 2500) {
+    return fetchWithTimeout(BACKEND_ORIGIN + '/api/version', {
       cache: 'no-store',
-      headers: { Accept: 'application/json' },
-      signal: controller.signal
-    })
+      headers: { Accept: 'application/json' }
+    }, timeoutMs)
       .then(response => {
         if (!response.ok) throw new Error(`backend HTTP ${response.status}`);
         return response.json().catch(() => ({}));
       })
       .then(payload => publishBackendStatus(true, payload.version || payload.commit || null))
-      .catch(() => publishBackendStatus(false, null))
-      .finally(() => global.clearTimeout(timer));
+      .catch(() => publishBackendStatus(false, null));
   }
 
   function registerServiceWorker() {
     if (!('serviceWorker' in navigator) || !/^https?:$/.test(global.location.protocol)) {
       return Promise.resolve(null);
     }
-    return navigator.serviceWorker.register('/sw.js?v=20260712-hostinger-static-v2', { scope: '/' });
+    return navigator.serviceWorker.register(`/sw.js?v=${BUILD_VERSION}`, {
+      scope: '/',
+      updateViaCache: 'none'
+    });
   }
 
-  global.API_BASE = API_ORIGIN;
-  global.STREAMVAULT_BACKEND_OFFLINE_MESSAGE = OFFLINE_MESSAGE;
-  global.__svBackendStatus = backendStatus;
-  global.StreamVaultConfig = Object.freeze({
-    apiOrigin: API_ORIGIN,
-    apiUrl,
+  function showOfflineMessage(kind = 'action') {
+    const message = MESSAGES[kind] || MESSAGES.action;
+    if (typeof global.showToast === 'function') global.showToast(message);
+    else console.warn(`[StreamVault] ${message}`);
+    return message;
+  }
+
+  const config = Object.freeze({
+    apiOrigin: BACKEND_ORIGIN,
+    backendOrigin: BACKEND_ORIGIN,
+    backendUrl,
+    apiUrl: backendUrl,
     backendStatus,
+    buildVersion: BUILD_VERSION,
     checkBackendAvailability,
-    offlineMessage: OFFLINE_MESSAGE,
-    registerServiceWorker
+    fetchWithTimeout,
+    isBackendPath,
+    messages: MESSAGES,
+    offlineMessage: MESSAGES.backend,
+    registerServiceWorker,
+    showOfflineMessage,
+    staticData
   });
 
+  global.API_BASE = BACKEND_ORIGIN;
+  global.STREAMVAULT_BACKEND_OFFLINE_MESSAGE = MESSAGES.backend;
+  global.__svBackendStatus = backendStatus;
+  global.STREAMVAULT_CONFIG = config;
+  global.StreamVaultConfig = config;
   global.__svBackendCheckPromise = checkBackendAvailability();
   global.addEventListener('load', () => {
     registerServiceWorker().catch(error => {

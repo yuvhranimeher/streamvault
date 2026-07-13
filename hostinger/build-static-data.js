@@ -2,29 +2,60 @@ const fs = require('fs');
 const path = require('path');
 
 const DEPLOY_ROOT = __dirname;
-const REPO_ROOT = path.resolve(DEPLOY_ROOT, '..');
-const PUBLIC_ROOT = path.join(REPO_ROOT, 'public');
 const BOOT_SEARCH_VERSION = '20260624-playable-only-search1';
-
-const STATIC_FILES = [
+const REQUIRED_FRONTEND_FILES = [
+  '.htaccess',
+  'index.html',
+  'runtime-config.js',
+  'styles.css',
+  'fifa-fast.js',
+  'app-v3.js',
+  'details-exact-v5.js',
+  'home.js',
+  'downloads.js',
+  'search.js',
+  'livetv.js',
+  'player.js',
+  'live-fast.js',
+  'boot.js',
+  'hostinger-poster-fix.js',
+  'series-modal-episodes-v7.js',
+  'media-popup-polish-v8.js',
+  'series-instant-prefetch-v9.js',
+  'movie-play-button-v10.js',
+  'instant-remux-v23.js',
+  'offline-ui.js',
+  'sw.js',
+  'manifest.webmanifest',
+  'fallback.webp',
+  'assets/insomnia-tapes-logo.png',
+  'home-feed.json',
+  'channels.json',
+  'catalog.json',
   'copyright.html',
   'disclaimer.html',
-  'fallback.webp',
-  'fifa-fast.js',
   'legal.css',
   'legal.html',
-  'live-fast.js',
-  'livetv.js',
   'privacy.html',
-  'search.js',
   'terms.html'
 ];
 
-function copyStaticFile(name) {
-  const source = path.join(PUBLIC_ROOT, name);
-  const destination = path.join(DEPLOY_ROOT, name);
-  if (!fs.existsSync(source)) throw new Error(`Missing static source: public/${name}`);
-  fs.copyFileSync(source, destination);
+function deployPath(name) {
+  const filename = path.resolve(DEPLOY_ROOT, name);
+  const relative = path.relative(DEPLOY_ROOT, filename);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error(`Refusing path outside Hostinger deploy root: ${name}`);
+  }
+  return filename;
+}
+
+function requireFiles() {
+  const missing = REQUIRED_FRONTEND_FILES.filter(name => !fs.existsSync(deployPath(name)));
+  if (missing.length) throw new Error(`Missing Hostinger frontend files: ${missing.join(', ')}`);
+}
+
+function readJson(name) {
+  return JSON.parse(fs.readFileSync(deployPath(name), 'utf8'));
 }
 
 function normalizeSearchText(value) {
@@ -87,15 +118,41 @@ function buildBootSearchIndex(homeFeed) {
   };
 }
 
-for (const name of STATIC_FILES) copyStaticFile(name);
+function validateStaticPosters(homeFeed) {
+  const items = [
+    ...(homeFeed.hero || []),
+    ...(homeFeed.rows || []).flatMap(row => row.items || [])
+  ];
+  const urls = items.flatMap(item => [item.poster, item.backdrop]).filter(Boolean);
+  const backendPoster = urls.find(value => {
+    const text = String(value);
+    return /backend\.streamvault\.fit|\/poster-cache(?:\?|$)|\/image-proxy(?:\?|$)/i.test(text);
+  });
+  if (backendPoster) throw new Error(`Static home artwork depends on backend: ${backendPoster}`);
+}
 
-const publicHomeFeed = path.join(PUBLIC_ROOT, 'home-feed.json');
-if (!fs.existsSync(publicHomeFeed)) throw new Error('Missing static source: public/home-feed.json');
-const homeFeed = JSON.parse(fs.readFileSync(publicHomeFeed, 'utf8'));
-fs.copyFileSync(publicHomeFeed, path.join(DEPLOY_ROOT, 'home-feed.json'));
-fs.writeFileSync(
-  path.join(DEPLOY_ROOT, 'boot-search-index.json'),
-  JSON.stringify(buildBootSearchIndex(homeFeed)) + '\n'
-);
+function validateChannelLogos(channels) {
+  for (const channel of channels) {
+    if (!channel?.logo || !String(channel.logo).startsWith('/')) continue;
+    const logoPath = String(channel.logo).split(/[?#]/, 1)[0].replace(/^\//, '');
+    if (!fs.existsSync(deployPath(logoPath))) {
+      throw new Error(`Missing channel logo for ${channel.name || channel.id}: ${logoPath}`);
+    }
+  }
+}
 
-console.log(`Built Hostinger static data: ${STATIC_FILES.length + 2} files`);
+requireFiles();
+const homeFeed = readJson('home-feed.json');
+const channels = readJson('channels.json');
+readJson('catalog.json');
+readJson('manifest.webmanifest');
+validateStaticPosters(homeFeed);
+validateChannelLogos(channels);
+
+const bootIndex = JSON.stringify(buildBootSearchIndex(homeFeed)) + '\n';
+const bootIndexFile = deployPath('boot-search-index.json');
+if (!fs.existsSync(bootIndexFile) || fs.readFileSync(bootIndexFile, 'utf8') !== bootIndex) {
+  fs.writeFileSync(bootIndexFile, bootIndex);
+}
+
+console.log(`Built Hostinger frontend source: ${REQUIRED_FRONTEND_FILES.length} required files, ${channels.length} channel logos, ${JSON.parse(bootIndex).total} search items`);

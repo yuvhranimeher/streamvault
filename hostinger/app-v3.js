@@ -1,4 +1,4 @@
-window.API_BASE = window.StreamVaultConfig?.apiOrigin || 'https://backend.streamvault.fit';
+window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE || '';
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
 const SV_ASSET_VERSION = '20260708-hostinger-playback-fix3';
@@ -1612,11 +1612,61 @@ function renderSortedTrack(trackId, list, sp=false) {
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• INIT â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+function svStaticItemKey(item={}){
+  return [
+    item.type === 'tv' || item.type === 'series' || item.seasons ? 'series' : 'movie',
+    item.id || item.tmdbId || '',
+    String(item.name || item.title || '').toLowerCase(),
+    item.year || ''
+  ].join('|');
+}
+
+function svMergeCatalogItems(primary=[], fallback=[]){
+  const seen=new Set();
+  const output=[];
+  [...primary,...fallback].forEach(item=>{
+    if(!item || !(item.name || item.title))return;
+    const normalized=item.name ? item : {...item,name:item.title};
+    const key=svStaticItemKey(normalized);
+    if(seen.has(key))return;
+    seen.add(key);
+    output.push(normalized);
+  });
+  return output;
+}
+
+function svAdoptStaticFrontendData(homeFeed, staticChannels){
+  const items=[
+    ...(Array.isArray(homeFeed?.hero) ? homeFeed.hero : []),
+    ...(Array.isArray(homeFeed?.rows)
+      ? homeFeed.rows.flatMap(row=>Array.isArray(row?.items) ? row.items : [])
+      : [])
+  ];
+  const staticMovies=items.filter(item=>item?.type !== 'tv' && item?.type !== 'series' && !item?.seasons);
+  const staticSeries=items.filter(item=>item?.type === 'tv' || item?.type === 'series' || item?.seasons);
+  movies=svMergeCatalogItems(movies,staticMovies);
+  series=svMergeCatalogItems(series,staticSeries);
+  if(!channels.length && Array.isArray(staticChannels))channels=staticChannels.filter(Boolean);
+  if(!_totalMoviePages && movies.length)_totalMoviePages=1;
+  buildRows();
+  if(typeof buildLiveTV === 'function')buildLiveTV();
+  if(typeof buildLiveHomeRow === 'function')buildLiveHomeRow();
+}
+
 async function init(){
   if(init._started)return;
   init._started=true;
   buildRows();
   buildSpeedList();
+  const staticData=window.StreamVaultConfig?.staticData;
+  if(staticData){
+    Promise.all([
+      staticData.homeFeed.catch(()=>null),
+      staticData.channels.catch(()=>[])
+    ]).then(([homeFeed,staticChannels])=>{
+      if(homeFeed)svAdoptStaticFrontendData(homeFeed,staticChannels);
+    }).catch(()=>{});
+  }
   try{
     const[mR,sR]=await Promise.all([
       fetchWithTimeout(API_BASE + '/api/movies?page=0&limit=24', {}, 4500),
@@ -1624,8 +1674,8 @@ async function init(){
     ]);
     if(!mR.ok || !sR.ok)throw new Error('catalog API unavailable');
     const mData = await mR.json();
-    movies = mData.movies.filter(m=>m&&m.name);
-    series = await sR.json();
+    movies = svMergeCatalogItems(mData.movies.filter(m=>m&&m.name),movies);
+    series = svMergeCatalogItems(await sR.json(),series);
 
     // Client-side cartoon filter
     movies = movies.filter(m => !isCartoonClient(m));
@@ -1667,7 +1717,6 @@ async function init(){
     const heroTitle = document.getElementById('heroTitle');
     if(heroTitle && !document.querySelector('.card,.live-ch-card'))heroTitle.textContent='Browse StreamVault';
     console.warn('[StreamVault] backend unavailable; using static homepage:', error?.message || error);
-    channels=[];
     buildLiveTV();
     buildLiveHomeRow();
     return;
@@ -1676,11 +1725,9 @@ async function init(){
   // Online homepage refreshes are disabled for now so loaded home rows stay stable.
 
   try{
-    const cR=await fetch(API_BASE + '/api/channels');
+    const cR=await fetchWithTimeout(API_BASE + '/api/channels', {}, 3500);
     channels=await cR.json();
-  }catch{
-    channels=[];
-  }
+  }catch{}
   buildLiveTV();
   buildLiveHomeRow();
 }
@@ -1688,12 +1735,13 @@ async function init(){
 function loadAllMoviesForBrowse(){
   if(_allMoviesLoaded) return;
   _allMoviesLoaded=true;
+  if(window.StreamVaultConfig?.backendStatus?.available === false)return;
   const startPage=0;
   let loaded=0;
   const total=Math.max(0,_totalMoviePages-startPage);
   for(let p=startPage; p<_totalMoviePages; p++){
     setTimeout(()=>{
-      fetch(`${API_BASE}/api/movies?page=${p}&limit=${_movieBrowsePageSize}`)
+      fetchWithTimeout(`${API_BASE}/api/movies?page=${p}&limit=${_movieBrowsePageSize}`, {}, 3500)
         .then(r=>r.json())
         .then(d=>{
           let newMovies = d.movies.filter(m=>m&&m.name);
@@ -1703,7 +1751,8 @@ function loadAllMoviesForBrowse(){
           if(loaded%4===0||loaded===total){
             if(document.getElementById('moviesSection').style.display!=='none') filterMoviesPage();
           }
-        });
+          })
+          .catch(()=>{});
     }, (p-startPage)*260);
   }
 }
@@ -1711,8 +1760,9 @@ function loadAllMoviesForBrowse(){
 async function loadAllSeriesForBrowse(){
   if(_allSeriesLoaded) return;
   _allSeriesLoaded = true;
+  if(window.StreamVaultConfig?.backendStatus?.available === false)return;
   try{
-    const r = await fetch(API_BASE + '/api/series');
+    const r = await fetchWithTimeout(API_BASE + '/api/series', {}, 3500);
     const data = await r.json();
     if(Array.isArray(data)){
       series = data.filter(s=>s&&s.name&&!isCartoonClient(s));
@@ -1983,7 +2033,9 @@ function openLiveChannel(channelId, channelName){
   };
   const showLivePlaybackFailure=reason=>{
     document.getElementById('playerSpinner')?.classList.remove('on');
-    showPlayerNotice('Live TV playback failed. Please try again in a moment.');
+    showPlayerNotice(window.StreamVaultConfig?.backendStatus?.available === false
+      ? 'Live TV server is currently offline.'
+      : 'Live TV playback failed. Please try again in a moment.');
     console.warn('[LIVE] Playback failed', {channelId, reason});
   };
 

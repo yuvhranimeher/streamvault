@@ -11,6 +11,8 @@ app.use(express.static(ROOT, {
   setHeaders(res, filename) {
     if (filename.endsWith("index.html") || filename.endsWith("sw.js")) {
       res.setHeader("Cache-Control", "no-cache, no-store, max-age=0, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
     } else if (/(?:home-feed|boot-search-index|channels)\.json$/i.test(filename)) {
       res.setHeader("Cache-Control", "no-cache, max-age=0, must-revalidate");
     } else if (/\.(?:css|js|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|otf)$/i.test(filename)) {

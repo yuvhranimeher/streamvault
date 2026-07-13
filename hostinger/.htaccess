@@ -9,11 +9,9 @@ DirectoryIndex index.html
     Header always set Cache-Control "no-cache, max-age=0, must-revalidate"
   </FilesMatch>
 
-  <FilesMatch "^(?:index\.html|sw\.js)$">
-    Header always set Cache-Control "no-cache, no-store, max-age=0, must-revalidate"
-    Header always set Pragma "no-cache"
-    Header always set Expires "0"
-  </FilesMatch>
+  Header always set Cache-Control "no-cache, no-store, max-age=0, must-revalidate" "expr=%{REQUEST_URI} =~ m#^/(?:index\.html|sw\.js)?$#"
+  Header always set Pragma "no-cache" "expr=%{REQUEST_URI} =~ m#^/(?:index\.html|sw\.js)?$#"
+  Header always set Expires "0" "expr=%{REQUEST_URI} =~ m#^/(?:index\.html|sw\.js)?$#"
 </IfModule>
 
 <IfModule mod_rewrite.c>

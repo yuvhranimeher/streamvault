@@ -4,6 +4,7 @@ const path = require('path');
 const ROOT = __dirname;
 const INDEX = path.join(ROOT, 'index.html');
 const BACKEND_ORIGIN = 'https://backend.streamvault.fit';
+const SERVICE_WORKER_FILE = 'sw-20260714-v4.js';
 const STATIC_JSON = ['home-feed.json', 'boot-search-index.json', 'channels.json', 'catalog.json', 'manifest.webmanifest'];
 const REQUIRED_MESSAGES = [
   'Playback server is currently offline.',
@@ -87,7 +88,7 @@ const activeScripts = refs
   .filter(ref => ref.endsWith('.js'))
   .map(ref => path.join(ROOT, ref.slice(1)))
   .filter(fs.existsSync);
-const textFiles = [INDEX, path.join(ROOT, 'runtime-config.js'), path.join(ROOT, 'sw.js'), ...activeScripts];
+const textFiles = [INDEX, path.join(ROOT, 'runtime-config.js'), path.join(ROOT, SERVICE_WORKER_FILE), path.join(ROOT, 'sw.js'), ...activeScripts];
 const windowsPath = /(?:^|[\s"'`(=])[A-Za-z]:[\\/]/m;
 for (const filename of [...new Set(textFiles)]) {
   const source = fs.readFileSync(filename, 'utf8');
@@ -106,10 +107,19 @@ if (/https:\/\/(?:www\.)?streamvault\.fit\/(?:api|download|live|live-relay|proxy
   fail('an active script still hardcodes a backend request through the frontend apex');
 }
 
-const sw = read('sw.js');
-const publicSwPath = path.resolve(ROOT, '..', 'public', 'sw.js');
-if (!fs.existsSync(publicSwPath) || fs.readFileSync(publicSwPath, 'utf8').replace(/\r\n/g, '\n') !== sw.replace(/\r\n/g, '\n')) {
-  fail('public/sw.js must mirror hostinger/sw.js because Hostinger publishes it at /sw.js');
+const sw = read(SERVICE_WORKER_FILE);
+const fallbackSw = read('sw.js');
+if (fallbackSw.replace(/\r\n/g, '\n') !== sw.replace(/\r\n/g, '\n')) {
+  fail(`sw.js must mirror ${SERVICE_WORKER_FILE} as a compatibility fallback`);
+}
+for (const name of [SERVICE_WORKER_FILE, 'sw.js']) {
+  const publicSwPath = path.resolve(ROOT, '..', 'public', name);
+  if (!fs.existsSync(publicSwPath) || fs.readFileSync(publicSwPath, 'utf8').replace(/\r\n/g, '\n') !== sw.replace(/\r\n/g, '\n')) {
+    fail(`public/${name} must mirror hostinger/${SERVICE_WORKER_FILE} for root service-worker publishing`);
+  }
+}
+if (!runtime.includes(`navigator.serviceWorker.register('/${SERVICE_WORKER_FILE}'`) || !runtime.includes("updateViaCache: 'none'")) {
+  fail(`runtime-config.js must register /${SERVICE_WORKER_FILE} with updateViaCache none`);
 }
 for (const exclusion of ['range', '/api/heavy-compat-hls', '/api/mobile-hls', '/live-relay', 'm3u8', 'POSTER_CACHE']) {
   if (!sw.toLowerCase().includes(exclusion.toLowerCase())) fail(`service worker exclusion/cache rule is missing: ${exclusion}`);

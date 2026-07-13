@@ -25,6 +25,7 @@ const REQUIRED_FRONTEND_FILES = [
   'movie-play-button-v10.js',
   'instant-remux-v23.js',
   'offline-ui.js',
+  'sw-20260714-v4.js',
   'sw.js',
   'manifest.webmanifest',
   'fallback.webp',

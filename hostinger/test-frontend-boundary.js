@@ -7,7 +7,8 @@ const ROOT = __dirname;
 const runtimeSource = fs.readFileSync(path.join(ROOT, 'runtime-config.js'), 'utf8');
 const offlineSource = fs.readFileSync(path.join(ROOT, 'offline-ui.js'), 'utf8');
 const index = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
+const sw = fs.readFileSync(path.join(ROOT, 'sw-20260714-v4.js'), 'utf8');
+const fallbackSw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 const homeFeed = JSON.parse(fs.readFileSync(path.join(ROOT, 'home-feed.json'), 'utf8'));
 const channels = JSON.parse(fs.readFileSync(path.join(ROOT, 'channels.json'), 'utf8'));
 
@@ -139,6 +140,8 @@ vm.runInNewContext(runtimeSource, context, { filename: 'runtime-config.js' });
   assert(firstScript.startsWith('/runtime-config.js'));
   assert(index.includes('/manifest.webmanifest'));
   assert(index.includes('/offline-ui.js'));
+  assert(runtimeSource.includes("navigator.serviceWorker.register('/sw-20260714-v4.js'"));
+  assert(runtimeSource.includes("updateViaCache: 'none'"));
 
   const artwork = [
     ...(homeFeed.hero || []),
@@ -158,6 +161,7 @@ vm.runInNewContext(runtimeSource, context, { filename: 'runtime-config.js' });
   assert(sw.includes("'/api/heavy-compat-hls'"));
   assert(sw.includes("'/api/mobile-hls'"));
   assert(sw.includes('POSTER_CACHE_LIMIT'));
+  assert.strictEqual(fallbackSw.replace(/\r\n/g, '\n'), sw.replace(/\r\n/g, '\n'));
 
   console.log(`Hostinger frontend boundary tests passed: ${artwork.length} static artwork URLs, ${channels.length} local channel logos`);
 })().catch(error => {

@@ -141,7 +141,7 @@
     if (!('serviceWorker' in navigator) || !/^https?:$/.test(global.location.protocol)) {
       return Promise.resolve(null);
     }
-    return navigator.serviceWorker.register(`/sw.js?v=${BUILD_VERSION}`, {
+    return navigator.serviceWorker.register('/sw-20260714-v4.js', {
       scope: '/',
       updateViaCache: 'none'
     });

@@ -10,6 +10,10 @@ const { spawn } = require('child_process');
 const tracker         = require('./middleware/tracker');
 const dashboardRoutes = require('./routes/dashboard');
 const { createInfraTelemetry } = require('./infra-telemetry');
+const {
+  determineTitleLanguage,
+  selectAudioTrack,
+} = require('./lib/audio-language');
 
 const app = express();
 app.options('/api/ftp/media-info', (req, res) => {
@@ -45,7 +49,7 @@ app.use((req, res, next) => {
   next();
 });
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 const infraTelemetry = createInfraTelemetry({
   app,
   nodeName: 'mac-mini-streamvault',
@@ -171,6 +175,12 @@ function getMediaInfo(filePath) {
             channelLayout: s.channel_layout || '',
             default: s.disposition?.default === 1,
             forced: s.disposition?.forced === 1,
+            original: s.disposition?.original === 1,
+            commentary: s.disposition?.comment === 1,
+            hearingImpaired: s.disposition?.hearing_impaired === 1,
+            visualImpaired: s.disposition?.visual_impaired === 1,
+            handlerName: s.tags?.handler_name || '',
+            disposition: s.disposition || {},
           }));
 
         const subtitleTracks = streams
@@ -222,7 +232,7 @@ function getAudioOnlyMediaInfo(filePath) {
     const ffprobe = spawn(FFPROBE_BIN, [
       '-v', 'quiet',
       '-print_format', 'json',
-      '-show_entries', 'stream=index,codec_type,codec_name,duration,start_time,bit_rate,channels,channel_layout,nb_frames:stream_tags=language,title:stream_disposition=default,forced:format=duration',
+      '-show_entries', 'stream=index,codec_type,codec_name,duration,start_time,bit_rate,channels,channel_layout,nb_frames:stream_tags=language,title,handler_name:stream_disposition=default,forced,original,comment,hearing_impaired,visual_impaired:format=duration',
       filePath
     ]);
 
@@ -266,6 +276,12 @@ function getAudioOnlyMediaInfo(filePath) {
             channelLayout: s.channel_layout || '',
             default: s.disposition?.default === 1,
             forced: s.disposition?.forced === 1,
+            original: s.disposition?.original === 1,
+            commentary: s.disposition?.comment === 1,
+            hearingImpaired: s.disposition?.hearing_impaired === 1,
+            visualImpaired: s.disposition?.visual_impaired === 1,
+            handlerName: s.tags?.handler_name || '',
+            disposition: s.disposition || {},
           }));
         resolve({
           audioTracks,
@@ -410,11 +426,13 @@ function mediaStableCacheKey(input) {
   }
 }
 
-function playbackAudioSelectionCacheKey(req, input) {
+function playbackAudioSelectionCacheKey(req, input, titleMetadata = {}) {
+  const titleLanguage = determineTitleLanguage(titleMetadata);
   return [
     mediaStableCacheKey(input),
     `audio=${req.query.audio ?? ''}`,
     `audioStream=${req.query.audioStream ?? ''}`,
+    `titleLanguage=${titleLanguage.language || ''}`,
   ].join('|');
 }
 
@@ -1762,6 +1780,9 @@ function findCatalogItemByStreamUrl(streamUrl) {
         type: 'movie',
         title: movie.title,
         filename: movie.filename,
+        category: movie.category || '',
+        language: movie.language || '',
+        originalLanguage: movie.originalLanguage || movie.original_language || '',
         server: movie.server,
         streamUrl: movie.streamUrl,
       };
@@ -1777,6 +1798,9 @@ function findCatalogItemByStreamUrl(streamUrl) {
             title: show.title,
             season: seasonObj.season,
             filename: episode.filename,
+            category: show.category || '',
+            language: show.language || '',
+            originalLanguage: show.originalLanguage || show.original_language || '',
             server: show.server,
             streamUrl: episode.streamUrl,
           };
@@ -1895,6 +1919,46 @@ function playbackAudioSelectionFromReq(req) {
   };
 }
 
+function findLocalPlaybackTitleMetadata(label = '') {
+  const normalizedLabel = String(label || '').toLowerCase();
+  if (!normalizedLabel) return null;
+
+  const movie = (_movieList || []).find(item =>
+    String(item.file || '').toLowerCase() === normalizedLabel
+  );
+  if (movie) return { ...movie, title: movie.name || movie.title || '', filename: movie.file || label, mediaType: 'movie' };
+
+  for (const show of (_seriesList || [])) {
+    for (const episodes of Object.values(show.seasons || {})) {
+      const episode = (Array.isArray(episodes) ? episodes : []).find(item =>
+        String(item.file || item.filename || '').toLowerCase() === normalizedLabel
+      );
+      if (episode) {
+        return {
+          ...show,
+          title: show.name || show.title || '',
+          filename: episode.file || episode.filename || label,
+          streamUrl: episode.streamUrl || '',
+          mediaType: 'episode',
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function playbackTitleMetadata(input, label = 'media', supplied = {}) {
+  const catalogItem = isFtpPlaybackInput(input)
+    ? findCatalogItemByStreamUrl(input)
+    : findLocalPlaybackTitleMetadata(label);
+  return {
+    ...(catalogItem || {}),
+    ...(supplied || {}),
+    filename: supplied?.filename || catalogItem?.filename || label,
+    source: input,
+  };
+}
+
 function playbackAudioMapFromReq(req) {
   return playbackAudioSelectionFromReq(req).audioMap;
 }
@@ -1927,6 +1991,16 @@ function firstPlayableAudioStream(tracks = []) {
     serverAudioTrackHasDuration(track) &&
     serverAudioTrackIsAudible(track)
   ) || null;
+}
+
+function audioLanguageDecision(req, tracks = [], titleMetadata = {}) {
+  const requestedStreamIndex = playbackAudioSelectionFromReq(req).audioStreamIdx;
+  return selectAudioTrack({
+    titleMetadata,
+    audioStreams: tracks,
+    requestedStreamIndex,
+    isPlayable: track => firstPlayableAudioStream([track]) === track,
+  });
 }
 
 function isFtpPlaybackInput(input) {
@@ -1991,19 +2065,30 @@ function decodeFtpAudioStream(input, track) {
   });
 }
 
-async function firstValidDecodedAudioStream(input, tracks = [], title = 'FTP media') {
+async function firstValidDecodedAudioStream(input, tracks = [], title = 'FTP media', options = {}) {
   const list = Array.isArray(tracks) ? tracks : [];
-  const cacheKey = mediaStableCacheKey(input);
+  const req = options.req || { query: {} };
+  const titleMetadata = playbackTitleMetadata(input, title, options.titleMetadata);
+  const initialDecision = audioLanguageDecision(req, list, titleMetadata);
+  const cacheKey = [
+    mediaStableCacheKey(input),
+    `preferred=${initialDecision.preferredLanguage || ''}`,
+    `requested=${playbackAudioSelectionFromReq(req).audioStreamIdx ?? ''}`,
+  ].join('|');
   const cached = ftpDecodedAudioValidationCache.get(cacheKey);
   if (cached) return cached;
 
   const validationPromise = (async () => {
-    const ftpStreams = [];
+    const ftpStreams = list.map(track => ({
+      ...track,
+      decodable: null,
+      validationReason: 'not tested',
+    }));
     const validAudioStreams = [];
     let selectedTrack = null;
     let selectedIndex = null;
 
-    for (let index = 0; index < list.length; index += 1) {
+    for (const index of initialDecision.candidateIndexes) {
       const track = list[index];
       let rejection = '';
       if (serverAudioTrackAbsoluteIndex(track) === null) rejection = 'missing stream index';
@@ -2029,7 +2114,7 @@ async function firstValidDecodedAudioStream(input, tracks = [], title = 'FTP med
         decodable: !rejection,
         validationReason: rejection || 'decoded-stream selection',
       };
-      ftpStreams.push(validatedTrack);
+      ftpStreams[index] = validatedTrack;
       if (!rejection) {
         validAudioStreams.push(validatedTrack);
         selectedTrack = validatedTrack;
@@ -2038,22 +2123,29 @@ async function firstValidDecodedAudioStream(input, tracks = [], title = 'FTP med
       }
     }
 
-    for (let index = ftpStreams.length; index < list.length; index += 1) {
-      ftpStreams.push({
-        ...list[index],
-        decodable: null,
-        validationReason: 'not tested after first valid decoded stream',
+    const selectedReason = selectedIndex === initialDecision.selectedIndex
+      ? initialDecision.reason
+      : (selectedTrack ? `decoded-fallback:${initialDecision.reason}` : 'no-decodable-audio');
+    if (SV_PLAYBACK_VERBOSE) {
+      console.log('[Audio Language Selection]', {
+        title: path.basename(String(title || 'FTP media')),
+        preferredLanguage: initialDecision.preferredLanguage,
+        availableLanguages: initialDecision.availableLanguages,
+        selectedAudioIndex: selectedIndex,
+        selectedStreamIndex: selectedTrack ? serverAudioTrackAbsoluteIndex(selectedTrack) : null,
+        selectionReason: selectedReason,
+        titleLanguageReason: initialDecision.titleLanguageReason,
       });
     }
-
-    console.log('[FTP AUDIO FIX]', {
-      title,
+    return {
       ftpStreams,
       validAudioStreams,
+      selectedTrack,
       selectedIndex,
-      reason: 'decoded-stream selection',
-    });
-    return { ftpStreams, validAudioStreams, selectedTrack, selectedIndex };
+      selectionReason: selectedReason,
+      titleLanguage: initialDecision.preferredLanguage,
+      titleLanguageReason: initialDecision.titleLanguageReason,
+    };
   })().catch(error => {
     ftpDecodedAudioValidationCache.delete(cacheKey);
     throw error;
@@ -2067,113 +2159,18 @@ async function firstValidDecodedAudioStream(input, tracks = [], title = 'FTP med
   return validationPromise;
 }
 
-function logAudioSelectionFix(title, tracks, selectedTrack) {
+function logAudioSelectionFix(title, tracks, selectedTrack, decision = {}) {
+  if (!SV_PLAYBACK_VERBOSE) return;
   const list = Array.isArray(tracks) ? tracks : [];
-  console.log('[AUDIO SELECTION FIX]', {
-    title,
-    detectedTracks: list,
-    selectedIndex: selectedTrack ? list.indexOf(selectedTrack) : null,
-    reason: 'first valid audio stream rule',
+  console.log('[Audio Language Selection]', {
+    title: path.basename(String(title || 'media')),
+    preferredLanguage: decision.preferredLanguage || null,
+    availableLanguages: decision.availableLanguages || list.map(track => track.language || track.lang || null),
+    selectedAudioIndex: selectedTrack ? list.indexOf(selectedTrack) : null,
+    selectedStreamIndex: selectedTrack ? serverAudioTrackAbsoluteIndex(selectedTrack) : null,
+    selectionReason: decision.reason || 'no-playable-audio',
+    titleLanguageReason: decision.titleLanguageReason || 'unavailable',
   });
-}
-
-function isKhoGayeHumKahanTitle(...values) {
-  return values.some(value => {
-    const title = String(value || '')
-      .split(/[?#]/)[0]
-      .replace(/\.[a-z0-9]{2,5}$/i, '')
-      .replace(/[._-]+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    return /^kho gaye hum kahan(?:\s*[\[(]?2023[\])]?|\s|$)/i.test(title);
-  });
-}
-
-function kghkAudioCapableTrack(track = {}) {
-  return !!track && firstPlayableAudioStream([track]) === track;
-}
-
-function khoGayeHumKahanAudioDecision(tracks, label = 'media') {
-  const list = Array.isArray(tracks) ? tracks : [];
-  console.log('[KGHK AUDIO STREAMS]', list);
-  const validTrack = list.find(kghkAudioCapableTrack) || null;
-  const validIndex = validTrack ? list.indexOf(validTrack) : -1;
-  const defaultAudioIndex = validIndex >= 0 ? validIndex : 0;
-  const ffmpegMapping = validIndex >= 0 ? `0:a:${validIndex}` : '0:a:0?';
-  if (!validTrack) console.warn(`[KGHK AUDIO] No valid audio track found for ${label}`);
-  logAudioSelectionFix(label, list, validTrack);
-  const state = {
-    audioStreamsDetected: list.length,
-    selectedAudioIndex: defaultAudioIndex,
-    ffmpegMapping,
-    hlsAudioTracks: null,
-  };
-  console.log('[KGHK FINAL AUDIO STATE]', state);
-  return { validTrack, defaultAudioIndex, audioSafeMode: true, ...state };
-}
-
-function resolveKhoGayeHumKahanAudio(req, tracks, info = {}, label = 'media') {
-  const decision = khoGayeHumKahanAudioDecision(tracks, label);
-  if (!decision.validTrack) {
-    return {
-      ...playbackAudioSelectionFromReq(req),
-      defaultAudioIndex: 0,
-      audioIndex: 0,
-      audioSafeMode: true,
-      audioStreamsDetected: decision.audioStreamsDetected,
-      ffmpegMapping: decision.ffmpegMapping,
-    };
-  }
-  const resolved = selectionFromAbsoluteAudio(
-    req,
-    decision.validTrack,
-    'kghk-title-override',
-    streamStartSeconds(info.videoStartTime),
-    Number.isFinite(Number(info.videoIndex)) ? Number(info.videoIndex) : 0,
-    info.videoCodec || ''
-  );
-  return {
-    ...resolved,
-    defaultAudioIndex: decision.defaultAudioIndex,
-    audioIndex: decision.defaultAudioIndex,
-    audioSafeMode: true,
-    audioStreamsDetected: decision.audioStreamsDetected,
-    ffmpegMapping: decision.ffmpegMapping,
-  };
-}
-
-async function resolveKhoGayeHumKahanHlsAudio(input, label = 'media') {
-  let info;
-  try {
-    info = await getCachedAudioOnlyMediaInfo(input);
-  } catch (error) {
-    console.warn('[KGHK AUDIO STREAMS]', [], error.message);
-    logAudioSelectionFix(label, [], null);
-    const pending = { ...playbackAudioSelectionFromReq({ query: {} }), audioMap: '0:a:0?', source: 'kghk-hls-audio-pending' };
-    console.log('[KGHK FINAL AUDIO STATE]', { audioStreamsDetected: 0, selectedAudioIndex: 0, ffmpegMapping: pending.audioMap, hlsAudioTracks: null });
-    return pending;
-  }
-  const tracks = Array.isArray(info.audioTracks) ? info.audioTracks : [];
-  const decision = khoGayeHumKahanAudioDecision(tracks, label);
-  if (!decision.validTrack) return { ...playbackAudioSelectionFromReq({ query: {} }), audioMap: '0:a:0?', source: 'kghk-hls-audio-pending' };
-  const resolved = selectionFromAbsoluteAudio(
-    { query: {} },
-    decision.validTrack,
-    'kghk-hls-first-valid',
-    info.videoStartTime,
-    info.videoIndex,
-    info.videoCodec || ''
-  );
-  return {
-    ...resolved,
-    audioIdx: decision.selectedAudioIndex,
-    audioMap: decision.ffmpegMapping,
-    defaultAudioIndex: decision.defaultAudioIndex,
-    audioIndex: decision.defaultAudioIndex,
-    audioSafeMode: true,
-    audioStreamsDetected: decision.audioStreamsDetected,
-    ffmpegMapping: decision.ffmpegMapping,
-  };
 }
 
 function serverAudioTrackAbsoluteIndex(track = {}) {
@@ -2204,12 +2201,12 @@ function selectionFromAbsoluteAudio(req, track, source = 'first-playable-audio',
   };
 }
 
-async function resolvePlaybackAudioSelection(req, input, label = 'media') {
+async function resolvePlaybackAudioSelection(req, input, label = 'media', suppliedTitleMetadata = {}) {
   const selection = playbackAudioSelectionFromReq(req);
   const isFtpInput = isFtpPlaybackInput(input);
-  const isKghk = isKhoGayeHumKahanTitle(label, input);
-  const cacheKey = playbackAudioSelectionCacheKey(req, input);
-  const cachedSelection = isKghk || isFtpInput ? null : playbackAudioSelectionCache.get(cacheKey);
+  const titleMetadata = playbackTitleMetadata(input, label, suppliedTitleMetadata);
+  const cacheKey = playbackAudioSelectionCacheKey(req, input, titleMetadata);
+  const cachedSelection = isFtpInput ? null : playbackAudioSelectionCache.get(cacheKey);
   if (cachedSelection) return clonePlaybackAudioSelection(cachedSelection);
 
   let tracks = [];
@@ -2227,38 +2224,32 @@ async function resolvePlaybackAudioSelection(req, input, label = 'media') {
   }
 
   if (isFtpInput) {
-    const validated = await firstValidDecodedAudioStream(input, tracks, label);
+    const validated = await firstValidDecodedAudioStream(input, tracks, label, { req, titleMetadata });
     const selectedTrack = validated.selectedTrack;
     if (!selectedTrack) return selection;
     return {
-      ...selectionFromAbsoluteAudio(req, selectedTrack, 'ftp-decoded-stream', videoStartTime, videoStreamIdx, info?.videoCodec || ''),
+      ...selectionFromAbsoluteAudio(req, selectedTrack, validated.selectionReason || 'ftp-decoded-stream', videoStartTime, videoStreamIdx, info?.videoCodec || ''),
       defaultAudioIndex: validated.selectedIndex,
       audioIndex: validated.selectedIndex,
       ftpAudioValidated: true,
+      preferredAudioLanguage: validated.titleLanguage || null,
+      audioSelectionReason: validated.selectionReason,
+      titleLanguageReason: validated.titleLanguageReason,
     };
   }
 
-  if (isKghk) {
-    return resolveKhoGayeHumKahanAudio(req, tracks, info || {}, label);
-  }
-
-  let selectedTrack = null;
-  let source = 'first-playable-audio';
-  if (selection.audioStreamIdx !== null) {
-    const requested = tracks.find(track => serverAudioTrackAbsoluteIndex(track) === selection.audioStreamIdx);
-    if (requested && firstPlayableAudioStream([requested])) {
-      selectedTrack = requested;
-      source = 'absolute-stream';
-    }
-  }
-  if (!selectedTrack) selectedTrack = firstPlayableAudioStream(tracks);
-  logAudioSelectionFix(label, tracks, selectedTrack);
+  const decision = audioLanguageDecision(req, tracks, titleMetadata);
+  const selectedTrack = decision.selectedTrack;
+  logAudioSelectionFix(label, tracks, selectedTrack, decision);
   if (!selectedTrack) return selection;
-  const resolved = selectionFromAbsoluteAudio(req, selectedTrack, source, videoStartTime, videoStreamIdx, info?.videoCodec || '');
+  const resolved = selectionFromAbsoluteAudio(req, selectedTrack, decision.reason, videoStartTime, videoStreamIdx, info?.videoCodec || '');
   return rememberPlaybackAudioSelection(cacheKey, {
     ...resolved,
-    defaultAudioIndex: tracks.indexOf(selectedTrack),
-    audioIndex: tracks.indexOf(selectedTrack),
+    defaultAudioIndex: decision.selectedIndex,
+    audioIndex: decision.selectedIndex,
+    preferredAudioLanguage: decision.preferredLanguage,
+    audioSelectionReason: decision.reason,
+    titleLanguageReason: decision.titleLanguageReason,
   });
 }
 
@@ -2273,30 +2264,23 @@ function requireAbsolutePlaybackAudio(req, res, audioSelection, mode, label = 'm
   return false;
 }
 
-function resolvePlaybackAudioSelectionFromMediaInfo(req, mediaInfo = {}, label = 'media') {
+function resolvePlaybackAudioSelectionFromMediaInfo(req, mediaInfo = {}, label = 'media', suppliedTitleMetadata = {}) {
   const selection = playbackAudioSelectionFromReq(req);
   const tracks = Array.isArray(mediaInfo.audioTracks) ? mediaInfo.audioTracks : [];
   const videoStartTime = streamStartSeconds(mediaInfo.videoStartTime);
   const videoStreamIdx = Number.isFinite(Number(mediaInfo.videoIndex)) ? Number(mediaInfo.videoIndex) : 0;
-  if (isKhoGayeHumKahanTitle(label)) {
-    return resolveKhoGayeHumKahanAudio(req, tracks, mediaInfo, label);
-  }
-  let selectedTrack = null;
-  let source = 'first-playable-audio';
-  if (selection.audioStreamIdx !== null) {
-    const requested = tracks.find(track => serverAudioTrackAbsoluteIndex(track) === selection.audioStreamIdx);
-    if (requested && firstPlayableAudioStream([requested])) {
-      selectedTrack = requested;
-      source = 'absolute-stream';
-    }
-  }
-  if (!selectedTrack) selectedTrack = firstPlayableAudioStream(tracks);
-  logAudioSelectionFix(label, tracks, selectedTrack);
+  const titleMetadata = playbackTitleMetadata('', label, suppliedTitleMetadata);
+  const decision = audioLanguageDecision(req, tracks, titleMetadata);
+  const selectedTrack = decision.selectedTrack;
+  logAudioSelectionFix(label, tracks, selectedTrack, decision);
   if (!selectedTrack) return selection;
   return {
-    ...selectionFromAbsoluteAudio(req, selectedTrack, source, videoStartTime, videoStreamIdx, mediaInfo.videoCodec || ''),
-    defaultAudioIndex: tracks.indexOf(selectedTrack),
-    audioIndex: tracks.indexOf(selectedTrack),
+    ...selectionFromAbsoluteAudio(req, selectedTrack, decision.reason, videoStartTime, videoStreamIdx, mediaInfo.videoCodec || ''),
+    defaultAudioIndex: decision.selectedIndex,
+    audioIndex: decision.selectedIndex,
+    preferredAudioLanguage: decision.preferredLanguage,
+    audioSelectionReason: decision.reason,
+    titleLanguageReason: decision.titleLanguageReason,
   };
 }
 
@@ -5658,7 +5642,6 @@ function startMobileHlsSession({
   audioMap = '0:a:0?',
   clientId = '',
   preset = mobileHlsPresetFromQuality(),
-  kghkAudio = false,
 }) {
   fs.mkdirSync(MOBILE_HLS_DIR, { recursive: true });
   const sessionDir = path.join(MOBILE_HLS_DIR, scope, key);
@@ -5707,7 +5690,7 @@ function startMobileHlsSession({
     '-keyint_min', '48',
     '-sc_threshold', '0',
     '-c:a', 'aac',
-    '-b:a', kghkAudio ? '128k' : preset.audioBitrate,
+    '-b:a', preset.audioBitrate,
     '-ar', '48000',
     '-ac', '2',
     '-af', COMPAT_AUDIO_PTS_FILTER,
@@ -5833,7 +5816,6 @@ function startHeavyCompatHlsSession({
   input,
   startSec = 0,
   audioSelection = playbackAudioSelectionFromReq({ query: {} }),
-  kghkAudio = false,
 }) {
   fs.mkdirSync(HEAVY_COMPAT_HLS_DIR, { recursive: true });
   const sessionDir = path.join(HEAVY_COMPAT_HLS_DIR, key);
@@ -5903,7 +5885,7 @@ function startHeavyCompatHlsSession({
     '-keyint_min', '48',
     '-sc_threshold', '0',
     '-c:a', 'aac',
-    '-b:a', kghkAudio ? '128k' : HEAVY_COMPAT_HLS_AUDIO_BITRATE,
+    '-b:a', HEAVY_COMPAT_HLS_AUDIO_BITRATE,
     '-ar', '48000',
     '-ac', '2',
     '-af', COMPAT_AUDIO_PTS_FILTER,
@@ -5982,21 +5964,16 @@ app.get('/api/heavy-compat-hls/ftp/index.m3u8', async (req, res) => {
     return res.status(400).send('#EXTM3U\n');
   }
   const startSec = playbackStartFromReq(req);
-  const isKghk = isKhoGayeHumKahanTitle(matched?.title, matched?.name, remoteFilename(srcUrl));
   let audioSelection = playbackAudioSelectionFromReq(req);
-  if (isKghk) {
-    audioSelection = await resolveKhoGayeHumKahanHlsAudio(srcUrl, remoteFilename(srcUrl));
-  } else {
-    try {
-      audioSelection = await resolvePlaybackAudioSelection(req, srcUrl, remoteFilename(srcUrl));
-    } catch (e) {
-      return res.status(502).send('#EXTM3U\n');
-    }
+  try {
+    audioSelection = await resolvePlaybackAudioSelection(req, srcUrl, remoteFilename(srcUrl), matched || {});
+  } catch (e) {
+    return res.status(502).send('#EXTM3U\n');
   }
   const audioKey = `${audioSelection.audioMap}|${HEAVY_COMPAT_HLS_VIDEO_CRF}|${HEAVY_COMPAT_HLS_VIDEO_MAXRATE}|${HEAVY_COMPAT_HLS_SEGMENT_TIME}`;
   const key = heavyCompatHlsKey(srcUrl, startSec, audioKey);
   console.log(`[Heavy Compat HLS] request title="${remoteFilename(srcUrl)}" matched=${catalogLogLabel(matched)} requestedUrl="${media.requestedUrl}" start=${startSec} key=${key}`);
-  const playlistPath = startHeavyCompatHlsSession({ key, input: srcUrl, startSec, audioSelection, kghkAudio: isKghk });
+  const playlistPath = startHeavyCompatHlsSession({ key, input: srcUrl, startSec, audioSelection });
   sendHeavyCompatHlsPlaylist(res, key, playlistPath);
 });
 
@@ -6007,23 +5984,18 @@ app.get('/api/mobile-hls/local/:id/index.m3u8', async (req, res) => {
   const filePath = entryPath(entry);
   if (!fs.existsSync(filePath)) return res.status(404).send('File missing');
   const startSec = parseFloat(req.query.start) || 0;
-  const isKghk = isKhoGayeHumKahanTitle(entry.file);
   let audioSelection = playbackAudioSelectionFromReq(req);
-  if (isKghk) {
-    audioSelection = await resolveKhoGayeHumKahanHlsAudio(filePath, entry.file);
-  } else {
-    try {
-      audioSelection = await resolvePlaybackAudioSelection(req, filePath, entry.file);
-    } catch (e) {
-      console.warn(`[Mobile HLS Local] audio selection failed for ${entry.file}:`, e.message);
-    }
+  try {
+    audioSelection = await resolvePlaybackAudioSelection(req, filePath, entry.file);
+  } catch (e) {
+    console.warn(`[Mobile HLS Local] audio selection failed for ${entry.file}:`, e.message);
   }
   const audioMap = audioSelection.audioMap;
   const preset = mobileHlsPresetFromQuality(req.query.quality);
   const key = hlsSessionKey('local', filePath, startSec, `${audioMap}|${preset.key}`);
   const clientId = /^[a-zA-Z0-9_-]{8,80}$/.test(String(req.query.client || '')) ? String(req.query.client) : '';
   console.log(`[Mobile HLS Local] ${entry.file} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioMap}`);
-  const playlistPath = startMobileHlsSession({ scope: 'local', key, input: filePath, startSec, audioMap, clientId, preset, kghkAudio: isKghk });
+  const playlistPath = startMobileHlsSession({ scope: 'local', key, input: filePath, startSec, audioMap, clientId, preset });
   sendMobileHlsPlaylist(res, 'local', key, playlistPath);
 });
 
@@ -6660,23 +6632,18 @@ app.get('/api/mobile-hls/ftp/index.m3u8', async (req, res) => {
   if (!trusted) return;
   const srcUrl = trusted.srcUrl;
   const startSec = parseFloat(req.query.start) || 0;
-  const isKghk = isKhoGayeHumKahanTitle(trusted.matched?.title, trusted.matched?.name, remoteFilename(srcUrl));
   let audioSelection = playbackAudioSelectionFromReq(req);
-  if (isKghk) {
-    audioSelection = await resolveKhoGayeHumKahanHlsAudio(srcUrl, remoteFilename(srcUrl));
-  } else {
-    try {
-      audioSelection = await resolvePlaybackAudioSelection(req, srcUrl, remoteFilename(srcUrl));
-    } catch (e) {
-      console.warn(`[Mobile HLS FTP] audio selection failed for ${remoteFilename(srcUrl)}:`, e.message);
-    }
+  try {
+    audioSelection = await resolvePlaybackAudioSelection(req, srcUrl, remoteFilename(srcUrl), trusted.matched || {});
+  } catch (e) {
+    console.warn(`[Mobile HLS FTP] audio selection failed for ${remoteFilename(srcUrl)}:`, e.message);
   }
   const audioMap = audioSelection.audioMap;
   const preset = mobileHlsPresetFromQuality(req.query.quality);
   const key = hlsSessionKey('ftp', srcUrl, startSec, `${audioMap}|${preset.key}`);
   const clientId = /^[a-zA-Z0-9_-]{8,80}$/.test(String(req.query.client || '')) ? String(req.query.client) : '';
   console.log(`[Mobile HLS FTP] ${remoteFilename(srcUrl)} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioMap}`);
-  const playlistPath = startMobileHlsSession({ scope: 'ftp', key, input: srcUrl, startSec, audioMap, clientId, preset, kghkAudio: isKghk });
+  const playlistPath = startMobileHlsSession({ scope: 'ftp', key, input: srcUrl, startSec, audioMap, clientId, preset });
   sendMobileHlsPlaylist(res, 'ftp', key, playlistPath);
 });
 
@@ -8723,20 +8690,26 @@ app.get('/api/media-info/:id', async (req, res) => {
   try {
     const audioOnly = req.query.audioOnly === '1';
     const info = audioOnly ? await getCachedAudioOnlyMediaInfo(filePath) : await getCachedMediaInfo(filePath);
+    const titleMetadata = playbackTitleMetadata(filePath, entry.file);
+    const audioDecision = audioLanguageDecision(req, info.audioTracks, titleMetadata);
     if (audioOnly && req.query.playbackType === 'media') {
       const audioTracks = Array.isArray(info.audioTracks) ? info.audioTracks : [];
       return res.json({
         audioTracks,
         duration: Number(info.duration) || 0,
         hasAudio: audioTracks.length > 0,
+        ...(audioDecision.selectedIndex !== null ? {
+          audioIndex: audioDecision.selectedIndex,
+          defaultAudioIndex: audioDecision.selectedIndex,
+        } : {}),
+        preferredAudioLanguage: audioDecision.preferredLanguage,
+        audioSelectionReason: audioDecision.reason,
+        titleLanguageReason: audioDecision.titleLanguageReason,
       });
     }
-    const selectedAudio = firstPlayableAudioStream(info.audioTracks);
-    const audioIndex = selectedAudio ? info.audioTracks.indexOf(selectedAudio) : null;
-    logAudioSelectionFix(entry.file, info.audioTracks, selectedAudio);
-    const audioSafety = isKhoGayeHumKahanTitle(entry.file)
-      ? khoGayeHumKahanAudioDecision(info.audioTracks, entry.file)
-      : null;
+    const selectedAudio = audioDecision.selectedTrack;
+    const audioIndex = audioDecision.selectedIndex;
+    logAudioSelectionFix(entry.file, info.audioTracks, selectedAudio, audioDecision);
     const sidecarSubtitleTracks = req.query.audioOnly === '1' ? [] : findSubtitleTracks(entry.dir, entry.file).map((t, i) => ({
       index: i,
       label: t.label,
@@ -8749,12 +8722,9 @@ app.get('/api/media-info/:id', async (req, res) => {
       ...info,
       sidecarSubtitleTracks,
       ...(audioIndex !== null ? { audioIndex, defaultAudioIndex: audioIndex } : {}),
-      ...(audioSafety ? {
-        defaultAudioIndex: audioSafety.defaultAudioIndex,
-        audioSafeMode: true,
-        audioStreamsDetected: audioSafety.audioStreamsDetected,
-        ffmpegMapping: audioSafety.ffmpegMapping,
-      } : {})
+      preferredAudioLanguage: audioDecision.preferredLanguage,
+      audioSelectionReason: audioDecision.reason,
+      titleLanguageReason: audioDecision.titleLanguageReason,
     });
   } catch (e) {
     console.error(`[Media Info] Error for ${entry.file}:`, e.message);
@@ -8886,12 +8856,10 @@ function localPlaybackPlan(id, req, entry, filePath, duration = 0, audioSelectio
     ...(Number.isInteger(Number(audioSelection?.audioIndex ?? audioSelection?.audioIdx)) ? {
       audioIndex: Number(audioSelection.audioIndex ?? audioSelection.audioIdx),
       defaultAudioIndex: Number(audioSelection.defaultAudioIndex ?? audioSelection.audioIndex ?? audioSelection.audioIdx),
-    } : {}),
-    ...(audioSelection?.audioSafeMode ? {
-      defaultAudioIndex: audioSelection.defaultAudioIndex,
-      audioSafeMode: true,
-      audioStreamsDetected: audioSelection.audioStreamsDetected,
-      ffmpegMapping: audioSelection.ffmpegMapping || audioSelection.audioMap,
+      audioStreamIndex: Number.isInteger(Number(audioSelection.audioStreamIdx)) ? Number(audioSelection.audioStreamIdx) : null,
+      preferredAudioLanguage: audioSelection.preferredAudioLanguage || null,
+      audioSelectionReason: audioSelection.audioSelectionReason || audioSelection.source || '',
+      titleLanguageReason: audioSelection.titleLanguageReason || '',
     } : {}),
   };
 }
@@ -10056,11 +10024,10 @@ app.get('/api/playback/ftp', async (req, res) => {
   }
 
   if (planRequested) {
-    const isKghk = isKhoGayeHumKahanTitle(matched?.name, matched?.title, remoteFilename(srcUrl));
     let audioSelection = null;
-    if (mode === 'remux' || mode === 'audio' || mode === 'hls' || isKghk) {
+    if (mode === 'remux' || mode === 'audio' || mode === 'hls') {
       try {
-        audioSelection = await resolvePlaybackAudioSelection(req, srcUrl, remoteFilename(srcUrl));
+        audioSelection = await resolvePlaybackAudioSelection(req, srcUrl, remoteFilename(srcUrl), matched || {});
       } catch (e) {
         return jsonError(res, 502, 'AUDIO_RESOLVE_FAILED', 'Could not resolve a playable audio stream', { label: remoteFilename(srcUrl), details: e.message });
       }
@@ -10107,14 +10074,12 @@ app.get('/api/playback/ftp', async (req, res) => {
       ...(Number.isInteger(Number(audioSelection?.audioIndex ?? audioSelection?.audioIdx)) ? {
         audioIndex: Number(audioSelection.audioIndex ?? audioSelection.audioIdx),
         defaultAudioIndex: Number(audioSelection.defaultAudioIndex ?? audioSelection.audioIndex ?? audioSelection.audioIdx),
+        audioStreamIndex: Number.isInteger(Number(audioSelection.audioStreamIdx)) ? Number(audioSelection.audioStreamIdx) : null,
+        preferredAudioLanguage: audioSelection.preferredAudioLanguage || null,
+        audioSelectionReason: audioSelection.audioSelectionReason || audioSelection.source || '',
+        titleLanguageReason: audioSelection.titleLanguageReason || '',
       } : {}),
       ftpAudioValidated: audioSelection?.ftpAudioValidated === true,
-      ...(audioSelection?.audioSafeMode ? {
-        defaultAudioIndex: audioSelection.defaultAudioIndex,
-        audioSafeMode: true,
-        audioStreamsDetected: audioSelection.audioStreamsDetected,
-        ffmpegMapping: audioSelection.ffmpegMapping || audioSelection.audioMap,
-      } : {}),
     });
   }
 
@@ -10155,14 +10120,13 @@ app.get('/api/playback/ftp', async (req, res) => {
 
   if (mode === 'hls') {
     const startSec = playbackStartFromReq(req);
-    const isKghk = isKhoGayeHumKahanTitle(matched?.title, matched?.name, remoteFilename(srcUrl));
-    const audioSelection = await resolvePlaybackAudioSelection(req, srcUrl, remoteFilename(srcUrl));
+    const audioSelection = await resolvePlaybackAudioSelection(req, srcUrl, remoteFilename(srcUrl), matched || {});
     const audioMap = audioSelection.audioMap;
     console.log(`[FTP Playback HLS] playbackType=${playbackType} selected source URL=${srcUrl} fallback reason=${fallbackReason} ${remoteFilename(srcUrl)} audioIdx=${audioSelection.audioIdx} audioStream=${audioSelection.audioStreamIdx ?? 'relative'} map=${audioMap}`);
     const preset = mobileHlsPresetFromQuality(req.query.quality);
     const key = hlsSessionKey('ftp', srcUrl, startSec, `${audioMap}|${preset.key}`);
     const clientId = /^[a-zA-Z0-9_-]{8,80}$/.test(String(req.query.client || '')) ? String(req.query.client) : '';
-    const playlistPath = startMobileHlsSession({ scope: 'ftp', key, input: srcUrl, startSec, audioMap, clientId, preset, kghkAudio: isKghk });
+    const playlistPath = startMobileHlsSession({ scope: 'ftp', key, input: srcUrl, startSec, audioMap, clientId, preset });
     return sendMobileHlsPlaylist(res, 'ftp', key, playlistPath);
   }
 
@@ -10240,6 +10204,7 @@ app.get(['/api/ftp/media-info', '/api/ftp/info'], async (req, res) => {
     ]);
     if (audioOnly && req.query.playbackType === 'media') {
       const audioTracks = Array.isArray(info.audioTracks) ? info.audioTracks : [];
+      const decision = audioLanguageDecision(req, audioTracks, playbackTitleMetadata(media.decodedUrl, remoteFilename(media.decodedUrl), matched || {}));
       return res.json({
         ok: true,
         requestedUrl: media.requestedUrl,
@@ -10247,10 +10212,14 @@ app.get(['/api/ftp/media-info', '/api/ftp/info'], async (req, res) => {
         audioTracks,
         duration: Number(info.duration) || 0,
         hasAudio: audioTracks.length > 0,
+        ...(decision.selectedIndex !== null ? { audioIndex: decision.selectedIndex, defaultAudioIndex: decision.selectedIndex } : {}),
+        preferredAudioLanguage: decision.preferredLanguage,
+        audioSelectionReason: decision.reason,
+        titleLanguageReason: decision.titleLanguageReason,
       });
     }
-    const kghkTitle = matched?.name || matched?.title || remoteFilename(media.decodedUrl);
-    const validatedAudio = await firstValidDecodedAudioStream(media.decodedUrl, info.audioTracks, kghkTitle);
+    const mediaTitle = matched?.name || matched?.title || remoteFilename(media.decodedUrl);
+    const validatedAudio = await firstValidDecodedAudioStream(media.decodedUrl, info.audioTracks, mediaTitle, { req, titleMetadata: matched || {} });
     const audioIndex = validatedAudio.selectedIndex;
     const validatedTracks = (Array.isArray(info.audioTracks) ? info.audioTracks : []).map((track, index) =>
       validatedAudio.ftpStreams[index] || track
@@ -10268,6 +10237,9 @@ app.get(['/api/ftp/media-info', '/api/ftp/info'], async (req, res) => {
       duration: Number(info.duration) || 0,
       ...(audioIndex !== null ? { audioIndex, defaultAudioIndex: audioIndex } : {}),
       ftpAudioValidated: audioIndex !== null,
+      preferredAudioLanguage: validatedAudio.titleLanguage || null,
+      audioSelectionReason: validatedAudio.selectionReason,
+      titleLanguageReason: validatedAudio.titleLanguageReason,
     });
   } catch (e) {
     console.error(`[FTP Media Info] Probe error for ${remoteFilename(media.decodedUrl)}:`, e.message);
@@ -10933,6 +10905,17 @@ app.get('/api/infra/events', requireInfraAccess, (req, res) => {
 });
 app.get('/api/infra/nodes', requireInfraAccess, (req, res) => res.json(infraTelemetry.nodes()));
 
+const { createLiveRelayV2 } = require('./lib/live-relay-v2');
+const liveRelayV2 = createLiveRelayV2({
+  app,
+  getChannels: () => channels,
+  tracker,
+  statusMiddleware: requireInfraAccess,
+  ffmpegBin: FFMPEG_BIN,
+  cacheRoot: path.join(__dirname, 'cache', 'live-relay-v2')
+});
+liveRelayV2.registerRoutes();
+
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err.message);
@@ -10982,7 +10965,7 @@ function getLanIP() {
   return 'your-laptop-ip';
 }
 
-const server = app.listen(3000, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   const lan = getLanIP();
   const configured = channels.filter(c => c.url).length;
   console.log(`\nðŸŽ¬ StreamVault Enhanced â†’ http://0.0.0.0:${PORT}`);

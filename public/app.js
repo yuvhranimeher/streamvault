@@ -126,13 +126,8 @@ const svMediaPlayerState={
   fallbackReason:'',
   serverAudioIndex:null,
   manifestAudioIndex:null,
+  manualAudioIndex:null,
   audioLocked:false,
-  defaultAudioIndex:null,
-  audioSafeMode:false,
-  kghkAudioStreamsDetected:0,
-  kghkFfmpegMapping:'',
-  kghkAudioRetryCount:0,
-  kghkAudioRetryTimer:null,
   sessionToken:0
 };
 const svLivePlayerState={
@@ -358,49 +353,40 @@ function svSelectDefaultHlsAudioTrack(hls, video=svPlayerVideo(), reason='HLS au
   if(!hls || !Array.isArray(hls.audioTracks))return false;
   const tracks=hls.audioTracks;
   if(!tracks.length)return false;
-  const nextIndex=tracks.findIndex(audioTrackIsAudible);
+  const requestedRaw=svMediaPlayerState.manualAudioIndex ?? svMediaPlayerState.serverAudioIndex;
+  const requestedIndex=requestedRaw === null || requestedRaw === undefined ? NaN : Number(requestedRaw);
+  const nextIndex=Number.isInteger(requestedIndex) && requestedIndex >= 0 && tracks[requestedIndex] && audioTrackIsAudible(tracks[requestedIndex])
+    ? requestedIndex
+    : tracks.findIndex(audioTrackIsAudible);
   if(nextIndex < 0)return false;
+  const logicalIndex=Number.isInteger(requestedIndex) && requestedIndex >= 0 && availableAudio[requestedIndex]
+    ? requestedIndex
+    : nextIndex;
   if(Number(hls.audioTrack) !== nextIndex)hls.audioTrack=nextIndex;
   if(video?._svAudioResetContext)video._svAudioResetContext.hasManifestAudio=true;
-  if(video){video.muted=false;video.volume=1;video._svAudioLockedIndex=nextIndex;svSyncVolumeUi(video);}
-  currentAudioIdx=nextIndex;
-  setAppliedAudioIndex(nextIndex, reason);
+  if(video){video.muted=false;video.volume=1;video._svAudioLockedIndex=logicalIndex;svSyncVolumeUi(video);}
+  currentAudioIdx=logicalIndex;
+  setAppliedAudioIndex(logicalIndex, reason);
   svMediaPlayerState.manifestAudioIndex=nextIndex;
   svMediaPlayerState.audioLocked=true;
   refreshDesktopNativeAudioTracks();
   mediaFixLog('selected default HLS audio track', {
     reason,
-    selectedIndex:nextIndex,
+    selectedIndex:logicalIndex,
+    manifestIndex:nextIndex,
     language:tracks[nextIndex]?.lang || tracks[nextIndex]?.language || '',
     title:tracks[nextIndex]?.name || ''
   });
-  console.log('[AUDIO SELECTION FIX]',{title:svMediaPlayerState.title,detectedTracks:tracks,selectedIndex:nextIndex,reason:'first valid audio stream rule'});
-  return true;
-}
-
-function svIsKhoGayeHumKahanTitle(value=''){
-  const title=String(value || '')
-    .split(/[?#]/)[0]
-    .replace(/\.[a-z0-9]{2,5}$/i,'')
-    .replace(/[._-]+/g,' ')
-    .replace(/\s+/g,' ')
-    .trim();
-  return /^kho gaye hum kahan(?:\s*[\[(]?2023[\])]?|\s|$)/i.test(title);
-}
-
-function svCaptureKhoGayeHumKahanAudioDecision(payload){
-  if(!svIsKhoGayeHumKahanTitle(svMediaPlayerState.title) || payload?.audioSafeMode !== true)return false;
-  const index=Number(payload.defaultAudioIndex);
-  if(!Number.isInteger(index) || index < 0)return false;
-  svMediaPlayerState.defaultAudioIndex=index;
-  svMediaPlayerState.audioSafeMode=true;
-  svMediaPlayerState.kghkAudioStreamsDetected=Math.max(0,Number(payload.audioStreamsDetected) || 0);
-  svMediaPlayerState.kghkFfmpegMapping=String(payload.ffmpegMapping || '');
   return true;
 }
 
 function svCaptureServerAudioDecision(payload){
   const index=Number(payload?.audioIndex ?? payload?.defaultAudioIndex);
+  const manualIndex=svMediaPlayerState.manualAudioIndex === null ? NaN : Number(svMediaPlayerState.manualAudioIndex);
+  if(Number.isInteger(manualIndex) && manualIndex >= 0){
+    svMediaPlayerState.serverAudioIndex=manualIndex;
+    return true;
+  }
   if(Number.isInteger(index) && index >= 0){
     if(Number(svMediaPlayerState.serverAudioIndex) !== index && !Array.isArray(hlsInstance?.audioTracks)){
       svMediaPlayerState.audioLocked=false;
@@ -409,14 +395,14 @@ function svCaptureServerAudioDecision(payload){
     }
     svMediaPlayerState.serverAudioIndex=index;
   }
-  svCaptureKhoGayeHumKahanAudioDecision(payload);
   return Number.isInteger(index) && index >= 0;
 }
 
 function svApplyServerAudioAuthority(hls=hlsInstance, video=svPlayerVideo(), reason='server audio authority'){
   if(svActivePlaybackType !== 'media')return false;
   if(hls && Array.isArray(hls.audioTracks))return svSelectDefaultHlsAudioTrack(hls,video,reason);
-  const serverIndex=Number(svMediaPlayerState.serverAudioIndex);
+  const serverRaw=svMediaPlayerState.manualAudioIndex ?? svMediaPlayerState.serverAudioIndex;
+  const serverIndex=serverRaw === null || serverRaw === undefined ? NaN : Number(serverRaw);
   if(!Number.isInteger(serverIndex) || serverIndex < 0)return false;
   let applied=false;
   const hlsTracks=Array.isArray(hls?.audioTracks) ? hls.audioTracks : [];
@@ -446,46 +432,13 @@ function svApplyServerAudioAuthority(hls=hlsInstance, video=svPlayerVideo(), rea
   return true;
 }
 
-function svLogKhoGayeHumKahanFinalAudioState(hls,selectedAudioIndex){
-  const tracks=Array.isArray(hls?.audioTracks) ? hls.audioTracks : [];
-  console.log('[KGHK FINAL AUDIO STATE]',{
-    audioStreamsDetected:svMediaPlayerState.kghkAudioStreamsDetected || tracks.length,
-    selectedAudioIndex:Number.isInteger(Number(selectedAudioIndex)) ? Number(selectedAudioIndex) : null,
-    ffmpegMapping:svMediaPlayerState.kghkFfmpegMapping || '',
-    hlsAudioTracks:tracks.map((track,index)=>({index,name:track?.name || '',lang:track?.lang || track?.language || ''}))
-  });
-}
-
-function svApplyKhoGayeHumKahanAudioOnce(hls, video=svPlayerVideo()){
-  if(!hls || hls._svKghkAudioApplied || svActivePlaybackType !== 'media')return false;
-  if(!svIsKhoGayeHumKahanTitle(svMediaPlayerState.title))return false;
-  const applied=svSelectDefaultHlsAudioTrack(hls,video,'KGHK first valid manifest audio');
-  if(applied){
-    hls._svKghkAudioApplied=true;
-    svLogKhoGayeHumKahanFinalAudioState(hls,svMediaPlayerState.manifestAudioIndex);
-  }
-  return applied;
-}
-
-function svRetryKhoGayeHumKahanAudio(hls, video=svPlayerVideo()){
-  if(svActivePlaybackType !== 'media' || !hls || !svIsKhoGayeHumKahanTitle(svMediaPlayerState.title))return false;
-  if(svApplyKhoGayeHumKahanAudioOnce(hls,video))return true;
-  if(svMediaPlayerState.kghkAudioRetryCount >= 3){svLogKhoGayeHumKahanFinalAudioState(hls,null);return false;}
-  svMediaPlayerState.kghkAudioRetryCount+=1;
-  console.log('[KGHK AUDIO RETRY] attempt '+svMediaPlayerState.kghkAudioRetryCount);
-  clearTimeout(svMediaPlayerState.kghkAudioRetryTimer);
-  svMediaPlayerState.kghkAudioRetryTimer=setTimeout(()=>{
-    if(hls === hlsInstance && svActivePlaybackType === 'media')svRetryKhoGayeHumKahanAudio(hls,video);
-  },750);
-  return false;
-}
-
 function svSelectDefaultNativeAudioTrack(video=svPlayerVideo(), reason='native audio reset'){
   const list=video?.audioTracks;
   if(!list || !Number.isFinite(Number(list.length)) || list.length <= 0)return false;
   const tracks=Array.from({length:list.length},(_,index)=>list[index]).filter(Boolean);
   if(!tracks.length)return false;
-  const serverIndex=Number(svMediaPlayerState.serverAudioIndex);
+  const serverRaw=svMediaPlayerState.manualAudioIndex ?? svMediaPlayerState.serverAudioIndex;
+  const serverIndex=serverRaw === null || serverRaw === undefined ? NaN : Number(serverRaw);
   if(Number.isInteger(serverIndex) && serverIndex >= 0)return svApplyServerAudioAuthority(null,video,reason);
   const firstValidIndex=tracks.findIndex(audioTrackIsAudible);
   const nextIndex=Number.isInteger(serverIndex) && serverIndex >= 0 && tracks[serverIndex] && audioTrackIsAudible(tracks[serverIndex])
@@ -501,7 +454,6 @@ function svSelectDefaultNativeAudioTrack(video=svPlayerVideo(), reason='native a
     language:tracks[nextIndex]?.language || '',
     title:tracks[nextIndex]?.label || ''
   });
-  console.log('[AUDIO SELECTION FIX]',{title:svMediaPlayerState.title,detectedTracks:tracks,selectedIndex:nextIndex,reason:'first valid audio stream rule'});
   return true;
 }
 
@@ -526,7 +478,8 @@ function svArmNativeAudioResetOnLoad(context, reason='source load'){
 function svResetMediaAudioOnSourceSwitch(context, reason='stream switch', options={}){
   const video=svPlayerVideo();
   if(!video || !context)return;
-  const serverIndex=Number(svMediaPlayerState.serverAudioIndex);
+  const authorityRaw=svMediaPlayerState.manualAudioIndex ?? svMediaPlayerState.serverAudioIndex;
+  const serverIndex=authorityRaw === null || authorityRaw === undefined ? NaN : Number(authorityRaw);
   if(hlsInstance && context.isHls)svSelectDefaultHlsAudioTrack(hlsInstance,video,reason);
   else if(Number.isInteger(serverIndex) && serverIndex >= 0)svApplyServerAudioAuthority(null,video,reason);
   if(svShouldForceMediaAudioOutput(video, context))svForceMediaAudioOutput(video, reason);
@@ -736,14 +689,8 @@ function svBeginMediaPlayback(mediaKind, sourceKey, title=''){
   svMediaPlayerState.fallbackReason='';
   svMediaPlayerState.serverAudioIndex=null;
   svMediaPlayerState.manifestAudioIndex=null;
+  svMediaPlayerState.manualAudioIndex=null;
   svMediaPlayerState.audioLocked=false;
-  svMediaPlayerState.defaultAudioIndex=null;
-  svMediaPlayerState.audioSafeMode=false;
-  svMediaPlayerState.kghkAudioStreamsDetected=0;
-  svMediaPlayerState.kghkFfmpegMapping='';
-  svMediaPlayerState.kghkAudioRetryCount=0;
-  clearTimeout(svMediaPlayerState.kghkAudioRetryTimer);
-  svMediaPlayerState.kghkAudioRetryTimer=null;
   svMediaPlayerState.sessionToken++;
   const player=svPlayerVideo();
   if(player)player._svPlaybackType='media';
@@ -763,6 +710,7 @@ function svBeginLivePlayback(channelId, channelName=''){
   svMediaPlayerState.audioLocked=false;
   svMediaPlayerState.serverAudioIndex=null;
   svMediaPlayerState.manifestAudioIndex=null;
+  svMediaPlayerState.manualAudioIndex=null;
   svMediaPlayerState.selectedSourceUrl='';
   svMediaPlayerState.recoverySourceUrl='';
   svMediaPlayerState.fallbackReason='';
@@ -904,8 +852,7 @@ async function attachPlayerSource(src, mode='direct', options={}){
     }
     hlsInstance.on(Hls.Events.MANIFEST_PARSED,()=>{
       if(abortIfStale())return finish(false, svStalePlaybackError('Superseded HLS manifest'));
-      const applied=svSelectDefaultHlsAudioTrack(hlsInstance,vid,'HLS manifest parsed');
-      if(!applied && svIsKhoGayeHumKahanTitle(svMediaPlayerState.title))svRetryKhoGayeHumKahanAudio(hlsInstance,vid);
+      svSelectDefaultHlsAudioTrack(hlsInstance,vid,'HLS manifest parsed');
       svForceMediaAudioOutput(vid,'HLS manifest parsed');
       playerAttachedSourceKey=svPlayerSourceKey(src, mode);
       finish(true);
@@ -1163,6 +1110,19 @@ function lockAudioToCurrent(reason='', options={}){
   });
 }
 
+function recordManualAudioSelection(idx, reason='manual audio selection'){
+  if(!Number.isInteger(idx) || idx < 0)return false;
+  svMediaPlayerState.manualAudioIndex=idx;
+  svMediaPlayerState.serverAudioIndex=idx;
+  svMediaPlayerState.audioLocked=true;
+  if(hlsInstance && Array.isArray(hlsInstance.audioTracks) && hlsInstance.audioTracks[idx]){
+    svMediaPlayerState.manifestAudioIndex=idx;
+  }
+  if(vid)vid._svAudioLockedIndex=idx;
+  mediaFixLog('manual audio authority recorded',{idx,reason,selected:audioDebugSummary(availableAudio[idx],idx)});
+  return true;
+}
+
 function mappedAudioStartupRequiresSource(){
   return !!vid?._svMappedAudioStartupRequired && audioLockedIndex() !== null;
 }
@@ -1170,6 +1130,9 @@ function mappedAudioStartupRequiresSource(){
 function preferredAudioTrackIndex(tracks=[]){
   const list=tracks.map((track,index)=>({track,index})).filter(item=>audioTrackIsAudible(item.track));
   if(!list.length)return 0;
+  const authoritativeRaw=svMediaPlayerState.manualAudioIndex ?? svMediaPlayerState.serverAudioIndex;
+  const authoritative=authoritativeRaw === null || authoritativeRaw === undefined ? NaN : Number(authoritativeRaw);
+  if(Number.isInteger(authoritative) && list.some(item=>item.index===authoritative))return authoritative;
   return list[0].index;
 }
 
@@ -1209,7 +1172,6 @@ function selectPreferredAudioTrack(context, options={}){
       sourcePreserved:!!options.sourcePreserved
     });
   }
-  console.log('[AUDIO SELECTION FIX]',{title:svMediaPlayerState.title,detectedTracks:availableAudio,selectedIndex:currentAudioIdx,reason:'first valid audio stream rule'});
   renderAudioTracks();
   return currentAudioIdx;
 }
@@ -1293,10 +1255,9 @@ function renderAudioTracks(){
   if(!list)return;
   const tool = document.querySelector('.audio-tool');
   const separator = document.querySelector('.tool-sep');
-  const lockedIdx=audioLockedIndex();
   const signature=JSON.stringify({
     currentAudioIdx,
-    lockedIdx,
+    manualAudioIdx:svMediaPlayerState.manualAudioIndex,
     tracks:availableAudio.map((track,index)=>[
       index,
       track?.title || track?.label || '',
@@ -1327,13 +1288,7 @@ function renderAudioTracks(){
   if(!availableAudio.length){
     availableAudio = [{index:0,title:'Default Audio'}];
   }
-  if(lockedIdx !== null){
-    const lockedTrack=availableAudio[lockedIdx] || selectedAudioTrack() || {index:0,title:'Default Audio'};
-    const label=lockedTrack.title || audioTrackTitle(lockedTrack,lockedIdx);
-    list.innerHTML = `<div class="pd-item active disabled"><span>${esc(label)} <span class="pd-badge">Locked</span></span><span class="check">âœ“</span></div>`;
-  }else{
-    list.innerHTML = availableAudio.map((t,i)=>`<div class="pd-item${i===currentAudioIdx?' active':''}" onclick="setAudio(${i})"><span>${esc(t.title||audioTrackTitle(t,i))}</span><span class="check">âœ“</span></div>`).join('');
-  }
+  list.innerHTML = availableAudio.map((t,i)=>`<div class="pd-item${i===currentAudioIdx?' active':''}" onclick="setAudio(${i})"><span>${esc(t.title||audioTrackTitle(t,i))}</span><span class="check">âœ“</span></div>`).join('');
   const label = document.getElementById('audioLabel');
   if(label)label.textContent = availableAudio[currentAudioIdx]?.title || 'Audio';
   updateAudioBtn();
@@ -1352,6 +1307,7 @@ async function loadAudioTracks(id, options={}){
     const r = await fetch(`/api/media-info/${id}`);
     if(!r.ok)return null;
     const data = await r.json();
+    svCaptureServerAudioDecision(data);
     const tracks = Array.isArray(data.audioTracks) ? data.audioTracks : [];
     if(tracks.length){
       const hints=filenameAudioHints(typeof localFileForStreamId==='function'?localFileForStreamId(id):'');
@@ -1393,10 +1349,6 @@ function resetLocalTrackOptions(){
 
 function ensureLocalTrackOptionsLoaded(){
   if(!currentStreamId || _ftpStreamUrl)return Promise.resolve();
-  if(audioLockedIndex() !== null){
-    mediaFixLog('local full metadata deferred for locked startup audio', {id:currentStreamId});
-    return Promise.resolve();
-  }
   if(!isMobilePlaybackClient()){
     refreshDesktopNativeAudioTracks();
     if(_localTrackLoadPromise)return _localTrackLoadPromise;
@@ -1870,7 +1822,7 @@ function shouldUseNativeHlsForLive(){
 
 function openLiveChannel(channelId, channelName){
   const directLiveSourceUrl=`/live/${encodeURIComponent(channelId)}/playlist.m3u8`;
-  const relayLiveSourceUrl=`/live-relay/${encodeURIComponent(channelId)}/playlist.m3u8`;
+  const relayLiveSourceUrl=`/live-relay-v2/${encodeURIComponent(channelId)}/playlist.m3u8`;
   let liveSourceUrl=relayLiveSourceUrl;
   let liveDirectFallbackAttempted=false;
   if(svLiveAbrActive(channelId) && hlsInstance){
@@ -1931,7 +1883,7 @@ function openLiveChannel(channelId, channelName){
     channelId,
     mode: shouldUseNativeHlsForLive() ? "native" : "hls.js",
     source: liveSourceUrl,
-    relay: liveSourceUrl.includes("/live-relay/")
+    relay: /\/live-relay(?:-v2)?\//.test(liveSourceUrl)
   });
 
   const playNative=()=>{
@@ -1951,7 +1903,7 @@ function openLiveChannel(channelId, channelName){
     vid.play().catch(()=>{});
   };
 
-  const isRelaySource=()=>liveSourceUrl.includes('/live-relay/');
+  const isRelaySource=()=>/\/live-relay(?:-v2)?\//.test(liveSourceUrl);
   const liveErrorStatus=data=>Number(data?.response?.code ?? data?.response?.status ?? data?.networkDetails?.status ?? 0) || 0;
   const isLiveNetworkError=data=>data?.type===Hls.ErrorTypes.NETWORK_ERROR || data?.type==='networkError';
   const isLivePlaylistNetworkError=data=>{
@@ -3476,17 +3428,22 @@ function refreshDesktopNativeAudioTracks(){
     nativeList.addEventListener('change',refreshDesktopNativeAudioTracks);
   }
   if(svMediaPlayerState.audioLocked){
-    const lockedIndex=hlsInstance && Array.isArray(hlsInstance.audioTracks)
-      ? Number(svMediaPlayerState.manifestAudioIndex)
-      : Number(svMediaPlayerState.serverAudioIndex);
-    if(Number.isInteger(lockedIndex) && currentAudioIdx !== lockedIndex){
+    const lockedRaw=hlsInstance && Array.isArray(hlsInstance.audioTracks)
+      ? svMediaPlayerState.manifestAudioIndex
+      : (svMediaPlayerState.manualAudioIndex ?? svMediaPlayerState.serverAudioIndex);
+    const lockedIndex=lockedRaw === null || lockedRaw === undefined ? NaN : Number(lockedRaw);
+    const appliedIndex=hlsInstance && Array.isArray(hlsInstance.audioTracks)
+      ? Number(hlsInstance.audioTrack)
+      : currentAudioIdx;
+    if(Number.isInteger(lockedIndex) && appliedIndex !== lockedIndex){
       queueMicrotask(()=>svApplyServerAudioAuthority(hlsInstance,vid,'native audio track change'));
     }
   }
 }
 
 function applyPreferredNativeAudioIfSafe(context='native audio'){
-  const serverIndex=Number(svMediaPlayerState.serverAudioIndex);
+  const authorityRaw=svMediaPlayerState.manualAudioIndex ?? svMediaPlayerState.serverAudioIndex;
+  const serverIndex=authorityRaw === null || authorityRaw === undefined ? NaN : Number(authorityRaw);
   if(Number.isInteger(serverIndex) && serverIndex >= 0)return svApplyServerAudioAuthority(hlsInstance,vid,context);
   if(audioLockedIndex() !== null)return false;
   if(isMobilePlaybackClient())return false;
@@ -4992,9 +4949,7 @@ function applyStartupAudioInfo(info, sourceUrl='', context='startup audio', sele
   }
   const hints=filenameAudioHints(sourceUrl);
   availableAudio=normalizeDiscoveredAudioTracks(tracks,hints);
-  const serverIndex=selection.serverAudioIndex === null || selection.serverAudioIndex === undefined
-    ? NaN
-    : Number(selection.serverAudioIndex);
+  const serverIndex=Number(selection.serverAudioIndex ?? info?.audioIndex ?? info?.defaultAudioIndex);
   currentAudioIdx=Number.isInteger(serverIndex) && serverIndex >= 0 && availableAudio[serverIndex]
     ? serverIndex
     : preferredAudioTrackIndex(availableAudio);
@@ -5004,8 +4959,8 @@ function applyStartupAudioInfo(info, sourceUrl='', context='startup audio', sele
   const safeCodec=audioCodecIsBrowserSafe(selected);
   let options={};
   let reason=Number.isInteger(serverIndex) && currentAudioIdx === serverIndex
-    ? 'server validated decoded FTP audio'
-    : 'first valid audio stream rule';
+    ? (info?.audioSelectionReason || 'server title-language audio decision')
+    : 'safe audio fallback';
 
   if(streamIndex !== null && !safeCodec){
     options={forceAudio:true};
@@ -5024,10 +4979,7 @@ function applyStartupAudioInfo(info, sourceUrl='', context='startup audio', sele
     lockAudioToCurrent(reason, {requiresMappedSource:true});
   }else{
     setAppliedAudioIndex(currentAudioIdx, `${context} startup`);
-    if(availableAudio.length > 1){
-      lockAudioToCurrent(reason || 'Manual audio switching disabled for stable startup', {requiresMappedSource:false});
-      renderAudioTracks();
-    }
+    if(availableAudio.length > 1)lockAudioToCurrent(reason, {requiresMappedSource:false});
   }
   mediaFixLog('startup audio decision', {
     context,
@@ -5040,7 +4992,6 @@ function applyStartupAudioInfo(info, sourceUrl='', context='startup audio', sele
     route:options.forceAudio ? 'audio-copy' : options.forceRemux ? 'remux-copy' : 'proxy/direct',
     tracks:availableAudio.map((track,index)=>audioDebugSummary(track,index))
   });
-  console.log('[AUDIO SELECTION FIX]',{title:svMediaPlayerState.title,detectedTracks:availableAudio,selectedIndex:currentAudioIdx,reason:'first valid audio stream rule'});
   return {info, options, selected, reason};
 }
 
@@ -5503,6 +5454,11 @@ function currentPlaybackSnapshot(){
     paused:vid.paused,
     audioIdx:currentAudioIdx,
     appliedIdx:appliedAudioIndex(),
+    manualAudioIdx:svMediaPlayerState.manualAudioIndex,
+    serverAudioIdx:svMediaPlayerState.serverAudioIndex,
+    manifestAudioIdx:svMediaPlayerState.manifestAudioIndex,
+    audioAuthorityLocked:svMediaPlayerState.audioLocked,
+    lockedAudioIdx:audioLockedIndex(),
     sourceOffset:Number(vid._sourceOffset || 0),
     sourceSeekRequired:!!vid._sourceSeekRequired,
     mediaSourceSeekRequired:!!vid._mediaSourceSeekRequired,
@@ -5515,6 +5471,11 @@ async function restorePlaybackSnapshot(snapshot, reason='switch failed'){
   if(!snapshot?.src)throw new Error('No previous source to restore');
   currentAudioIdx=snapshot.audioIdx;
   setAppliedAudioIndex(snapshot.appliedIdx);
+  svMediaPlayerState.manualAudioIndex=snapshot.manualAudioIdx ?? null;
+  svMediaPlayerState.serverAudioIndex=snapshot.serverAudioIdx ?? null;
+  svMediaPlayerState.manifestAudioIndex=snapshot.manifestAudioIdx ?? null;
+  svMediaPlayerState.audioLocked=!!snapshot.audioAuthorityLocked;
+  vid._svAudioLockedIndex=snapshot.lockedAudioIdx ?? null;
   if(snapshot.ftp){
     _currentFtpPlaybackPlan=snapshot.plan;
     _ftpNeedsTranscode=snapshot.ftpNeedsTranscode;
@@ -5588,6 +5549,7 @@ async function switchAudioWithServer(idx){
   const token=(vid._audioSwitchToken||0)+1;
   vid._audioSwitchToken=token;
   vid._audioSwitchPending=true;
+  recordManualAudioSelection(idx,'server audio switch');
   currentAudioIdx=idx;
   renderAudioTracks();
   closeAllDropdowns();
@@ -5680,17 +5642,7 @@ async function switchAudioWithServer(idx){
 }
 
 function setAudio(idx){
-  const lockedIdx=audioLockedIndex();
-  if(lockedIdx !== null && idx !== lockedIdx){
-    closeAllDropdowns();
-    showToast('Audio switching is locked while this stream is active.');
-    mediaFixLog('audio switch blocked by startup lock', {
-      requested:idx,
-      locked:lockedIdx,
-      selected:audioDebugSummary(availableAudio[lockedIdx],lockedIdx)
-    });
-    return;
-  }
+  if(!Number.isInteger(idx) || idx < 0 || !availableAudio[idx])return;
   if(vid._audioSwitchPending){
     vid._queuedAudioSwitchIdx=idx;
     closeAllDropdowns();
@@ -5708,6 +5660,7 @@ function setAudio(idx){
       return;
     }
     if(selected.hls && hlsInstance){
+      recordManualAudioSelection(idx,'desktop HLS audio switch');
       hlsInstance.audioTrack=selected.hlsIndex;
       currentAudioIdx=idx;
       setAppliedAudioIndex(idx,'desktop HLS audio switch');
@@ -5718,6 +5671,7 @@ function setAudio(idx){
       return;
     }
     if(selected.nativeTrack){
+      recordManualAudioSelection(idx,'desktop native audio switch');
       availableAudio.forEach((track,index)=>{if(track.nativeTrack)track.nativeTrack.enabled=index===idx;});
       currentAudioIdx=idx;
       setAppliedAudioIndex(idx,'desktop native audio switch');
@@ -5731,6 +5685,7 @@ function setAudio(idx){
   const selected=availableAudio[idx];
   const sourceBefore=vid.currentSrc;
   if(selected?.hls && hlsInstance){
+    recordManualAudioSelection(idx,'source-preserving HLS audio switch');
     hlsInstance.audioTrack=selected.hlsIndex;
     currentAudioIdx=idx;
     setAppliedAudioIndex(idx,'source-preserving HLS audio switch');
@@ -5741,6 +5696,7 @@ function setAudio(idx){
     return;
   }
   if(selected?.nativeTrack){
+    recordManualAudioSelection(idx,'source-preserving native audio switch');
     availableAudio.forEach((track,index)=>{if(track.nativeTrack)track.nativeTrack.enabled=index===idx;});
     currentAudioIdx=idx;
     setAppliedAudioIndex(idx,'source-preserving native audio switch');
@@ -5750,13 +5706,7 @@ function setAudio(idx){
     playbackDebug('source-preserving native audio switch',{idx,sourceUnchanged:sourceBefore===vid.currentSrc});
     return;
   }
-  closeAllDropdowns();
-  showToast('Audio switching is disabled to preserve original quality.');
-  mediaFixLog('audio switch blocked original-quality-only', {
-    idx,
-    selected:audioDebugSummary(selected,idx),
-    current:audioDebugSummary(selectedAudioTrack(),currentAudioIdx)
-  });
+  switchAudioWithServer(idx).catch(error=>console.warn('[Audio] Switch failed:',error.message));
 }
 
 function updateProgress(){
@@ -6118,11 +6068,7 @@ function resetFtpHeavyPlaybackState(){
 
 function runFtpPostStartMetadata(resolvedStreamUrl){
   if(_ftpStreamUrl !== resolvedStreamUrl)return;
-  if(audioLockedIndex() === null){
-    ensureFtpTrackOptionsLoaded();
-  }else{
-    mediaFixLog('FTP full metadata deferred for locked audio startup', {url:resolvedStreamUrl});
-  }
+  ensureFtpTrackOptionsLoaded();
   ensureFtpDurationLoaded(resolvedStreamUrl);
 }
 
@@ -6593,6 +6539,7 @@ function closePlayer(){
   svMediaPlayerState.audioLocked=false;
   svMediaPlayerState.serverAudioIndex=null;
   svMediaPlayerState.manifestAudioIndex=null;
+  svMediaPlayerState.manualAudioIndex=null;
   svMediaPlayerState.selectedSourceUrl='';
   svMediaPlayerState.recoverySourceUrl='';
   svMediaPlayerState.fallbackReason='';

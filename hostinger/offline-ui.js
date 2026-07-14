@@ -14,8 +14,12 @@
     if(typeof original !== 'function' || original.__svOfflineGuard)return;
     const guarded=function(){
       if(backendIsOffline()){
-        config.showOfflineMessage(kind);
-        return;
+        const context=this;
+        const args=arguments;
+        return config.showOfflineMessage(kind).then(message=>{
+          if(message)return;
+          return original.apply(context,args);
+        });
       }
       return original.apply(this,arguments);
     };
@@ -44,6 +48,9 @@
     try{url=new URL(link.href,location.href);}catch(_error){return;}
     if(url.origin !== config.backendOrigin)return;
     event.preventDefault();
-    config.showOfflineMessage(url.pathname.startsWith('/download/') ? 'action' : 'playback');
+    config.showOfflineMessage(url.pathname.startsWith('/download/') ? 'action' : 'playback')
+      .then(message=>{
+        if(!message)link.click();
+      });
   },true);
 })(window);

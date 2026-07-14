@@ -189,6 +189,7 @@
         return response.json();
       })
       .then(show=>{
+        show=window.StreamVaultConfig?.normalizeBackendUrls?.(show) ?? show;
         if(episodeCount(show)>0){
           storeShow(detailKey,show,summary);
           return show;

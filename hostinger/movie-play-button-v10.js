@@ -88,6 +88,7 @@
       }
 
       if(movie.streamUrl){
+        movie.streamUrl=window.StreamVaultConfig?.normalizeBackendUrls?.(movie.streamUrl) ?? movie.streamUrl;
         playFtpMedia(movie.streamUrl,movie.name,movie.year||"");
       }else if(movie.id!==undefined && movie.id!==null){
         playMedia(movie.id,movie.name,movie.year||"");
@@ -96,9 +97,12 @@
       }
     }catch(error){
       console.error("[Movie Play v10]",error);
-      showToast(window.StreamVaultConfig?.backendStatus?.available === false
-        ? "Playback server is currently offline."
-        : "Movie playback could not start");
+      if(window.StreamVaultConfig?.backendStatus?.available === false){
+        const message=await window.StreamVaultConfig.showOfflineMessage("playback");
+        if(!message)showToast("Movie playback could not start");
+      }else{
+        showToast("Movie playback could not start");
+      }
     }finally{
       button.disabled=false;
       button.innerHTML=

@@ -219,7 +219,8 @@
 
       if(!response.ok)throw new Error("HTTP "+response.status);
 
-      const show=await response.json();
+      const payload=await response.json();
+      const show=window.StreamVaultConfig?.normalizeBackendUrls?.(payload) ?? payload;
 
       if(activeKey!==key||!isOpen())return;
       if(!episodeCount(show))throw new Error("No episodes returned");

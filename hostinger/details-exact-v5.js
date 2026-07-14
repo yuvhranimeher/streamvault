@@ -102,7 +102,8 @@
         signal:detailRequestController?.signal
       }, 3500);
       if(r.ok){
-        const full = await r.json();
+        const payload = await r.json();
+        const full = window.StreamVaultConfig?.normalizeBackendUrls?.(payload) ?? payload;
         if(full && full.name && document.getElementById('seriesModal')?.classList.contains('open') && currentShow === show){
           Object.assign(show, full, {isSummary:false});
           _seriesDetailRegistry.set(key, show);
@@ -243,7 +244,8 @@
 
     if(!response?.ok)return null;
 
-    const body=await response.json();
+    const payload=await response.json();
+    const body=window.StreamVaultConfig?.normalizeBackendUrls?.(payload) ?? payload;
     const list=Array.isArray(body)
       ? body
       : Array.isArray(body?.series) ? body.series : [];
@@ -381,7 +383,8 @@
     const response = await fetchWithTimeout('/api/series?' + params.toString(), {}, 3500);
     if (!response || !response.ok) return null;
 
-    const payload = await response.json();
+    const rawPayload = await response.json();
+    const payload = window.StreamVaultConfig?.normalizeBackendUrls?.(rawPayload) ?? rawPayload;
     const list = Array.isArray(payload)
       ? payload
       : Array.isArray(payload && payload.series) ? payload.series : [];
@@ -457,7 +460,8 @@
 
       if(!response.ok)throw new Error('HTTP '+response.status);
 
-      const full=await response.json();
+      const payload=await response.json();
+      const full=window.StreamVaultConfig?.normalizeBackendUrls?.(payload) ?? payload;
 
       if(requestId!==requestSequence)return;
       if(!document.getElementById('seriesModal')?.classList.contains('open'))return;
@@ -528,9 +532,12 @@
         ep?.name ||
         ("Episode " + episodeNumber),
       streamUrl:
-        ep?.streamUrl ||
-        ep?.url ||
-        ep?.src ||
+        window.StreamVaultConfig?.normalizeBackendUrls?.(
+          ep?.streamUrl ||
+          ep?.url ||
+          ep?.src ||
+          ""
+        ) ||
         "",
       streamId:
         ep?.streamId ??
@@ -766,7 +773,8 @@
         throw new Error("HTTP " + response.status);
       }
 
-      const full = normalizeShow(await response.json());
+      const payload = await response.json();
+      const full = normalizeShow(window.StreamVaultConfig?.normalizeBackendUrls?.(payload) ?? payload);
 
       if(requestId !== requestSequence) return;
       if(!full.episodeCount) throw new Error("No episodes returned");

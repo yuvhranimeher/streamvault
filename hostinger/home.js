@@ -1,5 +1,6 @@
 window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE || '';
 (function(){
+  const svHomeNormalizeBackendUrls=value=>window.StreamVaultConfig?.normalizeBackendUrls?.(value) ?? value;
   var SV_PERF_HOME_LEGACY_MAIN = [
     { rowId:'netflixRow', trackId:'netflixTrack', sectionKey:'netflix', title:'Netflix Originals' },
     { rowId:'marvelRow', trackId:'marvelTrack', sectionKey:'marvel', title:'Marvel Studios' },
@@ -274,6 +275,7 @@ window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE ||
         return fetchWithTimeout(`${API_BASE}/api/home-feed?limit=${requestedLimit}`, {}, 3500).then(readJson);
       })
       .then(data=>{
+        data=svHomeNormalizeBackendUrls(data);
         data._limit = requestedLimit;
         svHomePayload = data;
         return data;
@@ -292,6 +294,7 @@ window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE ||
     return fetchWithTimeout(`${API_BASE}/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=${limit}&summary=${summary}&v=20260620-player-tracks-sections-final1`, {}, 3500)
       .then(r=>r.ok ? r.json() : Promise.reject(new Error(`section ${meta.sectionKey} failed`)))
       .then(data=>{
+        data=svHomeNormalizeBackendUrls(data);
         const items = Array.isArray(data?.items) ? data.items : [];
         const total = Number.isFinite(Number(data?.total)) ? Number(data.total) : items.length;
         return { rowId:meta.rowId, items, total, _svFresh:options.summary !== true };
@@ -3120,6 +3123,7 @@ window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE ||
     fetchWithTimeout(`${API_BASE}/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=${SV_HOME_ROW_LIMIT}&summary=0`, {}, 3500)
       .then(r=>r.json())
       .then(data=>{
+        data=svHomeNormalizeBackendUrls(data);
         svSectionState.page = data.page || 0;
         svSectionState.pages = data.pages || 1;
         svSectionState.items = data.items || [];
@@ -3140,6 +3144,7 @@ window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE ||
     fetchWithTimeout(`${API_BASE}/api/section/${encodeURIComponent(svSectionState.key)}?page=${nextPage}&limit=${SV_HOME_ROW_LIMIT}&summary=0`, {}, 3500)
       .then(r=>r.json())
       .then(data=>{
+        data=svHomeNormalizeBackendUrls(data);
         svSectionState.page = data.page || nextPage;
         const grid = document.getElementById('sectionGrid');
         const items = data.items || [];
@@ -3182,6 +3187,7 @@ window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE ||
     if(svLiveMatchChannelsPromise)return svLiveMatchChannelsPromise;
     svLiveMatchChannelsPromise = fetch(API_BASE + '/api/channels', { cache:'no-store' })
       .then(response=>response.ok ? response.json() : Promise.reject(new Error('channels unavailable')))
+      .then(svHomeNormalizeBackendUrls)
       .then(list=>{
         try{ channels = Array.isArray(list) ? list : []; }catch(_){}
         if(typeof buildLiveTV === 'function')buildLiveTV();

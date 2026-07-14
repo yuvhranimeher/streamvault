@@ -1,7 +1,7 @@
 (function configureStreamVault(global) {
   'use strict';
 
-  const BUILD_VERSION = '20260713-hostinger-frontend-v3';
+  const BUILD_VERSION = '20260714-hostinger-playback-recovery-v1';
   const BACKEND_ORIGIN = 'https://backend.streamvault.fit';
   const BACKEND_PATHS = [
     '/api',
@@ -10,7 +10,11 @@
     '/live-relay',
     '/proxy',
     '/stream',
-    '/subtitles'
+    '/subtitles',
+    '/subtitle',
+    '/audio',
+    '/hls',
+    '/playback'
   ];
   const LEGACY_FRONTEND_ORIGINS = new Set([
     'https://streamvault.fit',
@@ -42,22 +46,47 @@
     return BACKEND_ORIGIN + url.pathname + url.search + url.hash;
   }
 
+  function normalizeBackendUrls(value) {
+    if (value instanceof URL) return value.toString();
+    if (typeof value === 'string') {
+      if (/^[a-z][a-z\d+.-]*:/i.test(value) || value.startsWith('//')) return value;
+      return backendUrl(value);
+    }
+    if (Array.isArray(value)) return value.map(normalizeBackendUrls);
+    if (!value || typeof value !== 'object') return value;
+
+    const normalized = {};
+    for (const [key, child] of Object.entries(value)) {
+      normalized[key] = normalizeBackendUrls(child);
+    }
+    return normalized;
+  }
+
   const backendStatus = {
     checked: false,
     available: null,
     checkedAt: 0,
     version: null
   };
+  let statusObservation = 0;
+  let publishedObservation = 0;
 
-  function publishBackendStatus(available, version) {
+  function publishBackendStatus(available, version, observation = ++statusObservation) {
+    if (observation < publishedObservation) return backendStatus;
+    publishedObservation = observation;
+    const changed = backendStatus.available !== available
+      || (version !== undefined && backendStatus.version !== (version || null));
     backendStatus.checked = true;
     backendStatus.available = available;
     backendStatus.checkedAt = Date.now();
-    backendStatus.version = version || null;
+    if (!available) backendStatus.version = null;
+    else if (version !== undefined) backendStatus.version = version || null;
     document.documentElement.dataset.backend = available ? 'online' : 'offline';
-    global.dispatchEvent(new CustomEvent('streamvault:backend-status', {
-      detail: { ...backendStatus }
-    }));
+    if (changed) {
+      global.dispatchEvent(new CustomEvent('streamvault:backend-status', {
+        detail: { ...backendStatus }
+      }));
+    }
     return backendStatus;
   }
 
@@ -82,16 +111,33 @@
     }
     const request = nativeFetch(input, init);
     if (!backendRequest) return request;
-    return request.catch(error => {
-      if (error?.name !== 'AbortError') publishBackendStatus(false, null);
-      throw error;
-    });
+    return request.then(
+      response => {
+        publishBackendStatus(true);
+        return response;
+      },
+      error => {
+        if (error?.name !== 'AbortError') void checkBackendAvailability(1600);
+        throw error;
+      }
+    );
   };
 
   if (global.XMLHttpRequest) {
     const nativeOpen = global.XMLHttpRequest.prototype.open;
     global.XMLHttpRequest.prototype.open = function streamVaultOpen(method, url, ...rest) {
-      return nativeOpen.call(this, method, backendUrl(url), ...rest);
+      const routed = backendUrl(url);
+      try {
+        const requestUrl = new URL(String(routed), global.location.href);
+        if (requestUrl.origin === BACKEND_ORIGIN && isBackendPath(requestUrl.pathname)) {
+          this.addEventListener?.('load', () => publishBackendStatus(true), { once: true });
+          this.addEventListener?.('error', () => { void checkBackendAvailability(1600); }, { once: true });
+          this.addEventListener?.('timeout', () => { void checkBackendAvailability(1600); }, { once: true });
+        }
+      } catch (_error) {
+        // The native XHR implementation will report malformed request URLs.
+      }
+      return nativeOpen.call(this, method, routed, ...rest);
     };
   }
 
@@ -115,7 +161,7 @@
       headers: { Accept: 'application/json' }
     }, 5000).then(response => {
       if (!response.ok) throw new Error(`${path} HTTP ${response.status}`);
-      return response.json();
+      return response.json().then(normalizeBackendUrls);
     });
   }
 
@@ -125,16 +171,14 @@
   });
 
   function checkBackendAvailability(timeoutMs = 2500) {
+    const observation = ++statusObservation;
     return fetchWithTimeout(BACKEND_ORIGIN + '/api/version', {
       cache: 'no-store',
       headers: { Accept: 'application/json' }
     }, timeoutMs)
-      .then(response => {
-        if (!response.ok) throw new Error(`backend HTTP ${response.status}`);
-        return response.json().catch(() => ({}));
-      })
-      .then(payload => publishBackendStatus(true, payload.version || payload.commit || null))
-      .catch(() => publishBackendStatus(false, null));
+      .then(response => response.json().catch(() => ({})))
+      .then(payload => publishBackendStatus(true, payload.version || payload.commit || null, observation))
+      .catch(() => publishBackendStatus(false, null, observation));
   }
 
   function registerServiceWorker() {
@@ -147,7 +191,9 @@
     });
   }
 
-  function showOfflineMessage(kind = 'action') {
+  async function showOfflineMessage(kind = 'action') {
+    const status = await checkBackendAvailability(1600);
+    if (status.available) return null;
     const message = MESSAGES[kind] || MESSAGES.action;
     if (typeof global.showToast === 'function') global.showToast(message);
     else console.warn(`[StreamVault] ${message}`);
@@ -165,6 +211,7 @@
     fetchWithTimeout,
     isBackendPath,
     messages: MESSAGES,
+    normalizeBackendUrls,
     offlineMessage: MESSAGES.backend,
     registerServiceWorker,
     showOfflineMessage,

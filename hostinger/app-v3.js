@@ -1,7 +1,13 @@
 window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE || '';
+function svBackendUrl(value){
+  return window.StreamVaultConfig?.normalizeBackendUrls?.(value) ?? value;
+}
+function svNormalizeBackendUrls(value){
+  return window.StreamVaultConfig?.normalizeBackendUrls?.(value) ?? value;
+}
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260708-hostinger-playback-fix3';
+const SV_ASSET_VERSION = '20260714-hostinger-playback-recovery-v1';
 const SV_SMOOTH_BUFFER_TRIGGER_COUNT = Math.max(1, Number(window.SMOOTH_BUFFER_TRIGGER_COUNT || 3) || 3);
 const svNativeConsoleLog = (()=>{try{return console.log.bind(console);}catch(_){return ()=>{};}})();
 function svLiveConsoleLog(...args){
@@ -827,6 +833,7 @@ function loadHlsScript(){
 }
 
 async function attachPlayerSource(src, mode='direct', options={}){
+  src=svBackendUrl(src);
   if(!src)return false;
   const playbackType=options.playbackType || ((isLiveMode && svActivePlaybackType === 'live') ? 'live' : 'media');
   const fallbackReason=options.fallbackReason || options.reason || '';
@@ -2033,9 +2040,14 @@ function openLiveChannel(channelId, channelName){
   };
   const showLivePlaybackFailure=reason=>{
     document.getElementById('playerSpinner')?.classList.remove('on');
-    showPlayerNotice(window.StreamVaultConfig?.backendStatus?.available === false
-      ? 'Live TV server is currently offline.'
-      : 'Live TV playback failed. Please try again in a moment.');
+    const fallbackMessage='Live TV playback failed. Please try again in a moment.';
+    if(window.StreamVaultConfig?.backendStatus?.available === false){
+      window.StreamVaultConfig.showOfflineMessage('liveTv').then(message=>{
+        if(!message)showPlayerNotice(fallbackMessage);
+      });
+    }else{
+      showPlayerNotice(fallbackMessage);
+    }
     console.warn('[LIVE] Playback failed', {channelId, reason});
   };
 
@@ -4406,7 +4418,7 @@ async function fetchLocalPlaybackPlan(id, start=0, options={}){
     error.status = r.status;
     throw error;
   }
-  const data = await r.json();
+  const data = svNormalizeBackendUrls(await r.json());
   if(isMobilePlaybackClient() && data?.url){
     const hls=/\.m3u8(?:$|[?#])/i.test(String(data.url));
     return {ok:true,mode:hls?'hls':'direct',transport:hls?'hls':'direct',src:data.url,playUrl:data.url,finalPlayUrl:data.url,duration:0};
@@ -4449,7 +4461,7 @@ async function fetchFtpPlaybackPlan(streamUrl, start=0, options={}){
     error.status = r.status;
     throw error;
   }
-  const data = await r.json();
+  const data = svNormalizeBackendUrls(await r.json());
   if(isMobilePlaybackClient() && data?.url){
     const hls=/\.m3u8(?:$|[?#])/i.test(String(data.url));
     return {ok:true,mode:hls?'hls':'direct',transport:hls?'hls':'direct',src:data.url,playUrl:data.url,finalPlayUrl:data.url,duration:0};
@@ -4756,7 +4768,7 @@ async function loadFtpTrackOptions(streamUrl){
       headers:{'Cache-Control':'no-cache'}
     });
     if(!r.ok)throw new Error(`metadata ${r.status}`);
-    const data = await r.json();
+    const data = svNormalizeBackendUrls(await r.json());
     if(data?.ftpAudioValidated === true)svCaptureServerAudioDecision(data);
     const audioTracks = Array.isArray(data.audioTracks) ? data.audioTracks : [];
     const subtitleTracks = Array.isArray(data.subtitleTracks) ? data.subtitleTracks : [];
@@ -6274,7 +6286,7 @@ function ensureFtpTrackOptionsLoaded(options={}){
 }
 
 async function playFtpMedia(streamUrl, name, year){
-  let requestedStreamUrl = String(streamUrl || '').trim();
+  let requestedStreamUrl = String(svBackendUrl(streamUrl) || '').trim();
   let startupOptions = {};
   try {
     console.log('[Playback] play button clicked');
@@ -6779,7 +6791,7 @@ async function loadSubtitleTracks(id){
   try{
     const r=await fetch(`${API_BASE}/api/subtitles/${id}`);
     if(r.ok){
-      const data=await r.json();
+      const data=svNormalizeBackendUrls(await r.json());
       externalSubs=Array.isArray(data)?data:[];
     }
   }catch(e){
@@ -6788,7 +6800,7 @@ async function loadSubtitleTracks(id){
   try{
     const r=await fetch(`${API_BASE}/api/media-info/${id}`);
     if(r.ok){
-      const data=await r.json();
+      const data=svNormalizeBackendUrls(await r.json());
       const subtitleTracks=Array.isArray(data.subtitleTracks)?data.subtitleTracks:[];
       const sidecarTracks=Array.isArray(data.sidecarSubtitleTracks)?data.sidecarSubtitleTracks:[];
       externalSubs=dedupeSubtitleOptions([...externalSubs,...sidecarTracks]);
@@ -6807,7 +6819,12 @@ async function loadSubtitleTracks(id){
   }
   const nativeEmbeddedSubs=isMobilePlaybackClient()?[]:desktopNativeSubtitleTracks();
   const embeddedSubs=dedupeSubtitleOptions([...probedEmbeddedSubs,...nativeEmbeddedSubs]);
-  availableSubs=dedupeSubtitleOptions([...externalSubs,...embeddedSubs]).map((track,i)=>({...track,index:i,label:subtitleTrackLabel(track,i)}));
+  availableSubs=dedupeSubtitleOptions([...externalSubs,...embeddedSubs]).map((track,i)=>({
+    ...track,
+    src:svBackendUrl(track.src),
+    index:i,
+    label:subtitleTrackLabel(track,i)
+  }));
   const list=document.getElementById('subList');
   if(!availableSubs.length){
     renderSubtitleTracks();
@@ -7507,7 +7524,7 @@ async function fetchTitleDetails(item, type, options={}){
   const query = params.toString().replace(/\+/g, '%20');
   const url = `/api/details/${routeType}/${routeId}?${query}`;
   const r = await fetchWithTimeout(url, {signal:options.signal}, 8000);
-  const data = r.ok ? await r.json() : null;
+  const data = r.ok ? svNormalizeBackendUrls(await r.json()) : null;
 
   const safe = data || { ok:false };
   if(safe.ok) _titleDetailsCache.set(key, safe);
@@ -7966,7 +7983,7 @@ async function hydrateMoviePlayback(movie){
     if(movie.year)params.set('year', movie.year);
     const r = await fetchWithTimeout(`${API_BASE}/api/playback/movie/${encodeURIComponent(movie.id || movie.name || '')}?${params.toString()}`, {}, 2500);
     if(r && r.ok){
-      const data = await r.json();
+      const data = svNormalizeBackendUrls(await r.json());
       if(data && data.ok){
         movie.streamUrl = movie.streamUrl || data.streamUrl || '';
         movie.isFtp = movie.isFtp || !!data.isFtp;

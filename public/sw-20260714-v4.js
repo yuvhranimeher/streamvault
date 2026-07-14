@@ -1,4 +1,4 @@
-const CACHE_VERSION = '20260713-hostinger-frontend-v3';
+const CACHE_VERSION = '20260714-hostinger-playback-recovery-v1';
 const CACHE_PREFIX = 'streamvault-';
 const SHELL_CACHE = `${CACHE_PREFIX}shell-${CACHE_VERSION}`;
 const STATIC_CACHE = `${CACHE_PREFIX}static-${CACHE_VERSION}`;
@@ -41,7 +41,19 @@ const SHELL_ASSETS = [
 
 const STATIC_FILE_PATTERN = /\.(?:css|js|json|webmanifest|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|otf)$/i;
 const MEDIA_FILE_PATTERN = /\.(?:m3u8|ts|m4s|mp4|m4v|mkv|webm|mov|avi|mp3|m4a|aac|flac|wav|vtt)(?:$|\?)/i;
-const BACKEND_PATHS = ['/api', '/download', '/live', '/live-relay', '/proxy', '/stream', '/subtitles'];
+const BACKEND_PATHS = [
+  '/api',
+  '/download',
+  '/live',
+  '/live-relay',
+  '/proxy',
+  '/stream',
+  '/subtitles',
+  '/subtitle',
+  '/audio',
+  '/hls',
+  '/playback'
+];
 const NEVER_CACHE_PATHS = ['/api/heavy-compat-hls', '/api/mobile-hls', '/api/ftp/stream'];
 const STATIC_JSON_PATHS = new Set(['/home-feed.json', '/boot-search-index.json', '/channels.json', '/catalog.json']);
 

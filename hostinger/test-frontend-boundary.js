@@ -18,6 +18,9 @@ const clickListeners = [];
 const toastMessages = [];
 let playbackCalls = 0;
 let liveCalls = 0;
+let healthOnline = true;
+let nextBackendFailure = null;
+let nextBackendStatus = null;
 
 function payloadFor(url) {
   const pathname = new URL(String(url), 'https://streamvault.fit').pathname;
@@ -30,9 +33,21 @@ function payloadFor(url) {
 async function fakeFetch(input) {
   const url = typeof input === 'string' ? input : input.url;
   fetchCalls.push(String(url));
+  const parsed = new URL(String(url), 'https://streamvault.fit');
+  const backendRequest = parsed.origin === 'https://backend.streamvault.fit';
+  if (parsed.pathname === '/api/version' && !healthOnline) {
+    throw new TypeError('backend network unavailable');
+  }
+  if (backendRequest && nextBackendFailure) {
+    const error = nextBackendFailure;
+    nextBackendFailure = null;
+    throw error;
+  }
+  const status = backendRequest && nextBackendStatus ? nextBackendStatus : 200;
+  nextBackendStatus = null;
   return {
-    ok: true,
-    status: 200,
+    ok: status >= 200 && status < 300,
+    status,
     json: async () => payloadFor(url)
   };
 }
@@ -117,6 +132,48 @@ vm.runInNewContext(runtimeSource, context, { filename: 'runtime-config.js' });
     window.STREAMVAULT_CONFIG.backendUrl('/styles.css'),
     '/styles.css'
   );
+  assert.strictEqual(
+    window.STREAMVAULT_CONFIG.backendUrl('https://media.example/movie.m3u8'),
+    'https://media.example/movie.m3u8'
+  );
+
+  const plan = window.STREAMVAULT_CONFIG.normalizeBackendUrls({
+    src: '/stream/movie-1',
+    playUrl: '/api/playback/local/movie-1/stream',
+    finalPlayUrl: '/proxy/movie-1',
+    streamUrl: '/playback/movie-1',
+    remuxUrl: '/api/playback/local/movie-1/stream?mode=remux',
+    audioTranscodeUrl: '/audio/movie-1',
+    hlsUrl: '/hls/movie-1/index.m3u8',
+    subtitles: [
+      { src: '/subtitles/movie-1/0' },
+      { url: '/subtitle/movie-1/en.vtt' }
+    ],
+    poster: '/assets/posters/movie-1.webp',
+    json: '/catalog.json',
+    stylesheet: '/styles.css',
+    script: '/app-v3.js',
+    absolute: 'https://media.example/movie-1.m3u8',
+    absoluteFrontend: 'https://streamvault.fit/api/playback/local/movie-1'
+  });
+  for (const field of ['src', 'playUrl', 'finalPlayUrl', 'streamUrl', 'remuxUrl', 'audioTranscodeUrl', 'hlsUrl']) {
+    assert(plan[field].startsWith('https://backend.streamvault.fit/'), `${field} was not normalized`);
+  }
+  assert(plan.subtitles.every(track => Object.values(track)[0].startsWith('https://backend.streamvault.fit/')));
+  assert.strictEqual(plan.poster, '/assets/posters/movie-1.webp');
+  assert.strictEqual(plan.json, '/catalog.json');
+  assert.strictEqual(plan.stylesheet, '/styles.css');
+  assert.strictEqual(plan.script, '/app-v3.js');
+  assert.strictEqual(plan.absolute, 'https://media.example/movie-1.m3u8');
+  assert.strictEqual(plan.absoluteFrontend, 'https://streamvault.fit/api/playback/local/movie-1');
+
+  const transitions = window.STREAMVAULT_CONFIG.normalizeBackendUrls([
+    { kind: 'live', src: '/live-relay/channel-1/playlist.m3u8' },
+    { kind: 'movie', src: '/stream/movie-1' },
+    { kind: 'series', src: '/api/playback/local/episode-1/stream' },
+    { kind: 'live', src: '/live/channel-1/playlist.m3u8' }
+  ]);
+  assert(transitions.every(item => item.src.startsWith('https://backend.streamvault.fit/')));
 
   await window.fetch('/api/movies?page=0');
   await window.fetch('/home-feed.json');
@@ -127,14 +184,54 @@ vm.runInNewContext(runtimeSource, context, { filename: 'runtime-config.js' });
   xhr.open('GET', '/api/channels');
   assert.strictEqual(xhr.openedUrl, 'https://backend.streamvault.fit/api/channels');
 
-  window.STREAMVAULT_CONFIG.backendStatus.available = false;
   vm.runInNewContext(offlineSource, context, { filename: 'offline-ui.js' });
+
+  window.openLiveChannel('channel-1');
   window.playMedia('movie-id');
-  window.openLiveChannel('channel-id');
-  assert.strictEqual(playbackCalls, 0);
-  assert.strictEqual(liveCalls, 0);
+  window.playSeriesEpisode('series-id', 1, 0);
+  window.openLiveChannel('channel-1');
+  assert.strictEqual(playbackCalls, 2, 'Live TV -> movie -> series -> Live TV was blocked');
+  assert.strictEqual(liveCalls, 2, 'Live TV transition sequence did not complete');
+
+  window.playMedia('movie-id-2');
+  window.openLiveChannel('channel-2');
+  assert.strictEqual(playbackCalls, 3, 'Movie -> Live TV movie action did not run');
+  assert.strictEqual(liveCalls, 3, 'Movie -> Live TV live action did not run');
+
+  nextBackendFailure = new TypeError('single media request failed');
+  await assert.rejects(window.fetch('/stream/missing-media'), /single media request failed/);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.strictEqual(window.STREAMVAULT_CONFIG.backendStatus.available, true);
+  window.openLiveChannel('channel-after-media-error');
+  assert.strictEqual(liveCalls, 4, 'a media request failure latched Live TV offline');
+
+  const abortError = new Error('playback superseded');
+  abortError.name = 'AbortError';
+  nextBackendFailure = abortError;
+  await assert.rejects(window.fetch('/api/playback/local/aborted'), error => error.name === 'AbortError');
+  assert.strictEqual(window.STREAMVAULT_CONFIG.backendStatus.available, true);
+
+  nextBackendStatus = 404;
+  await window.fetch('/api/playback/local/missing');
+  assert.strictEqual(window.STREAMVAULT_CONFIG.backendStatus.available, true);
+
+  healthOnline = false;
+  nextBackendFailure = new TypeError('backend request failed');
+  await assert.rejects(window.fetch('/api/playback/local/offline'), /backend request failed/);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.strictEqual(window.STREAMVAULT_CONFIG.backendStatus.available, false);
+  const playbackBeforeOfflineGuard = playbackCalls;
+  await window.playMedia('offline-movie');
+  assert.strictEqual(playbackCalls, playbackBeforeOfflineGuard);
   assert(toastMessages.includes('Playback server is currently offline.'));
-  assert(toastMessages.includes('Live TV server is currently offline.'));
+
+  healthOnline = true;
+  await window.playMedia('recovered-movie');
+  window.openLiveChannel('recovered-channel');
+  assert.strictEqual(window.STREAMVAULT_CONFIG.backendStatus.available, true);
+  assert.strictEqual(playbackCalls, playbackBeforeOfflineGuard + 1, 'playback did not recover without refresh');
+  assert.strictEqual(liveCalls, 5, 'Live TV did not recover without refresh');
+  assert(!/(?:local|session)Storage/.test(runtimeSource + offlineSource));
 
   const firstScript = index.match(/<script[^>]+src=["']([^"']+)/)?.[1] || '';
   assert(firstScript.startsWith('/runtime-config.js'));
@@ -160,6 +257,9 @@ vm.runInNewContext(runtimeSource, context, { filename: 'runtime-config.js' });
   assert(sw.includes("request.destination === 'audio'"));
   assert(sw.includes("'/api/heavy-compat-hls'"));
   assert(sw.includes("'/api/mobile-hls'"));
+  for (const prefix of ['/proxy', '/subtitle', '/audio', '/hls', '/playback']) {
+    assert(sw.includes(`'${prefix}'`), `service worker backend boundary is missing ${prefix}`);
+  }
   assert(sw.includes('POSTER_CACHE_LIMIT'));
   assert.strictEqual(fallbackSw.replace(/\r\n/g, '\n'), sw.replace(/\r\n/g, '\n'));
 

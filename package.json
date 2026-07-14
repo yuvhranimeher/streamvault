@@ -18,7 +18,9 @@
     "details:shadow:summary": "node tools/details-parity-v1/summarize-details-shadow-output.js",
     "build:hostinger": "node hostinger/build-static-data.js && node hostinger/verify-deployment.js",
     "verify:hostinger": "node hostinger/verify-deployment.js",
-    "test:hostinger": "node hostinger/test-frontend-boundary.js"
+    "test:hostinger": "node hostinger/test-frontend-boundary.js",
+    "test:live-relay-v2": "node --test test/live-relay-v2.test.js test/live-relay-v2-boundary.test.js",
+    "test:live-relay-v2:soak": "node scripts/live-relay-v2-soak.js"
   },
   "dependencies": {
     "axios": "^1.15.0",

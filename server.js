@@ -10933,6 +10933,17 @@ app.get('/api/infra/events', requireInfraAccess, (req, res) => {
 });
 app.get('/api/infra/nodes', requireInfraAccess, (req, res) => res.json(infraTelemetry.nodes()));
 
+const { createLiveRelayV2 } = require('./lib/live-relay-v2');
+const liveRelayV2 = createLiveRelayV2({
+  app,
+  getChannels: () => channels,
+  tracker,
+  statusMiddleware: requireInfraAccess,
+  ffmpegBin: FFMPEG_BIN,
+  cacheRoot: path.join(__dirname, 'cache', 'live-relay-v2')
+});
+liveRelayV2.registerRoutes();
+
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err.message);

@@ -16,14 +16,15 @@
     "details:shadow:fixture:gaps": "node tools/details-parity-v1/audit-details-fixture-gaps.js",
     "details:shadow:all:pssafe": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/details-parity-v1/run-details-shadow-all-powershell-safe.ps1",
     "details:shadow:summary": "node tools/details-parity-v1/summarize-details-shadow-output.js",
-    "build:hostinger": "node hostinger/build-static-data.js && node hostinger/verify-deployment.js",
+    "build:hostinger": "node hostinger/build-player-ui-assets.js && node hostinger/build-static-data.js && node hostinger/verify-deployment.js",
     "verify:hostinger": "node hostinger/verify-deployment.js",
     "test:hostinger": "node hostinger/test-frontend-boundary.js",
     "test:live-relay-v2": "node --test test/live-relay-v2.test.js test/live-relay-v2-boundary.test.js",
     "test:live-relay-v2:soak": "node scripts/live-relay-v2-soak.js",
     "test:audio-language": "node tests/audio-language.test.js",
     "test:audio-playback-regression": "node tests/audio-playback-regression.test.js",
-    "test:playback": "npm run test:audio-language && npm run test:audio-playback-regression && npm run test:hostinger"
+    "test:player-ui": "node tests/player-loading-encoding.test.js",
+    "test:playback": "npm run test:player-ui && npm run test:audio-language && npm run test:audio-playback-regression && npm run test:hostinger"
   },
   "dependencies": {
     "axios": "^1.15.0",

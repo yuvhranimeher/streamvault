@@ -538,8 +538,8 @@ nav:not(.solid){background:linear-gradient(to bottom,rgba(0,0,0,.88),transparent
 .player-back{width:46px;height:46px;background:rgba(255,255,255,.12);border:none;border-radius:50%;color:#fff;font-size:1.2rem;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .2s;}
 .player-back:hover{background:rgba(255,255,255,.22)}
 .player-title-wrap{flex:1;min-width:0}
-.player-title{font-size:.95rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.player-subtitle-title{font-size:.72rem;color:rgba(255,255,255,.5);margin-top:2px}
+.player-title{font-size:.95rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.9)}
+.player-subtitle-title{font-size:.72rem;color:rgba(255,255,255,.78);margin-top:2px;text-shadow:0 1px 4px rgba(0,0,0,.9)}
 .player-middle{flex:1;display:flex;align-items:center;justify-content:center;position:relative}
 .player-tap-zone{position:absolute;inset:0;z-index:0;pointer-events:auto;cursor:pointer}
 .skip-center,
@@ -1576,10 +1576,14 @@ nav.solid{background:var(--nav-bg) !important;border-color:var(--border)}
   .media-modal.show{display:flex}
   .media-modal-backdrop{position:absolute;inset:0;background:rgba(3,4,7,.82);backdrop-filter:blur(16px) saturate(115%);-webkit-backdrop-filter:blur(16px) saturate(115%);animation:mediaModalFade .22s ease both}
   .media-modal-content{position:relative;width:min(1050px,94vw);height:92vh;overflow-y:auto;overscroll-behavior:contain;border-radius:18px;background:#111214;color:#fff;box-shadow:0 34px 100px rgba(0,0,0,.7);animation:mediaModalScale .24s cubic-bezier(.2,.8,.2,1) both;scrollbar-width:thin}
-  .media-modal .close-btn{position:absolute;z-index:6;top:18px;right:18px;width:38px;height:38px;border:0;border-radius:50%;background:rgba(18,18,18,.88);color:#fff;font-size:28px;line-height:1;cursor:pointer;box-shadow:0 4px 18px rgba(0,0,0,.42)}
-  .media-modal .hero-section{position:sticky;top:0;z-index:2;min-height:520px;overflow:hidden;background:#08090b}
+  .media-modal .close-btn,.modal-wishlist-btn{position:absolute;z-index:6;top:18px;width:38px;height:38px;border:0;border-radius:50%;background:rgba(18,18,18,.88);color:#fff;font-size:28px;line-height:1;cursor:pointer;box-shadow:0 4px 18px rgba(0,0,0,.42)}
+  .media-modal .close-btn{right:18px}
+  .modal-wishlist-btn{right:64px;display:flex;align-items:center;justify-content:center;font-size:0}
+  .modal-wishlist-btn svg{width:20px;height:20px;fill:currentColor}
+  .modal-wishlist-btn.active{background:var(--accent);color:var(--accent-contrast)}
+  .media-modal .hero-section{position:sticky;top:0;z-index:2;min-height:520px;overflow:hidden;background:var(--surface)}
   #modalPreview{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#08090b center/cover no-repeat}
-  .media-modal .hero-section::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(8,9,11,.94) 0%,rgba(8,9,11,.42) 55%,rgba(8,9,11,.08) 100%),linear-gradient(0deg,#111214 0%,transparent 45%);pointer-events:none}
+  .media-modal .hero-section::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(8,9,11,.94) 0%,rgba(8,9,11,.42) 55%,rgba(8,9,11,.08) 100%),linear-gradient(0deg,var(--bg) 0%,transparent 45%);pointer-events:none}
   .media-modal .hero-overlay{position:absolute;z-index:1;left:6%;right:38%;bottom:64px}
   #modalTitle{margin:0 0 14px;font:900 clamp(2.2rem,5vw,4.8rem)/.98 'DM Sans',sans-serif;letter-spacing:-.04em;text-shadow:0 3px 22px rgba(0,0,0,.75)}
   #modalMeta{margin:0 0 22px;color:#d1d4d8;font-size:.96rem;font-weight:750;line-height:1.5}
@@ -1588,23 +1592,23 @@ nav.solid{background:var(--nav-bg) !important;border-color:var(--border)}
   .media-modal-action.primary{background:#fff;color:#111}
   .media-modal-action.secondary{background:rgba(109,109,110,.75);color:#fff}
   .media-modal-action:disabled{opacity:.52;cursor:not-allowed}
-  .media-modal .details-section{position:relative;z-index:3;padding:8px 6% 64px;background:#111214}
-  .media-modal-section{padding:28px 0;border-top:1px solid rgba(255,255,255,.1)}
+  .media-modal .details-section{position:relative;z-index:3;padding:8px 6% 64px;background:var(--bg);color:var(--text)}
+  .media-modal-section{padding:28px 0;border-top:1px solid var(--border)}
   .media-modal-section:first-child{border-top:0}
-  .media-modal-heading{margin:0 0 15px;font-size:1.3rem;font-weight:900;color:#fff}
-  #modalDescription{max-width:780px;margin:0;color:#d5d6d8;font-size:1.02rem;line-height:1.7}
+  .media-modal-heading{margin:0 0 15px;font-size:1.3rem;font-weight:900;color:var(--text)}
+  #modalDescription{max-width:780px;margin:0;color:var(--text);opacity:.82;font-size:1.02rem;line-height:1.7}
   .media-modal-cast-track,.media-modal-related-track{display:flex;gap:14px;overflow-x:auto;padding:2px 0 10px;scrollbar-width:none}
   .media-modal-cast-track::-webkit-scrollbar,.media-modal-related-track::-webkit-scrollbar{display:none}
   #modalCast .person-card{flex:0 0 128px}
   #modalRelated .card{flex:0 0 var(--card-w);width:var(--card-w);height:var(--card-h)}
   #modalExtraInfo .metadata-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
   .media-modal-season-row{display:flex;align-items:center;gap:12px;margin-bottom:16px}
-  .media-modal-season-row select{background:#25272b;color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:9px 12px;font-weight:800}
+  .media-modal-season-row select{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:9px 12px;font-weight:800}
   .media-modal-episodes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-  .media-modal-episode{display:flex;gap:14px;padding:12px;border:0;border-radius:10px;background:#1c1e22;color:#fff;text-align:left;cursor:pointer}
-  .media-modal-episode img{width:150px;aspect-ratio:16/9;object-fit:cover;border-radius:7px;background:#090a0c}
+  .media-modal-episode{display:flex;gap:14px;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-glass);color:var(--text);text-align:left;cursor:pointer}
+  .media-modal-episode img{width:150px;aspect-ratio:16/9;object-fit:cover;border-radius:7px;background:var(--surface)}
   .media-modal-episode-copy{min-width:0;align-self:center}
-  .media-modal-episode-number{color:#aeb2b8;font-size:.72rem;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+  .media-modal-episode-number{color:var(--text-muted);font-size:.72rem;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
   .media-modal-episode-title{margin-top:5px;font-size:.92rem;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   @keyframes mediaModalFade{from{opacity:0}to{opacity:1}}
   @keyframes mediaModalScale{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
@@ -1649,6 +1653,26 @@ nav.solid{background:var(--nav-bg) !important;border-color:var(--border)}
 .detail-back{left:calc(16px + var(--sl))}
 .detail-more{right:calc(16px + var(--sr))}
 .detail-floating svg{width:23px;height:23px;fill:currentColor}
+.sm-watchlist{
+  position:fixed;
+  z-index:820;
+  top:calc(var(--si) + 14px);
+  left:calc(64px + var(--sl));
+  width:40px;
+  height:40px;
+  border-radius:50%;
+  border:1px solid var(--border);
+  background:var(--surface-glass);
+  color:var(--text);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  box-shadow:var(--shadow-soft);
+  backdrop-filter:blur(22px) saturate(150%);
+  -webkit-backdrop-filter:blur(22px) saturate(150%);
+}
+.sm-watchlist.active{background:var(--accent);color:var(--accent-contrast)}
 .detail-hero,
 .sm-hero{
   position:relative;
@@ -1667,7 +1691,15 @@ nav.solid{background:var(--nav-bg) !important;border-color:var(--border)}
   object-fit:cover;
   filter:blur(24px) saturate(120%) brightness(.72);
   transform:scale(1.04);
+  opacity:.88;
+  transition:opacity .24s ease,filter .24s ease;
 }
+.detail-backdrop.is-hd,
+.sm-backdrop.is-hd{opacity:1}
+.detail-poster,
+.sm-poster{transition:opacity .24s ease}
+.detail-poster.is-hd,
+.sm-poster.is-hd{opacity:1}
 .detail-hero-vignette,
 .sm-hero-vignette{
   position:absolute;

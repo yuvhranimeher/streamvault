@@ -1,7 +1,7 @@
 ﻿const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
 window.StreamVaultPlayerUi?.installDisplayTextRepair?.(document);
-const SV_ASSET_VERSION = '20260715-player-loading-ui-v1';
+const SV_ASSET_VERSION = '20260715-media-modal-ui-v1';
 const SV_SMOOTH_BUFFER_TRIGGER_COUNT = Math.max(1, Number(window.SMOOTH_BUFFER_TRIGGER_COUNT || 3) || 3);
 const svNativeConsoleLog = (()=>{try{return console.log.bind(console);}catch(_){return ()=>{};}})();
 function svLiveConsoleLog(...args){
@@ -72,6 +72,15 @@ let _titleDetailsCache = new Map();
 let _titleDetailsToken = 0;
 let detailRequestController = null;
 let detailRequestToken = 0;
+let svDetailHistoryLock = false;
+let svPlayerReturnState = null;
+let svModalArtworkToken = 0;
+let svModalPreloadActive = 0;
+const svModalArtworkUrlCache = new Map();
+const svModalArtworkDecodeCache = new Map();
+const svModalPreloadQueue = [];
+const SV_MODAL_ARTWORK_CACHE_LIMIT = 80;
+const SV_MODAL_PRELOAD_LIMIT = 2;
 const svMediaInfoDataCache = new Map();
 const svMediaInfoPromiseCache = new Map();
 let currentDetailMovie = null;
@@ -2524,10 +2533,7 @@ async function loadSeriesOnlineDetails(show, token, scope){
       overviewEl.textContent = details.overview;
       setupSeriesOverview(details.overview);
     }
-    const poster = document.getElementById('smPoster');
-    const backdrop = document.getElementById('smBackdrop');
-    if(details?.poster && !poster.getAttribute('src')){poster.src = svOptimizeImageUrl(details.poster, false);poster.style.display='';}
-    if(details?.backdrop && !backdrop.getAttribute('src')){backdrop.src = svOptimizeImageUrl(details.backdrop, true);backdrop.style.display='';}
+    if(details?.poster || details?.backdrop)svApplyModalArtwork({item:show,type:'tv',backdropId:'smBackdrop',posterId:'smPoster'});
   }catch(e){
     if(e?.name === 'AbortError')return;
     console.warn('[Series] Online details unavailable:', e.message);
@@ -2577,6 +2583,20 @@ function renderMediaModalActions(item, type){
     <button class="media-modal-action primary" type="button" onclick="playMediaModalPrimary()"${unavailable?' disabled':''}>${unavailable?'Unavailable':'Play'}</button>
     ${!unavailable && progress && Number(progress.progress) > .02 ? '<button class="media-modal-action secondary" type="button" onclick="playMediaModalPrimary()">Resume</button>' : ''}
     <button class="media-modal-action secondary" type="button" onclick="toggleMediaModalWatchlist()">${isMovieWatchlisted(item)?'In Watchlist':'Watchlist'}</button>`;
+  updateMediaModalWishlistButton();
+}
+
+function updateMediaModalWishlistButton(){
+  const btn = document.getElementById('modalWishlistBtn');
+  if(!btn)return;
+  const type = currentMediaModalType;
+  const item = type === 'tv' ? currentShow : currentDetailMovie;
+  const active = type === 'tv' ? isSeriesWatchlisted(item) : isMovieWatchlisted(item);
+  const label = active ? 'Remove from wishlist' : 'Add to wishlist';
+  btn.classList.toggle('active', !!active);
+  btn.setAttribute('aria-label', label);
+  btn.setAttribute('title', label);
+  btn.setAttribute('aria-pressed', active ? 'true' : 'false');
 }
 
 function renderMediaModalEpisodes(show, selectedSeason){
@@ -2614,11 +2634,17 @@ function renderMediaModalData(item, type, details={}){
   document.getElementById('modalMeta').textContent=meta.join('  \u2022  ');
 
   const preview=document.getElementById('modalPreview');
-  const artwork=svOptimizeImageUrl(data.backdrop || item.backdrop || data.poster || item.poster || '', true);
+  const artwork=svResolveModalArtwork(data.backdrop || data.poster ? {...item,...data} : item,type,'backdrop');
   preview.pause();
   preview.removeAttribute('src');
   preview.poster=artwork;
   preview.style.backgroundImage=artwork ? `url("${String(artwork).replace(/"/g,'%22')}")` : '';
+  svDecodeImage(artwork).then(decoded=>{
+    if(decoded && currentMediaModalItem === item && !document.getElementById('mediaModal')?.classList.contains('hidden')){
+      preview.poster=decoded;
+      preview.style.backgroundImage=`url("${String(decoded).replace(/"/g,'%22')}")`;
+    }
+  });
   const previewUrl=mediaModalDirectPreview(data,item);
   if(previewUrl){preview.src=previewUrl;preview.load();preview.play().catch(()=>{});}
   else preview.load();
@@ -2699,10 +2725,16 @@ function openMediaModal(item, requestedType=''){
   modal.querySelector('.media-modal-content').scrollTop=0;
   document.body.style.overflow='hidden';
   populateModal(item);
+  updateMediaModalWishlistButton();
+  svPushDetailHistory('media');
   return true;
 }
 
 function closeMediaModal(){
+  if(!svDetailHistoryLock && history.state?.view === 'detail'){
+    history.back();
+    return;
+  }
   const modal=document.getElementById('mediaModal');
   if(!modal || modal.classList.contains('hidden'))return;
   modal.classList.remove('show');
@@ -2724,7 +2756,8 @@ function playMediaModalPrimary(){
     const show=currentShow;
     const seasons=Object.keys(show?.seasons || {}).map(Number).sort((a,b)=>a-b);
     if(!show || !seasons.length)return;
-    closeMediaModal();
+    svRememberPlaybackReturnState('media');
+    svPushPlayerHistory();
     playSeriesEpisode(show.name,seasons[0],0);
     return;
   }
@@ -2734,11 +2767,17 @@ function playMediaModalPrimary(){
 function playMediaModalEpisode(season,index){
   const show=currentShow;
   if(!show)return;
-  closeMediaModal();
+  svRememberPlaybackReturnState('media');
+  svPushPlayerHistory();
   playSeriesEpisode(show.name,Number(season),Number(index));
 }
 
 function toggleMediaModalWatchlist(){
+  if(currentMediaModalType === 'tv'){
+    toggleSeriesWatchlistFromDetail();
+    renderMediaModalActions(currentShow,'tv');
+    return;
+  }
   if(!currentDetailMovie)return;
   toggleMovieWatchlistFromDetail();
   renderMediaModalActions(currentDetailMovie,'movie');
@@ -2773,8 +2812,16 @@ function svInstallDesktopMediaModalOverride(){
     event.stopImmediatePropagation();
     openMediaModal(item,mediaModalTypeFor(item));
   };
+  const preload=event=>{
+    const card=event.target?.closest?.('.card');
+    const item=svDesktopModalItemFromCard(card);
+    if(item)svQueueModalArtworkPreload(item,mediaModalTypeFor(item));
+  };
   document.addEventListener('click',intercept,true);
   document.addEventListener('keydown',intercept,true);
+  document.addEventListener('pointerover',preload,{passive:true});
+  document.addEventListener('focusin',preload);
+  document.addEventListener('touchstart',preload,{passive:true});
 }
 
 svInstallDesktopMediaModalOverride();
@@ -2824,14 +2871,7 @@ function showSeriesDetail(show){
   setupSeriesOverview(show.overview || '');
   document.getElementById('smDot1').style.display=show.rating?'':'none';
   document.getElementById('smDot2').style.display=(show.year&&show.genre)?'':'none';
-  const bd=document.getElementById('smBackdrop');
-  if(show.poster||show.backdrop){bd.src=svOptimizeImageUrl(show.backdrop||show.poster, true);bd.style.display='';}
-  else {bd.removeAttribute('src');bd.style.display='none';}
-  const sp=document.getElementById('smPoster');
-  if(sp){
-    if(show.poster||show.backdrop){sp.src=svOptimizeImageUrl(show.poster||show.backdrop, false);sp.style.display='';}
-    else {sp.removeAttribute('src');sp.style.display='none';}
-  }
+  svApplyModalArtwork({item:show,type:'tv',backdropId:'smBackdrop',posterId:'smPoster'});
   const seasons=Object.keys(show.seasons || {}).map(Number).sort((a,b)=>a-b);
   const firstEp=seasons.length ? (show.seasons[seasons[0]]||[])[0] : null;
   const smPlayBtn=document.getElementById('smPlayBtn');
@@ -2853,6 +2893,8 @@ function showSeriesDetail(show){
   if(firstEp)svPrewarmPlaybackMetadata(firstEp);
   const token = ++_titleDetailsToken;
   loadSeriesOnlineDetails(show, token, scope);
+  updateSeriesWatchlistButton();
+  svPushDetailHistory('series');
   document.getElementById('seriesModal').classList.add('open');
   document.getElementById('seriesModal').scrollTop=0;
   setDetailPageScrollLock(true);
@@ -3063,6 +3105,8 @@ function playSeriesEpisode(showName, season, epIdx){
   const eps=show.seasons[season]||[];
   const ep=eps[epIdx];
   if(!ep)return;
+  svRememberPlaybackReturnState('series', {season, epIdx});
+  svPushPlayerHistory();
   const sNum=String(season).padStart(2,'0');
   const eNum=String(ep.episode).padStart(2,'0');
   const lbl=`${show.name} S${sNum}E${eNum}${ep.epTitle?' – '+ep.epTitle:''}`;
@@ -3075,6 +3119,10 @@ function playSeriesEpisode(showName, season, epIdx){
 }
 
 function closeSeriesModal(){
+  if(!svDetailHistoryLock && history.state?.view === 'detail'){
+    history.back();
+    return;
+  }
   document.getElementById('seriesModal').classList.remove('open');
   abortDetailRequestScope();
   setDetailPageScrollLock(false);
@@ -6639,6 +6687,7 @@ function closePlayer(){
   if(currentShow)renderEpisodes(currentShow,currentSeason);
   if(document.fullscreenElement)document.exitFullscreen?.();
   if(document.webkitFullscreenElement)document.webkitExitFullscreen?.();
+  if(svPlayerReturnState)svRestoreDetailState(svPlayerReturnState);
 }
 
 async function loadQualityOptions(id){
@@ -6913,6 +6962,37 @@ document.addEventListener('keydown',e=>{
     if(e.key==='f'||e.key==='F')toggleFullscreen();
     if(e.key==='m'||e.key==='M')toggleMute();
     showUI();
+  }
+});
+
+window.addEventListener('popstate', event=>{
+  svDetailHistoryLock = true;
+  try{
+    const state = event.state || {};
+    const playerOpen = document.getElementById('playerModal')?.classList.contains('open');
+    if(playerOpen){
+      closePlayer();
+      svRestoreDetailState(state.returnTo || svPlayerReturnState);
+      return;
+    }
+    if(state.view === 'detail'){
+      svRestoreDetailState(state);
+      return;
+    }
+    document.getElementById('movieDetailModal')?.classList.remove('open');
+    document.getElementById('seriesModal')?.classList.remove('open');
+    const mediaModal=document.getElementById('mediaModal');
+    mediaModal?.classList.add('hidden');
+    mediaModal?.classList.remove('show');
+    mediaModal?.setAttribute('aria-hidden','true');
+    currentMediaModalItem=null;
+    currentDetailMovie=null;
+    abortDetailRequestScope();
+    setDetailPageScrollLock(false);
+    if(state.browse?.tab)switchTab(state.browse.tab);
+    requestAnimationFrame(()=>window.scrollTo(0,Number(state.browse?.scrollY)||0));
+  }finally{
+    svDetailHistoryLock = false;
   }
 });
 
@@ -7274,7 +7354,7 @@ function isMovieUnavailable(movie){
 }
 
 function movieIdentity(movie){
-  return String(movie?.id ?? movie?.streamUrl ?? movie?.name ?? '');
+  return svStableMediaKey(movie, 'movie');
 }
 
 function saveMovieWatchlist(){
@@ -7306,8 +7386,64 @@ function updateMovieWatchlistButtons(){
   const active = isMovieWatchlisted(currentDetailMovie);
   const btn = document.getElementById('mdWatchlistBtn');
   const top = document.getElementById('mdWatchlistTopBtn');
-  if(btn)btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2v16z"/></svg>${active?'In Watchlist':'Watchlist'}`;
-  if(top)top.classList.toggle('active', active);
+  const label = active ? 'Remove from wishlist' : 'Add to wishlist';
+  if(btn){
+    btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2v16z"/></svg>${active?'In Wishlist':'Wishlist'}`;
+    btn.setAttribute('aria-label', label);
+    btn.setAttribute('title', label);
+    btn.classList.toggle('active', active);
+  }
+  if(top){
+    top.classList.toggle('active', active);
+    top.setAttribute('aria-label', label);
+    top.setAttribute('title', label);
+    top.setAttribute('aria-pressed', active ? 'true' : 'false');
+  }
+  updateMediaModalWishlistButton();
+}
+
+function seriesIdentity(show){
+  return svStableMediaKey(show, 'tv');
+}
+
+function saveSeriesWatchlist(){
+  try{localStorage.setItem('sv_series_watchlist', JSON.stringify(seriesWatchlist));}catch{}
+}
+
+function isSeriesWatchlisted(show){
+  const id = seriesIdentity(show);
+  return !!id && seriesWatchlist.includes(id);
+}
+
+function toggleSeriesWatchlistFromDetail(event){
+  event?.stopPropagation?.();
+  if(!currentShow)return;
+  const id = seriesIdentity(currentShow);
+  if(!id)return;
+  if(seriesWatchlist.includes(id)){
+    seriesWatchlist = seriesWatchlist.filter(x=>x!==id);
+    showToast('Removed from watchlist');
+  }else{
+    seriesWatchlist.unshift(id);
+    seriesWatchlist = [...new Set(seriesWatchlist)];
+    showToast('Added to watchlist');
+  }
+  saveSeriesWatchlist();
+  updateSeriesWatchlistButton();
+  if(currentTab==='library')renderLibraryPage();
+}
+
+function updateSeriesWatchlistButton(){
+  const active = isSeriesWatchlisted(currentShow);
+  const btn = document.getElementById('smWatchlistTopBtn');
+  const label = active ? 'Remove from wishlist' : 'Add to wishlist';
+  if(btn){
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-label', label);
+    btn.setAttribute('title', label);
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  }
+  updateMediaModalWishlistButton();
 }
 
 function inferQuality(movie, qualityData){
@@ -7490,6 +7626,181 @@ function svPrewarmPlaybackMetadata(item){
 function imageFallbackData(title='StreamVault'){
   const safeTitle = esc(String(title || 'StreamVault')).slice(0, 80);
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180"><rect width="320" height="180" fill="#16181d"/><rect x="118" y="48" width="84" height="84" rx="42" fill="#2b3038"/><path d="M145 70v40l34-20z" fill="#f7f7f4"/><text x="160" y="154" text-anchor="middle" fill="#8b949e" font-family="Arial,sans-serif" font-size="16" font-weight="700">${safeTitle}</text></svg>`)}`;
+}
+
+function svStableMediaKey(item, type='movie'){
+  const kind = type === 'tv' || item?.type === 'tv' || item?.type === 'series' || item?.seasons ? 'series' : 'movie';
+  const id = item?.tmdbId || item?.id || item?.streamId || item?.streamUrl || item?.name || item?.title || '';
+  const year = item?.year || '';
+  return `${kind}:${String(id).trim()}:${String(year).trim()}`;
+}
+
+function svTrimMap(map, limit){
+  while(map.size > limit)map.delete(map.keys().next().value);
+}
+
+function svModalArtworkCandidates(item, type='movie', kind='backdrop'){
+  const wide = kind !== 'poster';
+  const first = wide ? (item?.backdrop || item?.still || item?.poster || '') : (item?.poster || item?.backdrop || '');
+  const second = wide ? (item?.poster || '') : (item?.backdrop || '');
+  return [first, second, imageFallbackData(item?.name || item?.title || 'StreamVault')]
+    .filter(Boolean)
+    .map(src=>svOptimizeImageUrl(src, wide));
+}
+
+function svResolveModalArtwork(item, type='movie', kind='backdrop'){
+  const key = `${svStableMediaKey(item,type)}:${kind}`;
+  if(svModalArtworkUrlCache.has(key))return svModalArtworkUrlCache.get(key);
+  const url = svModalArtworkCandidates(item,type,kind)[0] || '';
+  svModalArtworkUrlCache.set(key,url);
+  svTrimMap(svModalArtworkUrlCache, SV_MODAL_ARTWORK_CACHE_LIMIT);
+  return url;
+}
+
+function svDecodeImage(url){
+  if(!url)return Promise.resolve('');
+  if(svModalArtworkDecodeCache.has(url))return svModalArtworkDecodeCache.get(url);
+  const promise = new Promise(resolve=>{
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = async ()=>{
+      try{ await img.decode?.(); }catch(_){}
+      resolve(url);
+    };
+    img.onerror = ()=>resolve('');
+    img.src = url;
+  });
+  svModalArtworkDecodeCache.set(url,promise);
+  svTrimMap(svModalArtworkDecodeCache, SV_MODAL_ARTWORK_CACHE_LIMIT);
+  return promise;
+}
+
+function svSetModalImageImmediate(img, url){
+  if(!img)return;
+  if(url){
+    img.src = url;
+    img.style.display = '';
+    img.classList.remove('is-hd');
+  }else{
+    img.removeAttribute('src');
+    img.style.display = 'none';
+  }
+}
+
+async function svUpgradeModalImage(img, item, type='movie', kind='backdrop', token=0){
+  const hdUrl = svResolveModalArtwork(item,type,kind);
+  const decoded = await svDecodeImage(hdUrl);
+  if(!decoded || token !== svModalArtworkToken || !img?.isConnected)return;
+  if(img.getAttribute('src') !== decoded)img.src = decoded;
+  img.style.display = '';
+  requestAnimationFrame(()=>img.classList.add('is-hd'));
+}
+
+function svApplyModalArtwork({item,type='movie',backdropId,posterId}){
+  const token = ++svModalArtworkToken;
+  const backdrop = document.getElementById(backdropId);
+  const poster = posterId ? document.getElementById(posterId) : null;
+  svSetModalImageImmediate(backdrop, svModalArtworkCandidates(item,type,'backdrop')[0]);
+  svSetModalImageImmediate(poster, svModalArtworkCandidates(item,type,'poster')[0]);
+  svUpgradeModalImage(backdrop,item,type,'backdrop',token);
+  if(poster)svUpgradeModalImage(poster,item,type,'poster',token);
+}
+
+function svQueueModalArtworkPreload(item, type='movie'){
+  if(!item)return;
+  const urls = [
+    svResolveModalArtwork(item,type,'backdrop'),
+    svResolveModalArtwork(item,type,'poster')
+  ].filter(Boolean);
+  urls.forEach(url=>{
+    if(svModalArtworkDecodeCache.has(url) || svModalPreloadQueue.includes(url))return;
+    svModalPreloadQueue.push(url);
+  });
+  svDrainModalArtworkPreloadQueue();
+}
+
+function svDrainModalArtworkPreloadQueue(){
+  while(svModalPreloadActive < SV_MODAL_PRELOAD_LIMIT && svModalPreloadQueue.length){
+    const url = svModalPreloadQueue.shift();
+    svModalPreloadActive++;
+    svDecodeImage(url).finally(()=>{
+      svModalPreloadActive--;
+      svDrainModalArtworkPreloadQueue();
+    });
+  }
+}
+
+function svCurrentBrowseState(){
+  return {tab:currentTab, scrollY:window.scrollY || 0};
+}
+
+function svCurrentDetailState(type){
+  const modal = type === 'series' ? document.getElementById('seriesModal') : type === 'media' ? document.querySelector('#mediaModal .media-modal-content') : document.getElementById('movieDetailModal');
+  return {
+    view:'detail',
+    type,
+    browse:svCurrentBrowseState(),
+    key:type === 'series' ? seriesIdentity(currentShow) : type === 'media' ? svStableMediaKey(currentMediaModalItem,currentMediaModalType) : movieIdentity(currentDetailMovie),
+    mediaType:type === 'media' ? currentMediaModalType : type,
+    season:currentSeason,
+    scrollTop:modal?.scrollTop || 0,
+  };
+}
+
+function svPushDetailHistory(type){
+  if(svDetailHistoryLock || !history?.pushState)return;
+  const current = history.state || {};
+  const next = svCurrentDetailState(type);
+  if(current.view === 'detail' && current.key === next.key && current.type === next.type)return;
+  history.pushState(next, '', location.href);
+}
+
+function svRememberPlaybackReturnState(type, extra={}){
+  if(type === 'movie')svPlayerReturnState = svCurrentDetailState('movie');
+  else if(type === 'series')svPlayerReturnState = {...svCurrentDetailState('series'), ...extra};
+  else if(type === 'media')svPlayerReturnState = svCurrentDetailState('media');
+  else svPlayerReturnState = {view:'browse', browse:svCurrentBrowseState()};
+}
+
+function svPushPlayerHistory(){
+  if(svDetailHistoryLock || !history?.pushState)return;
+  if(history.state?.view === 'player')return;
+  history.pushState({view:'player', returnTo:svPlayerReturnState || {view:'browse', browse:svCurrentBrowseState()}}, '', location.href);
+}
+
+function svRestoreDetailState(state){
+  if(!state || state.view !== 'detail')return false;
+  const restoreScroll = ()=>{
+    const modal = state.type === 'series' ? document.getElementById('seriesModal') : state.type === 'media' ? document.querySelector('#mediaModal .media-modal-content') : document.getElementById('movieDetailModal');
+    if(modal)modal.scrollTop = Number(state.scrollTop) || 0;
+  };
+  if(state.type === 'movie' && currentDetailMovie){
+    document.getElementById('movieDetailModal')?.classList.add('open');
+    setDetailPageScrollLock(true);
+    requestAnimationFrame(restoreScroll);
+    return true;
+  }
+  if(state.type === 'series' && currentShow){
+    document.getElementById('seriesModal')?.classList.add('open');
+    if(state.season && currentSeason !== state.season){
+      currentSeason = state.season;
+      renderEpisodes(currentShow,currentSeason);
+    }
+    setDetailPageScrollLock(true);
+    requestAnimationFrame(restoreScroll);
+    return true;
+  }
+  if(state.type === 'media' && currentMediaModalItem){
+    document.getElementById('mediaModal')?.classList.remove('hidden');
+    document.getElementById('mediaModal')?.classList.add('show');
+    document.getElementById('mediaModal')?.setAttribute('aria-hidden','false');
+    document.body.style.overflow='hidden';
+    requestAnimationFrame(restoreScroll);
+    return true;
+  }
+  if(state.browse?.tab)switchTab(state.browse.tab);
+  requestAnimationFrame(()=>window.scrollTo(0,Number(state.browse?.scrollY)||0));
+  return false;
 }
 
 function splitDetailGenres(value){
@@ -7791,14 +8102,7 @@ async function loadMovieOnlineDetails(movie, token, scope){
       showMoreBtn.textContent = 'Show More';
       showMoreBtn.style.display = details.overview.length > 220 ? '' : 'none';
     }
-    if(details?.poster && !document.getElementById('mdPoster').getAttribute('src')){
-      document.getElementById('mdPoster').src = svOptimizeImageUrl(details.poster, false);
-      document.getElementById('mdPoster').style.display = '';
-    }
-    if(details?.backdrop && !document.getElementById('mdBackdrop').getAttribute('src')){
-      document.getElementById('mdBackdrop').src = svOptimizeImageUrl(details.backdrop, true);
-      document.getElementById('mdBackdrop').style.display = '';
-    }
+    if(details?.poster || details?.backdrop)svApplyModalArtwork({item:movie,type:'movie',backdropId:'mdBackdrop',posterId:'mdPoster'});
   }catch(e){
     if(e?.name === 'AbortError')return;
     console.warn('[Detail] Online details unavailable:', e.message);
@@ -7816,13 +8120,7 @@ function openMovieDetail(key){
   const scope=beginDetailRequestScope('movie detail');
   currentDetailMovie = movie;
   const modal = document.getElementById('movieDetailModal');
-  const poster = document.getElementById('mdPoster');
-  const backdrop = document.getElementById('mdBackdrop');
-  const art = movie.backdrop || movie.poster || '';
-  poster.src = svOptimizeImageUrl(movie.poster || art || '', false);
-  poster.style.display = poster.src ? '' : 'none';
-  backdrop.src = svOptimizeImageUrl(art || movie.poster || '', true);
-  backdrop.style.display = backdrop.src ? '' : 'none';
+  svApplyModalArtwork({item:movie,type:'movie',backdropId:'mdBackdrop',posterId:'mdPoster'});
   document.getElementById('mdTitle').textContent = movie.name || 'Untitled';
   document.getElementById('mdKicker').textContent = movie.type === 'tv' ? 'Series' : 'Movie';
   const meta = [];
@@ -7851,12 +8149,17 @@ function openMovieDetail(key){
   svPrewarmPlaybackMetadata(movie);
   loadMovieOnlineDetails(movie, token, scope);
   updateMovieWatchlistButtons();
+  svPushDetailHistory('movie');
   modal.classList.add('open');
   modal.scrollTop = 0;
   setDetailPageScrollLock(true);
 }
 
 function closeMovieDetail(){
+  if(!svDetailHistoryLock && history.state?.view === 'detail'){
+    history.back();
+    return;
+  }
   document.getElementById('movieDetailModal')?.classList.remove('open');
   closeMediaModal();
   currentDetailMovie = null;
@@ -7895,7 +8198,8 @@ async function playMovieFromDetail(){
     return;
   }
   recordWatchHistory(movieIdentity(movie), movie.name, movie.genre||'', 'movie');
-  closeMovieDetail();
+  svRememberPlaybackReturnState('movie');
+  svPushPlayerHistory();
   if(movie.streamUrl){
     playFtpMedia(movie.streamUrl, movie.name, movie.year || '');
   }else{
@@ -8384,7 +8688,7 @@ function svConsumeImageAttrs(priority=false, immediate=false){
 function svOptimizeImageUrl(src='', wide=false){
   const url = String(src || '');
   if(!url.includes('image.tmdb.org/t/p/'))return url;
-  const width = wide ? 780 : (_svWeakDevice || innerWidth < 760 ? 185 : 342);
+  const width = wide ? 1280 : (_svWeakDevice || innerWidth < 760 ? 342 : 500);
   const size = `w${width}`;
   const normalized = url.replace(/\/t\/p\/(?:original|w\d+)\//, `/t/p/${size}/`);
   return `/poster-cache?url=${encodeURIComponent(normalized)}&w=${width}`;

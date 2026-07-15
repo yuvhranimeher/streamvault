@@ -74,7 +74,7 @@
     });
 })();
 </script>
-<link rel="stylesheet" href="/styles.css?v=20260626-direct-seek-preview1">
+<link rel="stylesheet" href="/styles.css?v=20260715-media-modal-ui-v1">
 </head>
 <body>
 
@@ -661,6 +661,9 @@
 <div id="mediaModal" class="media-modal hidden" aria-hidden="true">
   <div class="media-modal-backdrop modal-backdrop" onclick="closeMediaModal()"></div>
   <div class="media-modal-content modal-content" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <button id="modalWishlistBtn" class="modal-wishlist-btn" type="button" onclick="toggleMediaModalWatchlist()" aria-label="Add to wishlist" title="Add to wishlist" aria-pressed="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21l-7-5-7 5V5c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2v16z"/></svg>
+    </button>
     <button id="closeModal" class="close-btn" type="button" onclick="closeMediaModal()" aria-label="Close media details">&times;</button>
     <div class="hero-section modal-hero">
       <video id="modalPreview" muted loop playsinline preload="metadata"></video>
@@ -734,6 +737,9 @@
 <div class="series-modal" id="seriesModal">
   <button class="sm-back" onclick="closeSeriesModal()">
     <svg viewBox="0 0 24 24" width="20" height="20" fill="white"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+  </button>
+  <button class="sm-watchlist" id="smWatchlistTopBtn" onclick="toggleSeriesWatchlistFromDetail(event)" aria-label="Add to wishlist" title="Add to wishlist" aria-pressed="false">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 21l-7-5-7 5V5c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2v16z"/></svg>
   </button>
   <div class="sm-hero">
     <img id="smBackdrop" class="sm-backdrop" src="" alt="">
@@ -931,7 +937,7 @@
 <div class="toast" id="toast"></div>
 
 <script defer src="/frontend-player-ui.js?v=20260715-player-loading-ui-v1"></script>
-<script defer src="/app.js?v=20260715-player-loading-ui-v1"></script>
+<script defer src="/app.js?v=20260715-media-modal-ui-v1"></script>
 <script defer src="/details-exact-v3.js?v=20260710-exact3"></script>
 <script defer src="/home.js?v=20260710-instant-smooth1"></script>
 <script defer src="/downloads.js?v=20260710-instant-smooth1"></script>

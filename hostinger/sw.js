@@ -1,4 +1,4 @@
-const CACHE_VERSION = '20260715-player-loading-ui-v1';
+const CACHE_VERSION = '20260715-media-modal-ui-v1';
 const CACHE_PREFIX = 'streamvault-';
 const SHELL_CACHE = `${CACHE_PREFIX}shell-${CACHE_VERSION}`;
 const STATIC_CACHE = `${CACHE_PREFIX}static-${CACHE_VERSION}`;

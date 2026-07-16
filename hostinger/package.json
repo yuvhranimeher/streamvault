@@ -4,9 +4,12 @@
   "main": "frontend-server.js",
   "scripts": {
     "build": "node build-static-data.js && node verify-deployment.js",
+    "capture:home": "node capture-home-snapshot.js",
     "start": "node frontend-server.js",
     "verify": "node verify-deployment.js",
-    "test": "node test-frontend-boundary.js"
+    "test": "node test-frontend-boundary.js",
+    "test:home-equality": "node test-home-snapshot-equality.js",
+    "verify:release": "npm run build && npm test && npm run test:home-equality"
   },
   "dependencies": {
     "express": "^5.1.0"

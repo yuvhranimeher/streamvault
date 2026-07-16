@@ -2,14 +2,17 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { readSnapshotModule } = require('./capture-home-snapshot');
 
 const ROOT = __dirname;
+const HOME_SNAPSHOT_FILE = 'home-snapshot-76d0639-20260717.js';
+const snapshotSource = fs.readFileSync(path.join(ROOT, HOME_SNAPSHOT_FILE), 'utf8');
 const runtimeSource = fs.readFileSync(path.join(ROOT, 'runtime-config.js'), 'utf8');
 const offlineSource = fs.readFileSync(path.join(ROOT, 'offline-ui.js'), 'utf8');
 const index = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const sw = fs.readFileSync(path.join(ROOT, 'sw-20260714-v4.js'), 'utf8');
+const sw = fs.readFileSync(path.join(ROOT, 'sw-20260717-v5.js'), 'utf8');
 const fallbackSw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-const homeFeed = JSON.parse(fs.readFileSync(path.join(ROOT, 'home-feed.json'), 'utf8'));
+const homeSnapshot = readSnapshotModule(path.join(ROOT, HOME_SNAPSHOT_FILE));
 const channels = JSON.parse(fs.readFileSync(path.join(ROOT, 'channels.json'), 'utf8'));
 
 const fetchCalls = [];
@@ -24,9 +27,13 @@ let nextBackendStatus = null;
 
 function payloadFor(url) {
   const pathname = new URL(String(url), 'https://streamvault.fit').pathname;
-  if (pathname === '/home-feed.json') return homeFeed;
   if (pathname === '/channels.json') return channels;
-  if (pathname === '/api/version') return { version: 'boundary-test' };
+  if (pathname === '/api/version') {
+    return {
+      version: 'boundary-test',
+      commit: homeSnapshot.source.backendCommit
+    };
+  }
   return {};
 }
 
@@ -111,11 +118,12 @@ const context = {
   clearTimeout
 };
 
+vm.runInNewContext(snapshotSource, context, { filename: HOME_SNAPSHOT_FILE });
 vm.runInNewContext(runtimeSource, context, { filename: 'runtime-config.js' });
 
 (async () => {
   await Promise.all([
-    window.STREAMVAULT_CONFIG.staticData.homeFeed,
+    window.STREAMVAULT_CONFIG.staticData.homeSnapshot,
     window.STREAMVAULT_CONFIG.staticData.channels,
     window.__svBackendCheckPromise
   ]);
@@ -176,9 +184,8 @@ vm.runInNewContext(runtimeSource, context, { filename: 'runtime-config.js' });
   assert(transitions.every(item => item.src.startsWith('https://backend.streamvault.fit/')));
 
   await window.fetch('/api/movies?page=0');
-  await window.fetch('/home-feed.json');
   assert(fetchCalls.includes('https://backend.streamvault.fit/api/movies?page=0'));
-  assert(fetchCalls.includes('/home-feed.json'));
+  assert(!fetchCalls.some(url => /home-feed/i.test(url)));
 
   const xhr = new window.XMLHttpRequest();
   xhr.open('GET', '/api/channels');
@@ -233,18 +240,20 @@ vm.runInNewContext(runtimeSource, context, { filename: 'runtime-config.js' });
   assert.strictEqual(liveCalls, 5, 'Live TV did not recover without refresh');
   assert(!/(?:local|session)Storage/.test(runtimeSource + offlineSource));
 
-  const firstScript = index.match(/<script[^>]+src=["']([^"']+)/)?.[1] || '';
-  assert(firstScript.startsWith('/runtime-config.js'));
+  const externalScripts = [...index.matchAll(/<script[^>]+src=["']([^"']+)/g)].map(match => match[1]);
+  assert(externalScripts[0].startsWith(`/${HOME_SNAPSHOT_FILE}`));
+  assert(externalScripts[1].startsWith('/runtime-config.js'));
   assert(index.includes('/manifest.webmanifest'));
   assert(index.includes('/offline-ui.js'));
-  assert(runtimeSource.includes("navigator.serviceWorker.register('/sw-20260714-v4.js'"));
+  assert(runtimeSource.includes("navigator.serviceWorker.register('/sw-20260717-v5.js'"));
   assert(runtimeSource.includes("updateViaCache: 'none'"));
+  assert(!/home-feed\.json|\/api\/home-feed/i.test(index + runtimeSource));
 
   const artwork = [
-    ...(homeFeed.hero || []),
-    ...(homeFeed.rows || []).flatMap(row => row.items || [])
+    ...(homeSnapshot.hero || []),
+    ...(homeSnapshot.rows || []).flatMap(row => row.items || [])
   ].flatMap(item => [item.poster, item.backdrop]).filter(Boolean);
-  assert(!artwork.some(url => /backend\.streamvault\.fit|\/poster-cache(?:\?|$)|\/image-proxy(?:\?|$)/i.test(String(url))));
+  assert(!artwork.some(url => /backend\.streamvault\.fit|\/poster-cache(?:[/?#]|$)|\/image-proxy(?:[/?#]|$)|localhost|127\.0\.0\.1|(?:ftp|sftp):\/\//i.test(String(url))));
 
   for (const channel of channels) {
     if (!channel.logo?.startsWith('/')) continue;
@@ -261,6 +270,8 @@ vm.runInNewContext(runtimeSource, context, { filename: 'runtime-config.js' });
     assert(sw.includes(`'${prefix}'`), `service worker backend boundary is missing ${prefix}`);
   }
   assert(sw.includes('POSTER_CACHE_LIMIT'));
+  assert(sw.includes("OBSOLETE_HOME_PATHS = new Set(['/home-feed.json'])"));
+  assert(sw.includes('purgeObsoleteHomeEntries'));
   assert.strictEqual(fallbackSw.replace(/\r\n/g, '\n'), sw.replace(/\r\n/g, '\n'));
 
   console.log(`Hostinger frontend boundary tests passed: ${artwork.length} static artwork URLs, ${channels.length} local channel logos`);

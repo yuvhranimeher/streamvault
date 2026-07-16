@@ -1,4 +1,4 @@
-const CACHE_VERSION = '20260716-modal-hd-artwork-v2';
+const CACHE_VERSION = '20260717-home-562f3d5a50ec1a6cc26f';
 const CACHE_PREFIX = 'streamvault-';
 const SHELL_CACHE = `${CACHE_PREFIX}shell-${CACHE_VERSION}`;
 const STATIC_CACHE = `${CACHE_PREFIX}static-${CACHE_VERSION}`;
@@ -7,6 +7,7 @@ const POSTER_CACHE_LIMIT = 300;
 
 const SHELL_ASSETS = [
   '/index.html',
+  '/home-snapshot-76d0639-20260717.js',
   '/runtime-config.js',
   '/styles.css',
   '/fifa-fast.js',
@@ -28,7 +29,6 @@ const SHELL_ASSETS = [
   '/movie-play-button-v10.js',
   '/instant-remux-v23.js',
   '/offline-ui.js',
-  '/home-feed.json',
   '/boot-search-index.json',
   '/channels.json',
   '/manifest.webmanifest',
@@ -57,7 +57,8 @@ const BACKEND_PATHS = [
   '/playback'
 ];
 const NEVER_CACHE_PATHS = ['/api/heavy-compat-hls', '/api/mobile-hls', '/api/ftp/stream'];
-const STATIC_JSON_PATHS = new Set(['/home-feed.json', '/boot-search-index.json', '/channels.json', '/catalog.json']);
+const STATIC_JSON_PATHS = new Set(['/boot-search-index.json', '/channels.json', '/catalog.json']);
+const OBSOLETE_HOME_PATHS = new Set(['/home-feed.json']);
 
 function successful(response){
   return Boolean(response && response.ok);
@@ -136,6 +137,17 @@ async function cacheShellAsset(cache,path){
   }
 }
 
+async function purgeObsoleteHomeEntries(){
+  const names=await caches.keys();
+  await Promise.all(names.map(async name=>{
+    const cache=await caches.open(name);
+    const keys=await cache.keys();
+    await Promise.all(keys
+      .filter(request=>OBSOLETE_HOME_PATHS.has(new URL(request.url).pathname))
+      .map(request=>cache.delete(request)));
+  }));
+}
+
 self.addEventListener('install',event=>{
   event.waitUntil((async()=>{
     const cache=await caches.open(SHELL_CACHE);
@@ -151,6 +163,7 @@ self.addEventListener('activate',event=>{
     await Promise.all(names
       .filter(name=>name.startsWith(CACHE_PREFIX) && !current.has(name))
       .map(name=>caches.delete(name)));
+    await purgeObsoleteHomeEntries();
     await self.clients.claim();
   })());
 });

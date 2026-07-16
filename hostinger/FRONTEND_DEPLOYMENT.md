@@ -24,9 +24,14 @@ npm run build:hostinger
 
 The build reads and writes only within `hostinger/`. It validates the complete
 frontend inventory, local channel logos, manifest, static JSON, and initial poster
-URLs, then deterministically rebuilds `boot-search-index.json` from
-`home-feed.json`. It never copies backend code, media, caches, secrets,
+URLs, then deterministically rebuilds `boot-search-index.json` from the captured
+production homepage snapshot. It never copies backend code, media, caches, secrets,
 `node_modules`, or server data.
+
+Before deployment, run `npm run verify:release` from `hostinger/`. The release gate
+captures the live production DOM with clean browser storage, then blocks all backend
+requests and requires the staged offline DOM to have identical rows, row names,
+card counts, stable IDs, and ordering.
 
 ## Request ownership
 
@@ -34,7 +39,7 @@ URLs, then deterministically rebuilds `boot-search-index.json` from
 | --- | --- | --- |
 | HTML, CSS, JavaScript and SPA routes | Hostinger | `/`, `/styles.css`, `/app-v3.js` |
 | Logos, icons, placeholders and manifest | Hostinger | `/assets/`, `/fallback.webp`, `/manifest.webmanifest` |
-| Static homepage, search and channel metadata | Hostinger | `/home-feed.json`, `/boot-search-index.json`, `/channels.json` |
+| Static homepage, search and channel metadata | Hostinger | `/home-snapshot-76d0639-20260717.js`, `/boot-search-index.json`, `/channels.json` |
 | Initial poster/backdrop images | Original image CDN, cached by the service worker | `https://image.tmdb.org/...` |
 | APIs and dynamic catalog refreshes | Mac Mini through the backend origin | `https://backend.streamvault.fit/api/...` |
 | Playback, Range/206 and media probing | Mac Mini through the backend origin | `/stream/`, playback and media-info API routes |
@@ -48,7 +53,8 @@ never handled by Hostinger's SPA fallback.
 
 - HTML navigations are network-first with a cached shell fallback.
 - CSS, JavaScript, fonts, icons and local images are stale-while-revalidate.
-- Static homepage/search/channel JSON is network-first with cached fallback.
+- The content-addressed homepage snapshot is loaded before runtime startup and
+  precached by the service worker; search/channel JSON remains network-first.
 - TMDB posters are stale-while-revalidate with a bounded browser cache.
 - API, downloads, video, audio, Range requests, HLS playlists/segments, subtitles,
   stream/proxy routes and Live TV are network-only.

@@ -77,7 +77,11 @@ window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE ||
   var SV_HOME_MIN_ROW_ITEMS = svWeakDevice ? 6 : 8;
   var SV_HOME_MIN_SECTION_ITEMS = 100;
   var SV_HOME_ROW_LIMIT = 120;
-  var SV_DYNAMIC_BRAND_ROWS = new Set(['warnerRow','hboRow']);
+  var SV_HOME_SNAPSHOT = window.STREAMVAULT_HOME_SNAPSHOT || null;
+  var SV_HOME_SNAPSHOT_ID = SV_HOME_SNAPSHOT?.snapshotId || '';
+  var SV_HOME_SNAPSHOT_BACKEND_COMMIT = SV_HOME_SNAPSHOT?.source?.backendCommit || '';
+  var SV_HOME_SNAPSHOT_ROWS = new Map((SV_HOME_SNAPSHOT?.rows || []).map(row=>[row.rowId,row]));
+  var svHomeBackgroundRefreshStarted = false;
   var svLoggedShortRows = window.__svLoggedShortRows || (window.__svLoggedShortRows = new Set());
 
   function svInstallNormalStudioPosterSizing(){
@@ -262,18 +266,13 @@ window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE ||
     svEnhanceCarouselControls();
   };
 
-  function svFetchHomeFeed(limit){
+  function svFetchHomeSnapshot(limit){
     const requestedLimit = limit || (svWeakDevice ? 12 : 24);
     if(svHomePayload && (svHomePayload._limit || 0) >= requestedLimit)return Promise.resolve(svHomePayload);
     if(svHomePayloadPromise)return svHomePayloadPromise;
-    const readJson = r=>r.ok ? r.json() : Promise.reject(new Error('home feed failed'));
-    const staticHomeFeed = window.StreamVaultConfig?.staticData?.homeFeed
-      || fetch('/home-feed.json?v=20260713-hostinger-frontend-v3', { cache:'no-cache' }).then(readJson);
-    svHomePayloadPromise = Promise.resolve(staticHomeFeed)
-      .catch(()=>{
-        if(window.StreamVaultConfig?.backendStatus?.available !== true)throw new Error('static home feed unavailable');
-        return fetchWithTimeout(`${API_BASE}/api/home-feed?limit=${requestedLimit}`, {}, 3500).then(readJson);
-      })
+    const staticSnapshot = window.StreamVaultConfig?.staticData?.homeSnapshot
+      || (SV_HOME_SNAPSHOT ? Promise.resolve(SV_HOME_SNAPSHOT) : Promise.reject(new Error('production homepage snapshot unavailable')));
+    svHomePayloadPromise = Promise.resolve(staticSnapshot)
       .then(data=>{
         data=svHomeNormalizeBackendUrls(data);
         data._limit = requestedLimit;
@@ -283,19 +282,43 @@ window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE ||
       .finally(()=>{ svHomePayloadPromise = null; });
     return svHomePayloadPromise;
   }
-  const svHomeFeedPrime = svFetchHomeFeed(svWeakDevice ? 12 : 24).catch(()=>null);
+  const svHomeSnapshotPrime = svFetchHomeSnapshot(svWeakDevice ? 12 : 24).catch(()=>null);
+
+  function svHomeStableIdNamespace(value){
+    const id = String(value || '');
+    return id ? id.replace(/\d+$/,'') : '';
+  }
+
+  function svHomeSectionMatchesSnapshotSource(rowId, items){
+    const baseline = SV_HOME_SNAPSHOT_ROWS.get(rowId)?.items || [];
+    const namespaces = new Set(baseline.map(item=>svHomeStableIdNamespace(item?.id)).filter(Boolean));
+    if(!namespaces.size)return false;
+    const ids = (items || []).map(item=>item?.id).filter(Boolean);
+    if(!ids.length)return false;
+    const matching = ids.filter(id=>namespaces.has(svHomeStableIdNamespace(id))).length;
+    return matching >= Math.ceil(ids.length * .8);
+  }
 
   function svFetchHomeSection(meta, options={}){
     const limit = options.limit || SV_HOME_ROW_LIMIT;
     const summary = options.summary === true ? '1' : '0';
-    if(window.StreamVaultConfig?.backendStatus?.available !== true){
+    const backendStatus = window.StreamVaultConfig?.backendStatus;
+    if(backendStatus?.available !== true){
       return Promise.resolve({ rowId:meta.rowId, items:[] });
     }
-    return fetchWithTimeout(`${API_BASE}/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=${limit}&summary=${summary}&v=20260620-player-tracks-sections-final1`, {}, 3500)
+    if(SV_HOME_SNAPSHOT_BACKEND_COMMIT && backendStatus.commit !== SV_HOME_SNAPSHOT_BACKEND_COMMIT){
+      console.warn('[Homepage] snapshot retained because backend revision does not match capture revision');
+      return Promise.resolve({ rowId:meta.rowId, items:[] });
+    }
+    return fetchWithTimeout(`${API_BASE}/api/section/${encodeURIComponent(meta.sectionKey)}?page=0&limit=${limit}&summary=${summary}&snapshot=${encodeURIComponent(SV_HOME_SNAPSHOT_ID)}`, { cache:'no-store' }, 5000)
       .then(r=>r.ok ? r.json() : Promise.reject(new Error(`section ${meta.sectionKey} failed`)))
       .then(data=>{
         data=svHomeNormalizeBackendUrls(data);
         const items = Array.isArray(data?.items) ? data.items : [];
+        if(items.length && !svHomeSectionMatchesSnapshotSource(meta.rowId, items)){
+          console.warn('[Homepage] snapshot retained because section stable IDs do not match the captured source:', meta.sectionKey);
+          return { rowId:meta.rowId, items:[] };
+        }
         const total = Number.isFinite(Number(data?.total)) ? Number(data.total) : items.length;
         return { rowId:meta.rowId, items, total, _svFresh:options.summary !== true };
       })
@@ -306,12 +329,53 @@ window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE ||
   }
 
   function svShouldRefillHomeRow(rowId, items, rowData){
-    if(window.StreamVaultConfig?.backendStatus?.available !== true)return false;
-    if(rowData?._svFresh)return false;
-    if(!SV_PERF_HOME_BY_ID[rowId])return false;
-    const count = Array.isArray(items) ? items.length : 0;
-    return count < SV_HOME_MIN_SECTION_ITEMS || SV_DYNAMIC_BRAND_ROWS.has(rowId);
+    return false;
   }
+
+  function svApplyFreshHomeSection(meta, fresh){
+    if(!fresh?.items?.length)return;
+    const row = document.getElementById(meta.rowId);
+    const track = document.getElementById(meta.trackId);
+    if(!row || !track)return;
+    track.innerHTML = '';
+    track._svItems = [];
+    track._svItemKeys = [];
+    track._svRenderedKeys = [];
+    track._svRendered = 0;
+    row._svItems = [];
+    row._svLoaded = false;
+    row._svObserved = false;
+    svPrepareHomeRow(meta.rowId, fresh, SV_PERF_HOME_MAIN.slice(0,3).some(item=>item.rowId === meta.rowId));
+  }
+
+  async function svRefreshHomeSnapshotRows(){
+    if(svHomeBackgroundRefreshStarted)return;
+    const backendStatus = window.StreamVaultConfig?.backendStatus;
+    if(backendStatus?.available !== true)return;
+    if(SV_HOME_SNAPSHOT_BACKEND_COMMIT && backendStatus.commit !== SV_HOME_SNAPSHOT_BACKEND_COMMIT)return;
+    svHomeBackgroundRefreshStarted = true;
+    let nextIndex = 0;
+    const worker = async()=>{
+      while(nextIndex < SV_PERF_HOME_MAIN.length){
+        const meta = SV_PERF_HOME_MAIN[nextIndex++];
+        const fresh = await svFetchHomeSection(meta, { summary:false, limit:SV_HOME_ROW_LIMIT });
+        svApplyFreshHomeSection(meta, fresh);
+      }
+    };
+    await Promise.all(Array.from({length:4},()=>worker()));
+  }
+
+  function svScheduleHomeSnapshotRefresh(){
+    const run = ()=>svRefreshHomeSnapshotRows().catch(err=>{
+      console.warn('[Homepage] background section refresh failed:', err.message);
+    });
+    if(window.StreamVaultConfig?.backendStatus?.available === true)queueMicrotask(run);
+    Promise.resolve(window.__svBackendCheckPromise).then(run).catch(()=>{});
+  }
+
+  window.addEventListener('streamvault:backend-status', event=>{
+    if(event.detail?.available === true)svScheduleHomeSnapshotRefresh();
+  });
 
   function svLoadHomeSections(){
     const immediateCount = 3;
@@ -338,20 +402,13 @@ window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE ||
       svRenderPersonalRows();
       if(typeof svPrefetchHomeFeedPosters === 'function')svPrefetchHomeFeedPosters(data);
       prepareDelayedRows(rowMap);
+      svScheduleHomeSnapshotRefresh();
     };
-    const renderSectionFallback = ()=>{
-      svApplyHomeOrder();
-      immediate.forEach(meta=>{
-        svFetchHomeSection(meta).then(row=>svPrepareHomeRow(meta.rowId, row, true));
-      });
-      svRenderPersonalRows();
-      prepareDelayedRows({});
-    };
-    return svFetchHomeFeed(svWeakDevice ? 8 : 12)
+    return svFetchHomeSnapshot(svWeakDevice ? 8 : 12)
       .then(renderRows)
       .catch(err=>{
-        console.warn('[Homepage] home-feed unavailable, using section APIs:', err.message);
-        renderSectionFallback();
+        console.warn('[Homepage] bundled production snapshot unavailable:', err.message);
+        svApplyHomeOrder();
       });
   }
 

@@ -1,7 +1,7 @@
 (function configureStreamVault(global) {
   'use strict';
 
-  const BUILD_VERSION = '20260714-hostinger-playback-recovery-v1';
+  const BUILD_VERSION = '20260717-current-home-snapshot-v1';
   const BACKEND_ORIGIN = 'https://backend.streamvault.fit';
   const BACKEND_PATHS = [
     '/api',
@@ -66,21 +66,28 @@
     checked: false,
     available: null,
     checkedAt: 0,
-    version: null
+    version: null,
+    commit: null
   };
   let statusObservation = 0;
   let publishedObservation = 0;
 
-  function publishBackendStatus(available, version, observation = ++statusObservation) {
+  function publishBackendStatus(available, version, commit, observation = ++statusObservation) {
     if (observation < publishedObservation) return backendStatus;
     publishedObservation = observation;
     const changed = backendStatus.available !== available
-      || (version !== undefined && backendStatus.version !== (version || null));
+      || (version !== undefined && backendStatus.version !== (version || null))
+      || (commit !== undefined && backendStatus.commit !== (commit || null));
     backendStatus.checked = true;
     backendStatus.available = available;
     backendStatus.checkedAt = Date.now();
-    if (!available) backendStatus.version = null;
-    else if (version !== undefined) backendStatus.version = version || null;
+    if (!available) {
+      backendStatus.version = null;
+      backendStatus.commit = null;
+    } else {
+      if (version !== undefined) backendStatus.version = version || null;
+      if (commit !== undefined) backendStatus.commit = commit || null;
+    }
     document.documentElement.dataset.backend = available ? 'online' : 'offline';
     if (changed) {
       global.dispatchEvent(new CustomEvent('streamvault:backend-status', {
@@ -165,8 +172,13 @@
     });
   }
 
+  const homeSnapshot = global.STREAMVAULT_HOME_SNAPSHOT;
+  if (!homeSnapshot?.snapshotId || !Array.isArray(homeSnapshot.rows)) {
+    throw new Error('Bundled production homepage snapshot is missing or invalid');
+  }
+
   const staticData = Object.freeze({
-    homeFeed: loadStaticJson('/home-feed.json'),
+    homeSnapshot: Promise.resolve(normalizeBackendUrls(homeSnapshot)),
     channels: loadStaticJson('/channels.json')
   });
 
@@ -177,15 +189,20 @@
       headers: { Accept: 'application/json' }
     }, timeoutMs)
       .then(response => response.json().catch(() => ({})))
-      .then(payload => publishBackendStatus(true, payload.version || payload.commit || null, observation))
-      .catch(() => publishBackendStatus(false, null, observation));
+      .then(payload => publishBackendStatus(
+        true,
+        payload.version || payload.build || null,
+        payload.commit || null,
+        observation
+      ))
+      .catch(() => publishBackendStatus(false, null, null, observation));
   }
 
   function registerServiceWorker() {
     if (!('serviceWorker' in navigator) || !/^https?:$/.test(global.location.protocol)) {
       return Promise.resolve(null);
     }
-    return navigator.serviceWorker.register('/sw-20260714-v4.js', {
+    return navigator.serviceWorker.register('/sw-20260717-v5.js', {
       scope: '/',
       updateViaCache: 'none'
     });
@@ -213,6 +230,7 @@
     messages: MESSAGES,
     normalizeBackendUrls,
     offlineMessage: MESSAGES.backend,
+    homeSnapshotId: homeSnapshot.snapshotId,
     registerServiceWorker,
     showOfflineMessage,
     staticData

@@ -1,8 +1,10 @@
 const fs = require('fs');
 const path = require('path');
+const { readSnapshotModule } = require('./capture-home-snapshot');
 
 const DEPLOY_ROOT = __dirname;
-const BOOT_SEARCH_VERSION = '20260624-playable-only-search1';
+const BOOT_SEARCH_VERSION = '20260717-current-home-snapshot-v1';
+const HOME_SNAPSHOT_FILE = 'home-snapshot-76d0639-20260717.js';
 const REQUIRED_FRONTEND_FILES = [
   '.htaccess',
   'index.html',
@@ -27,12 +29,13 @@ const REQUIRED_FRONTEND_FILES = [
   'movie-play-button-v10.js',
   'instant-remux-v23.js',
   'offline-ui.js',
-  'sw-20260714-v4.js',
+  'sw-20260717-v5.js',
   'sw.js',
   'manifest.webmanifest',
   'fallback.webp',
   'assets/insomnia-tapes-logo.png',
-  'home-feed.json',
+  HOME_SNAPSHOT_FILE,
+  'capture-home-snapshot.js',
   'channels.json',
   'catalog.json',
   'copyright.html',
@@ -91,11 +94,11 @@ function searchItem(item) {
   };
 }
 
-function buildBootSearchIndex(homeFeed) {
+function buildBootSearchIndex(homeSnapshot) {
   const candidates = [
-    ...(Array.isArray(homeFeed.hero) ? homeFeed.hero : []),
-    ...(Array.isArray(homeFeed.rows)
-      ? homeFeed.rows.flatMap(row => Array.isArray(row.items) ? row.items : [])
+    ...(Array.isArray(homeSnapshot.hero) ? homeSnapshot.hero : []),
+    ...(Array.isArray(homeSnapshot.rows)
+      ? homeSnapshot.rows.flatMap(row => Array.isArray(row.items) ? row.items : [])
       : [])
   ];
   const seen = new Set();
@@ -112,8 +115,9 @@ function buildBootSearchIndex(homeFeed) {
   return {
     ok: true,
     version: BOOT_SEARCH_VERSION,
-    generatedAt: Date.parse(homeFeed.generatedAt) || 0,
-    source: 'hostinger/home-feed.json',
+    generatedAt: 0,
+    snapshotId: homeSnapshot.snapshotId,
+    source: `hostinger/${HOME_SNAPSHOT_FILE}`,
     totalAvailable: items.length,
     total: items.length,
     tokenCount: items.reduce((count, item) => count + item.searchTokens.length, 0),
@@ -121,15 +125,15 @@ function buildBootSearchIndex(homeFeed) {
   };
 }
 
-function validateStaticPosters(homeFeed) {
+function validateStaticPosters(homeSnapshot) {
   const items = [
-    ...(homeFeed.hero || []),
-    ...(homeFeed.rows || []).flatMap(row => row.items || [])
+    ...(homeSnapshot.hero || []),
+    ...(homeSnapshot.rows || []).flatMap(row => row.items || [])
   ];
   const urls = items.flatMap(item => [item.poster, item.backdrop]).filter(Boolean);
   const backendPoster = urls.find(value => {
     const text = String(value);
-    return /backend\.streamvault\.fit|\/poster-cache(?:\?|$)|\/image-proxy(?:\?|$)/i.test(text);
+    return /backend\.streamvault\.fit|\/poster-cache(?:[/?#]|$)|\/image-proxy(?:[/?#]|$)|localhost|127\.0\.0\.1|(?:ftp|sftp):\/\/|(?:^|[\\/])[A-Za-z]:[\\/]/i.test(text);
   });
   if (backendPoster) throw new Error(`Static home artwork depends on backend: ${backendPoster}`);
 }
@@ -145,14 +149,14 @@ function validateChannelLogos(channels) {
 }
 
 requireFiles();
-const homeFeed = readJson('home-feed.json');
+const homeSnapshot = readSnapshotModule(deployPath(HOME_SNAPSHOT_FILE));
 const channels = readJson('channels.json');
 readJson('catalog.json');
 readJson('manifest.webmanifest');
-validateStaticPosters(homeFeed);
+validateStaticPosters(homeSnapshot);
 validateChannelLogos(channels);
 
-const bootIndex = JSON.stringify(buildBootSearchIndex(homeFeed)) + '\n';
+const bootIndex = JSON.stringify(buildBootSearchIndex(homeSnapshot)) + '\n';
 const bootIndexFile = deployPath('boot-search-index.json');
 if (!fs.existsSync(bootIndexFile) || fs.readFileSync(bootIndexFile, 'utf8') !== bootIndex) {
   fs.writeFileSync(bootIndexFile, bootIndex);

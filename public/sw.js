@@ -1,4 +1,4 @@
-const CACHE_VERSION = '20260715-media-modal-ui-v1';
+const CACHE_VERSION = '20260716-audio-modal-return-v1';
 const CACHE_PREFIX = 'streamvault-';
 const SHELL_CACHE = `${CACHE_PREFIX}shell-${CACHE_VERSION}`;
 const STATIC_CACHE = `${CACHE_PREFIX}static-${CACHE_VERSION}`;
@@ -11,6 +11,7 @@ const SHELL_ASSETS = [
   '/styles.css',
   '/fifa-fast.js',
   '/frontend-player-ui.js',
+  '/frontend-playback-session.js',
   '/app-v3.js',
   '/details-exact-v5.js',
   '/home.js',

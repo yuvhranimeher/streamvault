@@ -1,7 +1,7 @@
 ﻿const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
 window.StreamVaultPlayerUi?.installDisplayTextRepair?.(document);
-const SV_ASSET_VERSION = '20260715-media-modal-ui-v1';
+const SV_ASSET_VERSION = '20260716-audio-modal-return-v1';
 const SV_SMOOTH_BUFFER_TRIGGER_COUNT = Math.max(1, Number(window.SMOOTH_BUFFER_TRIGGER_COUNT || 3) || 3);
 const svNativeConsoleLog = (()=>{try{return console.log.bind(console);}catch(_){return ()=>{};}})();
 function svLiveConsoleLog(...args){
@@ -27,6 +27,19 @@ try{
   mediaFixLog('active', {assetVersion: SV_ASSET_VERSION});
 }catch(_){}
 const SV_DEBUG_LOGS = svDebugLoggingEnabled();
+const svPlaybackSessionApi=window.StreamVaultPlaybackSession || null;
+const svAudioSession=svPlaybackSessionApi?.createAudioSessionController?.({
+  debug:SV_DEBUG_LOGS,
+  logger:console
+}) || {
+  begin:context=>({key:String(context?.sourceIdentity || ''),preferredLanguage:null,preferredLanguageReason:'fallback',manualIndex:null}),
+  clear:()=>{},
+  restore:()=>{},
+  select:tracks=>({selectedIndex:(tracks || []).findIndex(audioTrackIsAudible),selectedTrack:(tracks || []).find(audioTrackIsAudible) || null,reason:'fallback-first-playable',manual:false}),
+  setManual:()=>true,
+  setPreferredLanguage:()=>false,
+  snapshot:()=>({}),
+};
 if(!SV_DEBUG_LOGS){
   console.log = function(){};
   console.debug = function(){};
@@ -74,6 +87,8 @@ let detailRequestController = null;
 let detailRequestToken = 0;
 let svDetailHistoryLock = false;
 let svPlayerReturnState = null;
+let svPlayerReturnItem = null;
+let svPlayerClosePending = false;
 let svModalArtworkToken = 0;
 let svModalPreloadActive = 0;
 const svModalArtworkUrlCache = new Map();
@@ -88,6 +103,7 @@ let currentMediaModalItem=null;
 let currentMediaModalType='movie';
 let mediaModalRenderToken=0;
 let mediaModalBodyOverflow='';
+let svMediaModalSelectedEpisode=null;
 let currentStreamId=null,currentQuality='auto',currentSpeed=1,currentSubIdx=-1;
 let availableSubs=[];
 let _localTrackLoadPromise=null;
@@ -137,6 +153,15 @@ const svMediaPlayerState={
   serverAudioIndex:null,
   manifestAudioIndex:null,
   manualAudioIndex:null,
+  sessionKey:'',
+  mediaType:'',
+  mediaId:'',
+  season:null,
+  episode:null,
+  sourceIdentity:'',
+  preferredAudioLanguage:null,
+  preferredAudioReason:'',
+  audioSelectionReason:'',
   audioLocked:false,
   sessionToken:0
 };
@@ -365,13 +390,30 @@ function svSelectDefaultHlsAudioTrack(hls, video=svPlayerVideo(), reason='HLS au
   if(!tracks.length)return false;
   const requestedRaw=svMediaPlayerState.manualAudioIndex ?? svMediaPlayerState.serverAudioIndex;
   const requestedIndex=requestedRaw === null || requestedRaw === undefined ? NaN : Number(requestedRaw);
-  const nextIndex=Number.isInteger(requestedIndex) && requestedIndex >= 0 && tracks[requestedIndex] && audioTrackIsAudible(tracks[requestedIndex])
-    ? requestedIndex
-    : tracks.findIndex(audioTrackIsAudible);
+  const logicalDecision=svPreferredAudioDecision(availableAudio,`${reason} logical selection`);
+  const logicalIndex=Number.isInteger(logicalDecision.selectedIndex) && logicalDecision.selectedIndex >= 0
+    ? logicalDecision.selectedIndex
+    : 0;
+  const logicalTrack=availableAudio[logicalIndex] || null;
+  const logicalLanguage=svPlaybackSessionApi?.trackLanguage?.(logicalTrack) || '';
+  const preferredLanguage=logicalDecision.manual
+    ? logicalLanguage
+    : (svMediaPlayerState.preferredAudioLanguage || logicalLanguage);
+  const manifestDecision=svPlaybackSessionApi?.selectAudioTrack?.({
+    preferredLanguage,
+    audioStreams:tracks,
+    isPlayable:audioTrackIsAudible,
+  }) || {selectedIndex:tracks.findIndex(audioTrackIsAudible),reason:'first HLS audio'};
+  let nextIndex=-1;
+  if(tracks.length === 1)nextIndex=0;
+  else if(Number.isInteger(Number(logicalTrack?.hlsIndex)) && tracks[Number(logicalTrack.hlsIndex)]){
+    nextIndex=Number(logicalTrack.hlsIndex);
+  }else if(Number.isInteger(requestedIndex) && requestedIndex >= 0 && tracks[requestedIndex] && audioTrackIsAudible(tracks[requestedIndex])){
+    const requestedLanguage=svPlaybackSessionApi?.trackLanguage?.(tracks[requestedIndex]) || '';
+    if(!preferredLanguage || !requestedLanguage || requestedLanguage === preferredLanguage)nextIndex=requestedIndex;
+  }
+  if(nextIndex < 0)nextIndex=Number(manifestDecision.selectedIndex);
   if(nextIndex < 0)return false;
-  const logicalIndex=Number.isInteger(requestedIndex) && requestedIndex >= 0 && availableAudio[requestedIndex]
-    ? requestedIndex
-    : nextIndex;
   if(Number(hls.audioTrack) !== nextIndex)hls.audioTrack=nextIndex;
   if(video?._svAudioResetContext)video._svAudioResetContext.hasManifestAudio=true;
   if(video){video.muted=false;video.volume=1;video._svAudioLockedIndex=logicalIndex;svSyncVolumeUi(video);}
@@ -384,6 +426,10 @@ function svSelectDefaultHlsAudioTrack(hls, video=svPlayerVideo(), reason='HLS au
     reason,
     selectedIndex:logicalIndex,
     manifestIndex:nextIndex,
+    mediaSessionKey:svMediaPlayerState.sessionKey,
+    preferredLanguage,
+    selectionReason:logicalDecision.reason || manifestDecision.reason,
+    selectionMode:logicalDecision.manual ? 'manual' : 'automatic',
     language:tracks[nextIndex]?.lang || tracks[nextIndex]?.language || '',
     title:tracks[nextIndex]?.name || ''
   });
@@ -392,6 +438,13 @@ function svSelectDefaultHlsAudioTrack(hls, video=svPlayerVideo(), reason='HLS au
 
 function svCaptureServerAudioDecision(payload){
   const index=Number(payload?.audioIndex ?? payload?.defaultAudioIndex);
+  const preferredLanguage=svPlaybackSessionApi?.normalizeLanguage?.(payload?.preferredAudioLanguage);
+  if(preferredLanguage){
+    svMediaPlayerState.preferredAudioLanguage=preferredLanguage;
+    svMediaPlayerState.preferredAudioReason=String(payload?.titleLanguageReason || 'server-preferred-language');
+    svAudioSession.setPreferredLanguage(preferredLanguage,svMediaPlayerState.preferredAudioReason);
+  }
+  if(payload?.audioSelectionReason)svMediaPlayerState.audioSelectionReason=String(payload.audioSelectionReason);
   const manualIndex=svMediaPlayerState.manualAudioIndex === null ? NaN : Number(svMediaPlayerState.manualAudioIndex);
   if(Number.isInteger(manualIndex) && manualIndex >= 0){
     svMediaPlayerState.serverAudioIndex=manualIndex;
@@ -450,10 +503,8 @@ function svSelectDefaultNativeAudioTrack(video=svPlayerVideo(), reason='native a
   const serverRaw=svMediaPlayerState.manualAudioIndex ?? svMediaPlayerState.serverAudioIndex;
   const serverIndex=serverRaw === null || serverRaw === undefined ? NaN : Number(serverRaw);
   if(Number.isInteger(serverIndex) && serverIndex >= 0)return svApplyServerAudioAuthority(null,video,reason);
-  const firstValidIndex=tracks.findIndex(audioTrackIsAudible);
-  const nextIndex=Number.isInteger(serverIndex) && serverIndex >= 0 && tracks[serverIndex] && audioTrackIsAudible(tracks[serverIndex])
-    ? serverIndex
-    : (firstValidIndex >= 0 ? firstValidIndex : 0);
+  const decision=svPreferredAudioDecision(tracks,reason);
+  const nextIndex=Number.isInteger(decision.selectedIndex) && decision.selectedIndex >= 0 ? decision.selectedIndex : 0;
   tracks.forEach((track,index)=>{try{track.enabled=index===nextIndex;}catch(_){}});
   currentAudioIdx=nextIndex;
   setAppliedAudioIndex(nextIndex, reason);
@@ -461,6 +512,10 @@ function svSelectDefaultNativeAudioTrack(video=svPlayerVideo(), reason='native a
   mediaFixLog('selected default native audio track', {
     reason,
     selectedIndex:nextIndex,
+    mediaSessionKey:svMediaPlayerState.sessionKey,
+    preferredLanguage:svMediaPlayerState.preferredAudioLanguage,
+    selectionReason:decision.reason,
+    selectionMode:decision.manual ? 'manual' : 'automatic',
     language:tracks[nextIndex]?.language || '',
     title:tracks[nextIndex]?.label || ''
   });
@@ -687,19 +742,104 @@ function svStopLivePlaybackForMedia(reason='media playback start'){
   svLivePlayerState.fallbackReason=reason;
 }
 
-function svBeginMediaPlayback(mediaKind, sourceKey, title=''){
+function svPlaybackMediaId(item, fallback=''){
+  return item?.tmdbId || item?.id || item?.streamId || item?.name || item?.title || fallback || '';
+}
+
+function svPlaybackContextForMovie(movie={}){
+  return {
+    mediaType:'movie',
+    mediaId:svPlaybackMediaId(movie, movie.streamUrl),
+    sourceIdentity:movie.streamId ?? movie.id ?? movie.streamUrl ?? movie.file ?? movie.name ?? '',
+    title:movie.name || movie.title || '',
+    titleMetadata:{...movie,title:movie.name || movie.title || '',filename:movie.file || movie.filename || ''},
+    item:movie,
+  };
+}
+
+function svPlaybackContextForEpisode(show={}, season=null, epIdx=null, episode={}){
+  return {
+    mediaType:'series',
+    mediaId:svPlaybackMediaId(show, show.name),
+    season:Number.isFinite(Number(season)) ? Number(season) : null,
+    episode:Number.isFinite(Number(episode?.episode ?? epIdx)) ? Number(episode?.episode ?? epIdx) : null,
+    sourceIdentity:episode?.streamId ?? episode?.streamUrl ?? episode?.file ?? `${show.name || ''}:s${season}:e${epIdx}`,
+    title:show.name || show.title || '',
+    titleMetadata:{
+      ...show,
+      ...episode,
+      title:show.name || show.title || '',
+      name:show.name || show.title || '',
+      filename:episode?.file || episode?.filename || '',
+      streamUrl:episode?.streamUrl || '',
+      mediaType:'episode',
+    },
+    item:show,
+  };
+}
+
+function svPlaybackContextForSource(sourceKey, title=''){
+  const source=svCanonicalSource(sourceKey);
+  const movie=movies.find(item=>svCanonicalSource(item?.streamUrl || item?.file || '') === source);
+  if(movie)return svPlaybackContextForMovie(movie);
+  for(const show of series){
+    for(const [seasonValue,episodes] of Object.entries(show?.seasons || {})){
+      const epIdx=(Array.isArray(episodes) ? episodes : []).findIndex(episode=>
+        svCanonicalSource(episode?.streamUrl || episode?.file || '') === source
+      );
+      if(epIdx >= 0)return svPlaybackContextForEpisode(show,Number(seasonValue),epIdx,episodes[epIdx]);
+    }
+  }
+  return {
+    mediaType:'movie',
+    mediaId:sourceKey || title,
+    sourceIdentity:sourceKey || title,
+    title,
+    titleMetadata:{title,name:title,source:sourceKey,streamUrl:sourceKey},
+  };
+}
+
+function svBeginMediaPlayback(mediaKind, sourceKey, title='', suppliedContext={}){
   svStopLivePlaybackForMedia(`${mediaKind || 'media'} playback start`);
+  const fallbackContext=mediaKind === 'ftp'
+    ? svPlaybackContextForSource(sourceKey,title)
+    : {
+      mediaType:'movie',
+      mediaId:sourceKey,
+      sourceIdentity:sourceKey,
+      title,
+      titleMetadata:{title,name:title,source:sourceKey},
+    };
+  const context={
+    ...fallbackContext,
+    ...(suppliedContext || {}),
+    title:title || suppliedContext?.title || fallbackContext.title || '',
+    titleMetadata:{
+      ...(fallbackContext.titleMetadata || {}),
+      ...(suppliedContext?.titleMetadata || {}),
+    },
+  };
+  const audioSession=svAudioSession.begin(context);
   svActivePlaybackType='media';
   svMediaPlayerState.playbackType='media';
   svMediaPlayerState.mediaKind=mediaKind || 'media';
   svMediaPlayerState.sourceKey=String(sourceKey ?? '');
-  svMediaPlayerState.title=String(title || '');
+  svMediaPlayerState.title=String(context.title || title || '');
   svMediaPlayerState.selectedSourceUrl='';
   svMediaPlayerState.recoverySourceUrl='';
   svMediaPlayerState.fallbackReason='';
   svMediaPlayerState.serverAudioIndex=null;
   svMediaPlayerState.manifestAudioIndex=null;
   svMediaPlayerState.manualAudioIndex=null;
+  svMediaPlayerState.sessionKey=String(audioSession.key || '');
+  svMediaPlayerState.mediaType=String(context.mediaType || 'movie');
+  svMediaPlayerState.mediaId=String(context.mediaId || sourceKey || '');
+  svMediaPlayerState.season=context.season ?? null;
+  svMediaPlayerState.episode=context.episode ?? null;
+  svMediaPlayerState.sourceIdentity=String(context.sourceIdentity ?? sourceKey ?? '');
+  svMediaPlayerState.preferredAudioLanguage=audioSession.preferredLanguage || null;
+  svMediaPlayerState.preferredAudioReason=audioSession.preferredLanguageReason || '';
+  svMediaPlayerState.audioSelectionReason='';
   svMediaPlayerState.audioLocked=false;
   svMediaPlayerState.sessionToken++;
   const player=svPlayerVideo();
@@ -708,6 +848,9 @@ function svBeginMediaPlayback(mediaKind, sourceKey, title=''){
     playbackType:'media',
     mediaKind:svMediaPlayerState.mediaKind,
     sourceKey:svMediaPlayerState.sourceKey,
+    mediaSessionKey:svMediaPlayerState.sessionKey,
+    preferredAudioLanguage:svMediaPlayerState.preferredAudioLanguage,
+    preferredAudioReason:svMediaPlayerState.preferredAudioReason,
     title:svMediaPlayerState.title
   });
   return svMediaPlayerState.sessionToken;
@@ -721,6 +864,12 @@ function svBeginLivePlayback(channelId, channelName=''){
   svMediaPlayerState.serverAudioIndex=null;
   svMediaPlayerState.manifestAudioIndex=null;
   svMediaPlayerState.manualAudioIndex=null;
+  svMediaPlayerState.sessionKey='';
+  svMediaPlayerState.preferredAudioLanguage=null;
+  svMediaPlayerState.preferredAudioReason='';
+  svAudioSession.clear();
+  svPlayerReturnState=null;
+  svPlayerReturnItem=null;
   svMediaPlayerState.selectedSourceUrl='';
   svMediaPlayerState.recoverySourceUrl='';
   svMediaPlayerState.fallbackReason='';
@@ -1062,7 +1211,7 @@ function audioTrackWithFallback(track,index,hints=[]){
 }
 
 function audioTrackText(track={}){
-  return [track.language,track.lang,track.title,track.label,track.codec].filter(Boolean).join(' ').toLowerCase();
+  return [track.language,track.lang,track.title,track.label,track.name,track.characteristics,track.codec].filter(Boolean).join(' ').toLowerCase();
 }
 
 function audioTrackIsAudible(track){
@@ -1124,14 +1273,22 @@ function lockAudioToCurrent(reason='', options={}){
 
 function recordManualAudioSelection(idx, reason='manual audio selection'){
   if(!Number.isInteger(idx) || idx < 0)return false;
+  const selected=availableAudio[idx] || null;
+  svAudioSession.setManual(idx,audioTrackStreamIndex(selected));
   svMediaPlayerState.manualAudioIndex=idx;
   svMediaPlayerState.serverAudioIndex=idx;
   svMediaPlayerState.audioLocked=true;
+  svMediaPlayerState.audioSelectionReason=reason;
   if(hlsInstance && Array.isArray(hlsInstance.audioTracks) && hlsInstance.audioTracks[idx]){
     svMediaPlayerState.manifestAudioIndex=idx;
   }
   if(vid)vid._svAudioLockedIndex=idx;
-  mediaFixLog('manual audio authority recorded',{idx,reason,selected:audioDebugSummary(availableAudio[idx],idx)});
+  mediaFixLog('manual audio authority recorded',{
+    idx,
+    reason,
+    mediaSessionKey:svMediaPlayerState.sessionKey,
+    selected:audioDebugSummary(selected,idx)
+  });
   return true;
 }
 
@@ -1139,13 +1296,38 @@ function mappedAudioStartupRequiresSource(){
   return !!vid?._svMappedAudioStartupRequired && audioLockedIndex() !== null;
 }
 
+function svPreferredAudioDecision(tracks=[], context='automatic audio selection', options={}){
+  const serverRaw=svMediaPlayerState.serverAudioIndex;
+  const trustedIndex=serverRaw === null || serverRaw === undefined ? null : Number(serverRaw);
+  const decision=svAudioSession.select(tracks,{
+    preferredLanguage:svMediaPlayerState.preferredAudioLanguage,
+    trustedIndex:Number.isInteger(trustedIndex) ? trustedIndex : null,
+    trustedReason:svMediaPlayerState.audioSelectionReason || 'server audio decision',
+    ignoreManual:!!options.ignoreManual,
+    isPlayable:audioTrackIsAudible,
+  });
+  const selectedIndex=Number.isInteger(Number(decision?.selectedIndex)) && Number(decision.selectedIndex) >= 0
+    ? Number(decision.selectedIndex)
+    : 0;
+  const normalized={...decision,selectedIndex,selectedTrack:tracks[selectedIndex] || null};
+  svMediaPlayerState.audioSelectionReason=normalized.reason || context;
+  if(SV_DEBUG_LOGS){
+    console.warn('[Audio Selection]',{
+      title:svMediaPlayerState.title,
+      mediaSessionKey:svMediaPlayerState.sessionKey,
+      inferredPreferredLanguage:svMediaPlayerState.preferredAudioLanguage,
+      preferredLanguageReason:svMediaPlayerState.preferredAudioReason,
+      availableAudioTracks:tracks.map((track,index)=>audioDebugSummary(track,index)),
+      chosenStream:audioDebugSummary(normalized.selectedTrack,selectedIndex),
+      reason:normalized.reason || context,
+      selectionMode:normalized.manual ? 'manual' : 'automatic',
+    });
+  }
+  return normalized;
+}
+
 function preferredAudioTrackIndex(tracks=[]){
-  const list=tracks.map((track,index)=>({track,index})).filter(item=>audioTrackIsAudible(item.track));
-  if(!list.length)return 0;
-  const authoritativeRaw=svMediaPlayerState.manualAudioIndex ?? svMediaPlayerState.serverAudioIndex;
-  const authoritative=authoritativeRaw === null || authoritativeRaw === undefined ? NaN : Number(authoritativeRaw);
-  if(Number.isInteger(authoritative) && list.some(item=>item.index===authoritative))return authoritative;
-  return list[0].index;
+  return svPreferredAudioDecision(tracks).selectedIndex;
 }
 
 function normalizeDiscoveredAudioTracks(tracks=[],hints=[]){
@@ -1172,14 +1354,19 @@ function selectedAudioTrack(){
 
 function selectPreferredAudioTrack(context, options={}){
   const previous=currentAudioIdx;
-  const preferred=preferredAudioTrackIndex(availableAudio);
+  const decision=svPreferredAudioDecision(availableAudio,context);
+  const preferred=decision.selectedIndex;
   currentAudioIdx=Math.max(0,Math.min(availableAudio.length-1,preferred));
+  if(svMediaPlayerState.manualAudioIndex === null)svMediaPlayerState.serverAudioIndex=currentAudioIdx;
   if(previous!==currentAudioIdx || options.log){
     mediaFixLog('preferred audio selected', {
       context,
       from:previous,
       to:currentAudioIdx,
       applied:appliedAudioIndex(),
+      mediaSessionKey:svMediaPlayerState.sessionKey,
+      preferredLanguage:svMediaPlayerState.preferredAudioLanguage,
+      selectionReason:decision.reason,
       selected:audioDebugSummary(selectedAudioTrack(),currentAudioIdx),
       sourcePreserved:!!options.sourcePreserved
     });
@@ -2605,13 +2792,14 @@ function renderMediaModalEpisodes(show, selectedSeason){
   const seasons=Object.keys(show?.seasons || {}).map(Number).sort((a,b)=>a-b);
   if(!seasons.length){root.innerHTML='';root.style.display='none';return;}
   root.style.display='';
-  const season=seasons.includes(Number(selectedSeason)) ? Number(selectedSeason) : seasons[0];
+  const season=seasons.includes(Number(selectedSeason ?? currentSeason)) ? Number(selectedSeason ?? currentSeason) : seasons[0];
+  currentSeason=season;
   const episodes=show.seasons[season] || [];
   const options=seasons.map(value=>`<option value="${value}"${value===season?' selected':''}>Season ${value}</option>`).join('');
   const cards=episodes.map((episode,index)=>{
     const thumb=episode.thumb || episode.thumbnail || episode.poster || show.backdrop || show.poster || imageFallbackData(show.name);
     const title=episode.epTitle || episode.title || `Episode ${episode.episode || index + 1}`;
-    return `<button class="media-modal-episode" type="button" onclick="playMediaModalEpisode(${season},${index})">
+    return `<button class="media-modal-episode${Number(svMediaModalSelectedEpisode)===index?' active':''}" type="button" data-episode-index="${index}" onclick="playMediaModalEpisode(${season},${index})">
       <img src="${esc(thumb)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${esc(imageFallbackData(show.name))}'">
       <span class="media-modal-episode-copy">
         <span class="media-modal-episode-number">Episode ${esc(episode.episode || index + 1)}</span>
@@ -2621,8 +2809,13 @@ function renderMediaModalEpisodes(show, selectedSeason){
   }).join('');
   root.className='media-modal-section';
   root.innerHTML=`<h2 class="media-modal-heading">Episodes</h2>
-    <div class="media-modal-season-row"><select aria-label="Season" onchange="renderMediaModalEpisodes(currentShow,this.value)">${options}</select></div>
+    <div class="media-modal-season-row"><select aria-label="Season" onchange="selectMediaModalSeason(this.value)">${options}</select></div>
     <div class="media-modal-episodes">${cards || noDataHTML()}</div>`;
+}
+
+function selectMediaModalSeason(value){
+  svMediaModalSelectedEpisode=null;
+  renderMediaModalEpisodes(currentShow,Number(value));
 }
 
 function renderMediaModalData(item, type, details={}){
@@ -2712,12 +2905,22 @@ function openMediaModal(item, requestedType=''){
   const modal=document.getElementById('mediaModal');
   if(!modal)return false;
   abortDetailRequestScope();
+  const previousKey=currentMediaModalItem ? svStableMediaKey(currentMediaModalItem,currentMediaModalType) : '';
+  const nextType=mediaModalTypeFor(item,requestedType);
+  const nextKey=svStableMediaKey(item,nextType);
   currentMediaModalItem=item;
-  currentMediaModalType=mediaModalTypeFor(item,requestedType);
+  currentMediaModalType=nextType;
   if(currentMediaModalType === 'tv'){
     currentShow=item;
+    if(previousKey !== nextKey){
+      currentSeason=Object.keys(item?.seasons || {}).map(Number).sort((a,b)=>a-b)[0] || 1;
+      svMediaModalSelectedEpisode=null;
+    }
     recordWatchHistory(item.id || item.name,item.name,item.genre || '','series');
-  }else currentDetailMovie=item;
+  }else{
+    currentDetailMovie=item;
+    svMediaModalSelectedEpisode=null;
+  }
   if(modal.classList.contains('hidden'))mediaModalBodyOverflow=document.body.style.overflow;
   modal.classList.remove('hidden');
   modal.classList.add('show');
@@ -2756,20 +2959,36 @@ function playMediaModalPrimary(){
     const show=currentShow;
     const seasons=Object.keys(show?.seasons || {}).map(Number).sort((a,b)=>a-b);
     if(!show || !seasons.length)return;
-    svRememberPlaybackReturnState('media');
+    const season=seasons.includes(Number(currentSeason)) ? Number(currentSeason) : seasons[0];
+    const episodes=show.seasons[season] || [];
+    const episodeIndex=Number.isInteger(Number(svMediaModalSelectedEpisode)) && episodes[Number(svMediaModalSelectedEpisode)]
+      ? Number(svMediaModalSelectedEpisode)
+      : 0;
+    svMediaModalSelectedEpisode=episodeIndex;
+    svRememberPlaybackReturnState('media',{season,epIdx:episodeIndex});
     svPushPlayerHistory();
-    playSeriesEpisode(show.name,seasons[0],0);
+    svPauseMediaModalPreview();
+    playSeriesEpisode(show.name,season,episodeIndex);
     return;
   }
+  svPauseMediaModalPreview();
   playMovieFromDetail();
 }
 
 function playMediaModalEpisode(season,index){
   const show=currentShow;
   if(!show)return;
-  svRememberPlaybackReturnState('media');
+  currentSeason=Number(season);
+  svMediaModalSelectedEpisode=Number(index);
+  svRememberPlaybackReturnState('media',{season:currentSeason,epIdx:svMediaModalSelectedEpisode});
   svPushPlayerHistory();
+  svPauseMediaModalPreview();
   playSeriesEpisode(show.name,Number(season),Number(index));
+}
+
+function svPauseMediaModalPreview(){
+  const preview=document.getElementById('modalPreview');
+  try{preview?.pause?.();}catch(_){}
 }
 
 function toggleMediaModalWatchlist(){
@@ -3110,10 +3329,11 @@ function playSeriesEpisode(showName, season, epIdx){
   const sNum=String(season).padStart(2,'0');
   const eNum=String(ep.episode).padStart(2,'0');
   const lbl=`${show.name} S${sNum}E${eNum}${ep.epTitle?' – '+ep.epTitle:''}`;
+  const playbackContext=svPlaybackContextForEpisode(show,season,epIdx,ep);
   if(ep.streamUrl){
-    playFtpMedia(ep.streamUrl,lbl,'');
+    playFtpMedia(ep.streamUrl,lbl,'',playbackContext);
   }else{
-    playMedia(ep.streamId,lbl,'');
+    playMedia(ep.streamId,lbl,'',playbackContext);
   }
   setTimeout(()=>showSeriesPlayerBar(show,season,epIdx),100);
 }
@@ -3238,10 +3458,17 @@ function switchToEpisode(season, epIdx){
   const sNum=String(season).padStart(2,'0');
   const eNum=String(epIdx+1).padStart(2,'0');
   const lbl=`${show.name} S${sNum}E${eNum}${ep.epTitle?' – '+ep.epTitle:''}`;
+  currentSeason=Number(season);
+  svMediaModalSelectedEpisode=Number(epIdx);
+  if(svPlayerReturnState?.source === 'media-modal'){
+    svRememberPlaybackReturnState('media',{season:currentSeason,epIdx:svMediaModalSelectedEpisode});
+    svPushPlayerHistory();
+  }
+  const playbackContext=svPlaybackContextForEpisode(show,season,epIdx,ep);
   if(ep.streamUrl){
-    playFtpMedia(ep.streamUrl,lbl,'');
+    playFtpMedia(ep.streamUrl,lbl,'',playbackContext);
   }else{
-    playMedia(ep.streamId,lbl,'');
+    playMedia(ep.streamId,lbl,'',playbackContext);
   }
   setTimeout(()=>showSeriesPlayerBar(show,season,epIdx),100);
 }
@@ -3256,10 +3483,11 @@ function switchToSeries(showName){
   if(!firstEp)return;
   const sNum=String(firstSeason).padStart(2,'0');
   const lbl=`${show.name} S${sNum}E01${firstEp.epTitle?' – '+firstEp.epTitle:''}`;
+  const playbackContext=svPlaybackContextForEpisode(show,firstSeason,0,firstEp);
   if(firstEp.streamUrl){
-    playFtpMedia(firstEp.streamUrl,lbl,'');
+    playFtpMedia(firstEp.streamUrl,lbl,'',playbackContext);
   }else{
-    playMedia(firstEp.streamId,lbl,'');
+    playMedia(firstEp.streamId,lbl,'',playbackContext);
   }
   setTimeout(()=>showSeriesPlayerBar(show,firstSeason,0),100);
 }
@@ -4741,11 +4969,14 @@ async function loadFtpTrackOptions(streamUrl){
       const serverIndex=data?.ftpAudioValidated === true
         ? Number(data.audioIndex ?? data.defaultAudioIndex)
         : NaN;
-      if(Number.isInteger(serverIndex) && serverIndex >= 0 && availableAudio[serverIndex]){
-        currentAudioIdx=serverIndex;
-        setAppliedAudioIndex(serverIndex,'FTP decoded server audio');
+      const decision=svPreferredAudioDecision(availableAudio,'FTP metadata');
+      const selectedIndex=decision.selectedIndex;
+      if(Number.isInteger(selectedIndex) && selectedIndex >= 0 && availableAudio[selectedIndex]){
+        currentAudioIdx=selectedIndex;
+        svMediaPlayerState.serverAudioIndex=selectedIndex;
+        setAppliedAudioIndex(selectedIndex,'FTP decoded/title-language audio');
         lockAudioToCurrent('FTP decoded server audio', {
-          requiresMappedSource:audioTrackRelativeIndex(availableAudio[serverIndex],serverIndex) !== 0
+          requiresMappedSource:audioTrackRelativeIndex(availableAudio[selectedIndex],selectedIndex) !== 0
         });
         renderAudioTracks();
         svApplyServerAudioAuthority(hlsInstance,vid,'FTP validated metadata reload');
@@ -5023,17 +5254,17 @@ function applyStartupAudioInfo(info, sourceUrl='', context='startup audio', sele
   const hints=filenameAudioHints(sourceUrl);
   availableAudio=normalizeDiscoveredAudioTracks(tracks,hints);
   const serverIndex=Number(selection.serverAudioIndex ?? info?.audioIndex ?? info?.defaultAudioIndex);
-  currentAudioIdx=Number.isInteger(serverIndex) && serverIndex >= 0 && availableAudio[serverIndex]
-    ? serverIndex
-    : preferredAudioTrackIndex(availableAudio);
+  const decision=svPreferredAudioDecision(availableAudio,context);
+  currentAudioIdx=decision.selectedIndex;
+  svMediaPlayerState.serverAudioIndex=currentAudioIdx;
   const selected=selectedAudioTrack();
   const streamIndex=audioTrackStreamIndex(selected);
   const relativeIndex=audioTrackRelativeIndex(selected,currentAudioIdx);
   const safeCodec=audioCodecIsBrowserSafe(selected);
   let options={};
-  let reason=Number.isInteger(serverIndex) && currentAudioIdx === serverIndex
+  let reason=decision.reason || (Number.isInteger(serverIndex) && currentAudioIdx === serverIndex
     ? (info?.audioSelectionReason || 'server title-language audio decision')
-    : 'safe audio fallback';
+    : 'safe audio fallback');
 
   if(streamIndex !== null && !safeCodec){
     options={forceAudio:true};
@@ -5286,7 +5517,7 @@ async function tryLocalAdaptiveFallback(id, failedAt=playbackTime()){
   return false;
 }
 
-async function playMedia(id, name, year){
+async function playMedia(id, name, year, playbackContext=null){
   console.log('[Playback] play button clicked');
   console.log('[Playback] Local playback plan');
   const movie = movies.find(m => m.id === id) || {};
@@ -5299,7 +5530,7 @@ async function playMedia(id, name, year){
   trackView(id);
   const playbackScope = beginPlaybackRequestScope('local media startup');
   clearMediaStartupWatchdog();
-  svBeginMediaPlayback('local', id, name || movie.name || '');
+  svBeginMediaPlayback('local', id, name || movie.name || '', playbackContext || svPlaybackContextForMovie(movie));
   isLiveMode = false;
   if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
   closeAllDropdowns();
@@ -5531,6 +5762,7 @@ function currentPlaybackSnapshot(){
     serverAudioIdx:svMediaPlayerState.serverAudioIndex,
     manifestAudioIdx:svMediaPlayerState.manifestAudioIndex,
     audioAuthorityLocked:svMediaPlayerState.audioLocked,
+    audioSession:svAudioSession.snapshot(),
     lockedAudioIdx:audioLockedIndex(),
     sourceOffset:Number(vid._sourceOffset || 0),
     sourceSeekRequired:!!vid._sourceSeekRequired,
@@ -5548,6 +5780,7 @@ async function restorePlaybackSnapshot(snapshot, reason='switch failed'){
   svMediaPlayerState.serverAudioIndex=snapshot.serverAudioIdx ?? null;
   svMediaPlayerState.manifestAudioIndex=snapshot.manifestAudioIdx ?? null;
   svMediaPlayerState.audioLocked=!!snapshot.audioAuthorityLocked;
+  svAudioSession.restore(snapshot.audioSession || {});
   vid._svAudioLockedIndex=snapshot.lockedAudioIdx ?? null;
   if(snapshot.ftp){
     _currentFtpPlaybackPlan=snapshot.plan;
@@ -6227,7 +6460,7 @@ function ensureFtpTrackOptionsLoaded(options={}){
   return _ftpTrackLoadPromise;
 }
 
-async function playFtpMedia(streamUrl, name, year){
+async function playFtpMedia(streamUrl, name, year, playbackContext=null){
   let requestedStreamUrl = String(streamUrl || '').trim();
   let startupOptions = {};
   try {
@@ -6238,7 +6471,7 @@ async function playFtpMedia(streamUrl, name, year){
     }
     const playbackScope = beginPlaybackRequestScope('FTP media startup');
     clearMediaStartupWatchdog();
-    svBeginMediaPlayback('ftp', requestedStreamUrl, name || '');
+    svBeginMediaPlayback('ftp', requestedStreamUrl, name || '', playbackContext || svPlaybackContextForSource(requestedStreamUrl,name));
     if(!svAssertNoLiveSourceForMedia(requestedStreamUrl, {fallbackReason:'FTP media startup'}))return;
     const mobilePlayback = isMobilePlaybackClient();
     mediaFixLog('selected FTP media URL',{url:requestedStreamUrl,name,year,mobilePlayback});
@@ -6599,7 +6832,17 @@ async function ftpSeekTo(seconds){
 
 
 
-function closePlayer(){
+function closePlayer(options={}){
+  const fromHistory=!!options.fromHistory;
+  if(!fromHistory && !svDetailHistoryLock && history.state?.view === 'player'){
+    if(svPlayerClosePending)return;
+    svPlayerClosePending=true;
+    history.back();
+    return;
+  }
+  svPlayerClosePending=false;
+  const returnState=options.returnState || svPlayerReturnState;
+  const returnsToModernModal=returnState?.source === 'media-modal';
   abortPlaybackRequestScope('player close');
   clearMediaStartupWatchdog();
   svStopLivePlaybackForMedia('player close');
@@ -6609,6 +6852,16 @@ function closePlayer(){
   svMediaPlayerState.serverAudioIndex=null;
   svMediaPlayerState.manifestAudioIndex=null;
   svMediaPlayerState.manualAudioIndex=null;
+  svMediaPlayerState.sessionKey='';
+  svMediaPlayerState.mediaType='';
+  svMediaPlayerState.mediaId='';
+  svMediaPlayerState.season=null;
+  svMediaPlayerState.episode=null;
+  svMediaPlayerState.sourceIdentity='';
+  svMediaPlayerState.preferredAudioLanguage=null;
+  svMediaPlayerState.preferredAudioReason='';
+  svMediaPlayerState.audioSelectionReason='';
+  svAudioSession.clear();
   svMediaPlayerState.selectedSourceUrl='';
   svMediaPlayerState.recoverySourceUrl='';
   svMediaPlayerState.fallbackReason='';
@@ -6683,11 +6936,18 @@ function closePlayer(){
   closeAllDropdowns();
   closeAllSeriesDropdowns();
   hideSeriesPlayerBar();
-  buildRows();
-  if(currentShow)renderEpisodes(currentShow,currentSeason);
+  if(!returnsToModernModal){
+    buildRows();
+    if(currentShow)renderEpisodes(currentShow,currentSeason);
+  }
   if(document.fullscreenElement)document.exitFullscreen?.();
   if(document.webkitFullscreenElement)document.webkitExitFullscreen?.();
-  if(svPlayerReturnState)svRestoreDetailState(svPlayerReturnState);
+  if(options.restore !== false){
+    if(returnState?.view === 'detail')svRestoreDetailState(returnState);
+    else if(returnState)svRestoreBrowseState(returnState);
+    svPlayerReturnState=null;
+    svPlayerReturnItem=null;
+  }
 }
 
 async function loadQualityOptions(id){
@@ -6971,8 +7231,14 @@ window.addEventListener('popstate', event=>{
     const state = event.state || {};
     const playerOpen = document.getElementById('playerModal')?.classList.contains('open');
     if(playerOpen){
-      closePlayer();
-      svRestoreDetailState(state.returnTo || svPlayerReturnState);
+      const returnState=svPlayerReturnState?.source === 'media-modal'
+        ? svPlayerReturnState
+        : (state.view === 'detail' ? state : (state.returnTo || svPlayerReturnState));
+      closePlayer({fromHistory:true,restore:false,returnState});
+      if(returnState?.view === 'detail')svRestoreDetailState(returnState);
+      else svRestoreBrowseState(returnState || {});
+      svPlayerReturnState=null;
+      svPlayerReturnItem=null;
       return;
     }
     if(state.view === 'detail'){
@@ -6985,12 +7251,14 @@ window.addEventListener('popstate', event=>{
     mediaModal?.classList.add('hidden');
     mediaModal?.classList.remove('show');
     mediaModal?.setAttribute('aria-hidden','true');
+    svPauseMediaModalPreview();
     currentMediaModalItem=null;
     currentDetailMovie=null;
+    svPlayerReturnState=null;
+    svPlayerReturnItem=null;
     abortDetailRequestScope();
     setDetailPageScrollLock(false);
-    if(state.browse?.tab)switchTab(state.browse.tab);
-    requestAnimationFrame(()=>window.scrollTo(0,Number(state.browse?.scrollY)||0));
+    svRestoreBrowseState(state);
   }finally{
     svDetailHistoryLock = false;
   }
@@ -7731,11 +7999,68 @@ function svDrainModalArtworkPreloadQueue(){
 }
 
 function svCurrentBrowseState(){
-  return {tab:currentTab, scrollY:window.scrollY || 0};
+  const filterIds=[
+    'moviesGenreFilter','moviesLangFilter','moviesYearFilter','moviesRatingFilter','moviesPublisherFilter','moviesSortFilter',
+    'seriesGenreFilter','seriesLangFilter','seriesYearFilter','seriesRatingFilter','seriesSortFilter'
+  ];
+  return {
+    tab:currentTab,
+    scrollY:window.scrollY || 0,
+    hash:location.hash || '',
+    searchQuery:document.getElementById('searchInputDesktop')?.value
+      || document.getElementById('searchInputMobile')?.value
+      || '',
+    searchOverlayOpen:!!document.getElementById('searchOverlay')?.classList.contains('open'),
+    filters:Object.fromEntries(filterIds.map(id=>[id,document.getElementById(id)?.value ?? ''])),
+  };
 }
 
-function svCurrentDetailState(type){
+function svMediaModalVisible(){
+  const modal=document.getElementById('mediaModal');
+  return !!(modal && !modal.classList.contains('hidden') && modal.classList.contains('show') && currentMediaModalItem);
+}
+
+function svCurrentDetailState(type, extra={}){
   const modal = type === 'series' ? document.getElementById('seriesModal') : type === 'media' ? document.querySelector('#mediaModal .media-modal-content') : document.getElementById('movieDetailModal');
+  if(type === 'media'){
+    const browse=svCurrentBrowseState();
+    const item=currentMediaModalItem;
+    const mediaKey=svStableMediaKey(item,currentMediaModalType);
+    const snapshot=svPlaybackSessionApi?.createModalNavigationSnapshot?.({
+      mediaType:currentMediaModalType,
+      mediaId:svPlaybackMediaId(item,mediaKey),
+      mediaKey,
+      selectedSeason:extra.season ?? currentSeason,
+      selectedEpisode:extra.epIdx ?? svMediaModalSelectedEpisode,
+      modalScrollTop:modal?.scrollTop || 0,
+      browsingView:browse,
+      browsingScrollTop:browse.scrollY,
+      theme:document.documentElement.getAttribute('data-theme') || preferredTheme(),
+      historyVersion:2,
+    }) || {
+      view:'detail',
+      type:'media',
+      source:'media-modal',
+      mediaType:currentMediaModalType,
+      mediaId:svPlaybackMediaId(item,mediaKey),
+      mediaKey,
+      key:mediaKey,
+      selectedSeason:extra.season ?? currentSeason,
+      selectedEpisode:extra.epIdx ?? svMediaModalSelectedEpisode,
+      modalScrollTop:modal?.scrollTop || 0,
+      browsingView:browse,
+      browsingScrollTop:browse.scrollY,
+      theme:document.documentElement.getAttribute('data-theme') || preferredTheme(),
+      historyVersion:2,
+    };
+    return {
+      ...snapshot,
+      browse,
+      season:snapshot.selectedSeason,
+      epIdx:snapshot.selectedEpisode,
+      scrollTop:snapshot.modalScrollTop,
+    };
+  }
   return {
     view:'detail',
     type,
@@ -7756,24 +8081,106 @@ function svPushDetailHistory(type){
 }
 
 function svRememberPlaybackReturnState(type, extra={}){
-  if(type === 'movie')svPlayerReturnState = svCurrentDetailState('movie');
+  if(svMediaModalVisible()){
+    svPlayerReturnState=svCurrentDetailState('media',extra);
+    svPlayerReturnItem=currentMediaModalItem;
+  }else if(type === 'movie'){
+    svPlayerReturnState = svCurrentDetailState('movie');
+    svPlayerReturnItem=currentDetailMovie;
+  }
   else if(type === 'series')svPlayerReturnState = {...svCurrentDetailState('series'), ...extra};
-  else if(type === 'media')svPlayerReturnState = svCurrentDetailState('media');
-  else svPlayerReturnState = {view:'browse', browse:svCurrentBrowseState()};
+  else if(type === 'media'){
+    svPlayerReturnState = svCurrentDetailState('media',extra);
+    svPlayerReturnItem=currentMediaModalItem;
+  }else{
+    svPlayerReturnState = {view:'browse', browse:svCurrentBrowseState()};
+    svPlayerReturnItem=null;
+  }
 }
 
 function svPushPlayerHistory(){
   if(svDetailHistoryLock || !history?.pushState)return;
-  if(history.state?.view === 'player')return;
+  if(history.state?.view === 'player'){
+    if(svPlayerReturnState && history.replaceState){
+      history.replaceState({...history.state,returnTo:svPlayerReturnState},'',location.href);
+    }
+    return;
+  }
+  if(history.state?.view === 'detail' && svPlayerReturnState?.view === 'detail' && history.replaceState){
+    history.replaceState(svPlayerReturnState,'',location.href);
+  }
   history.pushState({view:'player', returnTo:svPlayerReturnState || {view:'browse', browse:svCurrentBrowseState()}}, '', location.href);
+}
+
+function svResolveMediaModalItem(state){
+  const type=state?.mediaType === 'tv' ? 'tv' : 'movie';
+  const key=String(state?.mediaKey || state?.key || '');
+  if(svPlayerReturnItem && svStableMediaKey(svPlayerReturnItem,type) === key)return svPlayerReturnItem;
+  if(currentMediaModalItem && svStableMediaKey(currentMediaModalItem,type) === key)return currentMediaModalItem;
+  const source=type === 'tv' ? series : movies;
+  return source.find(item=>svStableMediaKey(item,type) === key)
+    || source.find(item=>String(svPlaybackMediaId(item,'')) === String(state?.mediaId || ''))
+    || null;
+}
+
+function svRestoreBrowseState(state={}){
+  const browse=state.browsingView || state.browse || {};
+  if(browse.tab && browse.tab !== currentTab)switchTab(browse.tab);
+  for(const [id,value] of Object.entries(browse.filters || {})){
+    const control=document.getElementById(id);
+    if(control)control.value=value;
+  }
+  if(browse.tab === 'movies-browse')filterMoviesPage();
+  if(browse.tab === 'series')filterSeriesPage();
+  const searchInput=document.getElementById('searchInputDesktop') || document.getElementById('searchInputMobile');
+  if(searchInput && typeof browse.searchQuery === 'string')searchInput.value=browse.searchQuery;
+  requestAnimationFrame(()=>window.scrollTo(0,Number(state.browsingScrollTop ?? browse.scrollY)||0));
 }
 
 function svRestoreDetailState(state){
   if(!state || state.view !== 'detail')return false;
   const restoreScroll = ()=>{
     const modal = state.type === 'series' ? document.getElementById('seriesModal') : state.type === 'media' ? document.querySelector('#mediaModal .media-modal-content') : document.getElementById('movieDetailModal');
-    if(modal)modal.scrollTop = Number(state.scrollTop) || 0;
+    if(modal)modal.scrollTop = Number(state.modalScrollTop ?? state.scrollTop) || 0;
   };
+  if(state.source === 'media-modal' || state.type === 'media'){
+    const item=svResolveMediaModalItem(state);
+    if(!item){
+      svRestoreBrowseState(state);
+      return false;
+    }
+    const mediaType=state.mediaType === 'tv' ? 'tv' : 'movie';
+    const previousKey=currentMediaModalItem ? svStableMediaKey(currentMediaModalItem,currentMediaModalType) : '';
+    const nextKey=svStableMediaKey(item,mediaType);
+    currentMediaModalItem=item;
+    currentMediaModalType=mediaType;
+    svPlayerReturnItem=item;
+    document.getElementById('movieDetailModal')?.classList.remove('open');
+    document.getElementById('seriesModal')?.classList.remove('open');
+    if(mediaType === 'tv'){
+      currentShow=item;
+      currentSeason=Number(state.selectedSeason ?? state.season) || currentSeason || 1;
+      svMediaModalSelectedEpisode=Number.isFinite(Number(state.selectedEpisode ?? state.epIdx))
+        ? Number(state.selectedEpisode ?? state.epIdx)
+        : null;
+    }else{
+      currentDetailMovie=item;
+      svMediaModalSelectedEpisode=null;
+    }
+    const mediaModal=document.getElementById('mediaModal');
+    mediaModal?.classList.remove('hidden');
+    mediaModal?.classList.add('show');
+    mediaModal?.setAttribute('aria-hidden','false');
+    document.body.style.overflow='hidden';
+    if(state.theme)applyTheme(state.theme,false);
+    if(previousKey !== nextKey)populateModal(item);
+    else if(mediaType === 'tv')renderMediaModalEpisodes(item,currentSeason);
+    updateMediaModalWishlistButton();
+    updateMovieWatchlistButtons();
+    updateSeriesWatchlistButton();
+    requestAnimationFrame(restoreScroll);
+    return true;
+  }
   if(state.type === 'movie' && currentDetailMovie){
     document.getElementById('movieDetailModal')?.classList.add('open');
     setDetailPageScrollLock(true);
@@ -7790,16 +8197,7 @@ function svRestoreDetailState(state){
     requestAnimationFrame(restoreScroll);
     return true;
   }
-  if(state.type === 'media' && currentMediaModalItem){
-    document.getElementById('mediaModal')?.classList.remove('hidden');
-    document.getElementById('mediaModal')?.classList.add('show');
-    document.getElementById('mediaModal')?.setAttribute('aria-hidden','false');
-    document.body.style.overflow='hidden';
-    requestAnimationFrame(restoreScroll);
-    return true;
-  }
-  if(state.browse?.tab)switchTab(state.browse.tab);
-  requestAnimationFrame(()=>window.scrollTo(0,Number(state.browse?.scrollY)||0));
+  svRestoreBrowseState(state);
   return false;
 }
 
@@ -8200,10 +8598,11 @@ async function playMovieFromDetail(){
   recordWatchHistory(movieIdentity(movie), movie.name, movie.genre||'', 'movie');
   svRememberPlaybackReturnState('movie');
   svPushPlayerHistory();
+  const playbackContext=svPlaybackContextForMovie(movie);
   if(movie.streamUrl){
-    playFtpMedia(movie.streamUrl, movie.name, movie.year || '');
+    playFtpMedia(movie.streamUrl, movie.name, movie.year || '',playbackContext);
   }else{
-    playMedia(movie.id, movie.name, movie.year || '');
+    playMedia(movie.id, movie.name, movie.year || '',playbackContext);
   }
 }
 

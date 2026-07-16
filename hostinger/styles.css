@@ -1606,6 +1606,7 @@ nav.solid{background:var(--nav-bg) !important;border-color:var(--border)}
   .media-modal-season-row select{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:9px 12px;font-weight:800}
   .media-modal-episodes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
   .media-modal-episode{display:flex;gap:14px;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-glass);color:var(--text);text-align:left;cursor:pointer}
+  .media-modal-episode.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
   .media-modal-episode img{width:150px;aspect-ratio:16/9;object-fit:cover;border-radius:7px;background:var(--surface)}
   .media-modal-episode-copy{min-width:0;align-self:center}
   .media-modal-episode-number{color:var(--text-muted);font-size:.72rem;font-weight:900;text-transform:uppercase;letter-spacing:.06em}

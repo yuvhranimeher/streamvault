@@ -10,6 +10,7 @@ const REQUIRED_FRONTEND_FILES = [
   'styles.css',
   'fifa-fast.js',
   'frontend-player-ui.js',
+  'frontend-playback-session.js',
   'app-v3.js',
   'details-exact-v5.js',
   'home.js',

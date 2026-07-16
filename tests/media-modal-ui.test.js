@@ -26,9 +26,29 @@ for (const relative of ['public/app.js', 'hostinger/app-v3.js']) {
   assert(source.includes('function svPushDetailHistory'), `${relative} is missing detail history state`);
   assert(source.includes('function svPushPlayerHistory'), `${relative} is missing player history state`);
   assert(source.includes("window.addEventListener('popstate'"), `${relative} is missing browser Back handling`);
-  assert(source.includes('svRestoreDetailState(svPlayerReturnState)'), `${relative} must restore the launching detail modal after player close`);
+  assert(source.includes("source:'media-modal'"), `${relative} must mark modern modal navigation snapshots explicitly`);
+  assert(source.includes('createModalNavigationSnapshot'), `${relative} must capture a deterministic modern modal snapshot`);
+  assert(source.includes('selectedSeason:extra.season ?? currentSeason'), `${relative} must preserve the selected season`);
+  assert(source.includes('selectedEpisode:extra.epIdx ?? svMediaModalSelectedEpisode'), `${relative} must preserve the selected episode`);
+  assert(source.includes('modalScrollTop:modal?.scrollTop || 0'), `${relative} must preserve modern modal scroll position`);
+  assert(source.includes('browsingView:browse'), `${relative} must preserve the browsing view below the modal`);
+  assert(source.includes('filters:Object.fromEntries'), `${relative} must preserve category and filter state`);
+  assert(source.includes("theme:document.documentElement.getAttribute('data-theme')"), `${relative} must preserve the active theme`);
+  assert(source.includes('if(svMediaModalVisible())'), `${relative} must prefer modern modal return state over legacy launchers`);
+  assert(source.includes("const returnsToModernModal=returnState?.source === 'media-modal'"), `${relative} must retain the underlying browsing DOM for modern modal playback`);
+  assert(source.includes("history.state?.view === 'player'"), `${relative} must unwind player history instead of duplicating modal state`);
+  assert(source.includes("history.replaceState({...history.state,returnTo:svPlayerReturnState}"), `${relative} must update an existing player entry without adding history duplicates`);
+  assert(source.includes('closePlayer({fromHistory:true,restore:false,returnState})'), `${relative} must teardown playback exactly once during browser Back`);
+  assert(source.includes("document.getElementById('movieDetailModal')?.classList.remove('open')"), `${relative} must suppress the obsolete movie detail renderer`);
+  assert(source.includes("document.getElementById('seriesModal')?.classList.remove('open')"), `${relative} must suppress the obsolete series detail renderer`);
+  assert(source.includes('svResolveMediaModalItem(state)'), `${relative} must reject stale media restoration`);
+  assert(source.includes('token !== mediaModalRenderToken || currentMediaModalItem !== item'), `${relative} must prevent stale async modal data from overwriting the restored title`);
+  assert(source.includes('updateMediaModalWishlistButton();'), `${relative} must resynchronize wishlist state after restoration`);
+  assert(source.includes("if(!returnsToModernModal){\n    buildRows();"), `${relative} must keep the existing browsing DOM beneath modern modal playback`);
+  assert(source.includes('if(!item){\n      svRestoreBrowseState(state);'), `${relative} must safely fall back for direct or stale player links`);
   assert(!source.includes('closeMovieDetail();\n  if(movie.streamUrl)'), `${relative} must not close the movie detail modal before playback`);
   assert(!source.includes('closeMediaModal();\n    playSeriesEpisode'), `${relative} must not close the desktop series modal before playback`);
+  assert(!source.includes("svPlayerReturnState = svCurrentDetailState('movie');\n  else if(type === 'series')"), `${relative} must not unconditionally overwrite modern modal return state`);
 }
 
 for (const relative of ['public/index.html', 'hostinger/index.html']) {
@@ -45,6 +65,7 @@ for (const relative of ['public/styles.css', 'hostinger/styles.css']) {
   assert(css.includes('.player-subtitle-title{font-size:.72rem;color:rgba(255,255,255,.78);margin-top:2px;text-shadow:0 1px 4px rgba(0,0,0,.9)}'), `${relative} must keep player metadata visible`);
   assert(css.includes('.media-modal .details-section{position:relative;z-index:3;padding:8px 6% 64px;background:var(--bg);color:var(--text)}'), `${relative} must theme desktop modal content`);
   assert(css.includes('.media-modal-episode{display:flex;gap:14px;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-glass);color:var(--text);text-align:left;cursor:pointer}'), `${relative} must theme modal episode cards`);
+  assert(css.includes('.media-modal-episode.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}'), `${relative} must show the restored episode selection`);
   assert(css.includes('.modal-wishlist-btn.active{background:var(--accent);color:var(--accent-contrast)}'), `${relative} must show active modal wishlist state`);
   assert(css.includes('.sm-watchlist.active{background:var(--accent);color:var(--accent-contrast)}'), `${relative} must show active series wishlist state`);
 }

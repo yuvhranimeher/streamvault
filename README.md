@@ -1,603 +1,375 @@
-﻿# StreamVault / Insomnia Tapes
+# StreamVault / Insomnia Tapes
 
-StreamVault is a self-hosted, Netflix-style streaming website project for movies, series, live TV, and software/game downloads.
+A self-hosted streaming and media-discovery platform for movies, series, live TV, and a redirect-based software/download catalog.
 
-Production domain:
+> **Production:** [streamvault.fit](https://streamvault.fit)  
+> **Backend:** [backend.streamvault.fit](https://backend.streamvault.fit)  
+> **Repository:** `yuvhranimeher/streamvault`
 
-- https://insomniatapes.lol
+## Current production status
 
-Repository:
+| Component | Production role |
+|---|---|
+| Frontend | Static deployment on Hostinger |
+| Backend | Node.js/Express on a Windows 10 Mac mini |
+| Public routing | Cloudflare DNS, cache rules, and Cloudflare Tunnel |
+| Backend origin | `http://127.0.0.1:3000` on the Mac mini |
+| Catalog | 22,171 movies and 3,431 series in the current generated catalog |
+| Media sources | Local media plus BDIX/FTP catalogs |
+| Playback | Direct HTTP range playback first; HLS/FFmpeg compatibility paths when required |
+| Experimental backend | Haskell shadow/parity migration; not the production backend |
 
-- mahmud2248/streamvault
+The frontend and backend are intentionally separated. The site shell can remain available when the Mac mini is offline, while search, dynamic APIs, playback, and live relay fail gracefully until the backend returns.
 
----
+## Architecture
 
-## 1. Project Purpose
+```mermaid
+flowchart LR
+    U[Browser / TV / Mobile] --> C[Cloudflare]
 
-StreamVault is designed as a personal streaming platform that can:
+    C -->|streamvault.fit static requests| H[Hostinger frontend]
+    C -->|backend.streamvault.fit| T[Cloudflare Tunnel]
+    C -->|compatibility routes: /api, /live-relay, /poster-cache| T
 
-- index large movie and series catalogs
-- scan BDIX/FTP media servers
-- display a Netflix-like homepage
-- stream movies and shows
-- support live TV channels
-- provide a software/game download hub
-- load posters and metadata
-- keep desktop playback fast through direct play
-- use mobile HLS/FFmpeg only when needed
-- allow future backend migration from Node.js to Haskell
+    H -->|API and playback requests| B[Node.js backend :3000]
+    T --> B
 
-The project focuses on speed, large catalog handling, direct playback, mobile compatibility, and clean frontend presentation.
+    B --> F[Generated movie and series catalog]
+    B --> M[Local media]
+    B --> D[BDIX / FTP sources]
+    B --> L[Live TV upstreams]
+    B --> X[FFmpeg / FFprobe]
+    B --> P[Poster and metadata cache]
+```
 
----
+### Production request flow
 
-## 2. Main Technology Stack
+1. `streamvault.fit` serves the static UI from Hostinger.
+2. `hostinger/runtime-config.js` defines `https://backend.streamvault.fit` as the backend origin.
+3. Cloudflare Tunnel forwards backend traffic to the Mac mini on port `3000`.
+4. Compatibility rules on the primary domain can forward `/api/*`, `/live-relay/*`, and `/poster-cache*` to the same backend.
+5. Static images, CSS, JavaScript, SVG, and fonts may be cached by Cloudflare; API and live-stream routes must not be cached as static content.
+
+## Core capabilities
+
+### Movies and series
+
+- Large generated movie and series catalogs
+- Curated Netflix-style discovery rows
+- Full-catalog search beyond homepage items
+- Movie and series detail modals
+- Seasons, episodes, metadata, artwork, trailers, and similar titles
+- Watch history, continue watching, and progress persistence
+- Responsive movie and series browsing
+
+### Homepage and discovery
+
+The homepage uses a compact prebuilt feed, progressive row rendering, poster optimization, deduplication, and lazy loading. Current collections include studio, language, genre, mood, franchise, recently added, top-rated, and activity-based rows.
+
+Homepage sections are treated as production-critical and must not be removed during backend, catalog, or frontend refactors.
+
+### Playback
+
+The playback strategy is deliberately conservative:
+
+1. Prefer direct playback of the original source.
+2. Preserve HTTP `Range` support for seeking.
+3. Use native HLS where supported.
+4. Use HLS.js as the browser fallback.
+5. Use FFmpeg only for incompatible codecs, containers, mobile compatibility, or heavy-content fallback.
+6. Preserve audio-track and subtitle selection.
+7. Keep manual language switching available after automatic track selection.
+
+Desktop direct play must not be replaced with unnecessary transcoding.
+
+### Live TV
+
+- Channel data is loaded from `channels.json`
+- Sports, news, entertainment, movie, and children’s categories are supported
+- Channel cards include logos and availability metadata
+- Public playback uses the backend live relay
+- Relay sessions expose status and stop controls
+- Upstream streams may not provide adaptive-bitrate variants, so buffering can still depend on the source
+
+### Software and download catalog
+
+- Windows, Android, games, console files, operating systems, and archives
+- Filtered and searchable card interface
+- Progressive rendering for large datasets
+- Redirect-based downloads to avoid proxying large files through the Mac mini
+- Download route: `/download/:id`
+
+### Posters and artwork
+
+- TMDB artwork enrichment
+- Poster proxy/cache support
+- Device-aware image sizing
+- Lazy loading and eager loading budgets
+- Backdrop and placeholder fallbacks
+- High-resolution movie and series detail artwork
+- Protection against late low-resolution image replacement
+
+## Technology stack
+
+### Frontend
+
+- HTML5
+- CSS
+- Vanilla JavaScript
+- Versioned Service Worker
+- HLS.js
+- Native browser media APIs
+- Hostinger static hosting
 
 ### Backend
 
 - Node.js
 - Express.js
-- CommonJS modules
-- JSON catalog files
-- Optional SQL/database migration work
-- Experimental Haskell backend migration
+- CommonJS
+- JSON-generated catalogs and caches
+- FFmpeg and FFprobe
+- HTTP range streaming
+- Live TV relay
+- TMDB/metadata enrichment
 
-### Frontend
+### Infrastructure
 
-- HTML
-- CSS
-- Vanilla JavaScript
-- Service Worker
-- Progressive/lazy rendering
-- TMDB poster optimization
-- Mobile-friendly layout
+- Windows 10 production host
+- Cloudflare Tunnel
+- Cloudflare DNS and static-asset caching
+- Hostinger frontend hosting
+- Git and GitHub release tags
+- Tailscale/SSH for remote administration
 
-### Media Tools
+### Experimental migration
 
-- FFmpeg
-- FFprobe
-- HLS.js
-- Native browser video playback
+- Haskell backend prototypes
+- Shadow API execution
+- JSON parity testing
+- Route-by-route migration only
 
-### Network / Deployment
+Node.js remains the production backend. Playback, live relay, and FFmpeg routes must migrate last.
 
-- Windows 10 server
-- Local Node server
-- Cloudflare Tunnel for public access
-- BDIX/FTP media sources
-- GitHub repository for version control
+## Repository layout
 
----
+```text
+streamvault/
+├── hostinger/                  # Production static frontend
+│   ├── index.html
+│   ├── runtime-config.js
+│   ├── app-v3.js
+│   ├── home.js
+│   ├── details.js
+│   ├── downloads.js
+│   ├── styles.css
+│   └── sw-20260714-v4.js
+├── server.js                   # Production Node.js backend
+├── channels.json               # Live TV channel definitions
+├── catalog.json                # Generated movie/series catalog
+├── scan-output/                # Scanner output and cleaned catalogs
+├── cache/                      # HLS and runtime cache data
+├── middleware/                 # Request tracking and middleware
+├── routes/                     # Dashboard and modular routes
+├── package.json
+└── README.md
+```
 
-## 3. Server Hardware Plan
+Some branches may retain legacy root frontend files for rollback or migration compatibility. The production frontend source of truth is the Hostinger-specific frontend tree on the active frontend branch.
 
-Current main server:
+## Important backend routes
 
-- 2011 Mac Mini
-- Windows 10
-- Runs main website
-- Runs Node.js backend
-- Handles catalog/API/frontend/direct play
-- Should avoid heavy FFmpeg workloads
+### Status and catalogs
 
-Planned transcoding server:
+- `GET /api/version`
+- `GET /api/home-feed`
+- `GET /api/catalog-stats`
+- `GET /api/movies`
+- `GET /api/series`
+- `GET /api/search`
+- `GET /api/section/:key`
+- `GET /api/title-details`
+- `GET /api/details/:type/:id`
 
-- M1 Mac Mini
-- 16GB RAM
-- 256GB SSD
-- Dedicated for mobile HLS/transcoding/cache
-- Used for popular pre-transcoded content
+### Playback and media
 
-Architecture goal:
-
-- 2011 Mac Mini = website/API/catalog/direct-play server
-- M1 Mac Mini = mobile transcoding/HLS/cache server
-- Desktop users = direct play
-- Mobile users = optimized HLS when needed
-
----
-
-## 4. Core Project Rule
-
-Desktop playback must direct-play original files whenever possible.
-
-FFmpeg should not run unnecessarily for desktop users.
-
-Mobile playback may use FFmpeg/HLS only when required.
-
-Playback and FFmpeg routes are the riskiest parts of the project and should be changed last.
-
----
-
-## 5. Main Files
-
-### Backend
-
-- `server.js`
-- `package.json`
-- `package-lock.json`
-
-### Frontend
-
-- `index.html`
-- `styles.css`
-- `app.js`
-- `home.js`
-- `search.js`
-- `details.js`
-- `player.js`
-- `downloads.js`
-- `livetv.js`
-- `boot.js`
-- `sw.js`
-
-### Catalog / Cache Files
-
-- `catalog.json`
-- `home-feed.json`
-- `section-cache.json`
-- `poster-cache.json`
-- `episode-title-cache.json`
-- `popular-titles-cache.json`
-- `channels.json`
-- `rejected-media.json`
-
-### Crawler / Utility Scripts
-
-- `discover-servers.js`
-- `ftp-scan.js`
-- `deep-media-crawler.js`
-- `check-root.js`
-- `scan-media-catalogs.js`
-- `make-integration-list.js`
-- `migrate-json-to-sql.js`
-- `organize-files.js`
-- `build-clean-catalog.js`
-
----
-
-## 6. Main Features
-
-### Movies
-
-StreamVault supports movie browsing, metadata display, poster loading, search, playback, and homepage sections.
-
-Movie APIs include:
-
-- `/api/movies`
-- `/api/details/movie/:id`
-- `/api/search`
-- `/api/section/:id`
-
-### Series
-
-Series support includes:
-
-- show cards
-- seasons
-- episodes
-- episode titles
-- episode thumbnails
-- series metadata
-- playback routing
-
-Series APIs include:
-
-- `/api/series`
-- `/api/details/series/:id`
-
-### Homepage
-
-The homepage is designed as a curated Netflix-style discovery page.
-
-Important homepage rows include:
-
-- Netflix Originals
-- Marvel Studios
-- DC
-- Trending Now
-- Series
-- New to StreamVault
-- Universal Pictures
-- Disney
-- Warner Bros
-- HBO
-- Apple TV+
-- Indian Movies & Drama
-- Anime
-- Korean Drama
-- Horror Nights
-- Cyberpunk & Sci-Fi
-- Mindfuck Movies
-- Cult Classics
-- A24 Collection
-- 90s Nostalgia
-- Midnight Cinema
-- True Crime
-- Psychological Thriller
-- Adult Animation
-- Post-Apocalyptic
-- Feel Good Movies
-- Dark Comedy
-- Time Travel
-- Space & AI
-- Crime Syndicates
-- Zombie Universe
-- Indie Gems
-- Hidden Masterpieces
-- Live Concerts
-- Documentary Vault
-- Studio Ghibli
-- Romance After Midnight
-- Recently Added
-- Most Watched Today
-- Continue Watching
-- Top Rated
-- All Movies
-
-Important rule:
-
-Homepage rows must not be removed accidentally during backend/frontend changes.
-
-### Search
-
-Search is designed to work across the full catalog, including titles not shown on the homepage.
-
-Search goals:
-
-- fast results
-- movie and series support
-- typo/fuzzy-friendly behavior
-- phrase priority
-- clean title matching
-- avoid showing raw FTP junk filenames
-
-### Details Page
-
-Details pages may include:
-
-- title
-- poster
-- backdrop
-- overview
-- year
-- rating
-- runtime
-- language
-- genre
-- cast
-- crew
-- director
-- production companies
-- trailers
-- similar titles
-- more by director
-- episode list for series
-- playback information
-
-### Player
-
-The player supports:
-
-- direct file playback
-- HLS playback
-- mobile optimized playback
-- resume/continue watching
-- watch progress
-- subtitles where available
-- audio track handling where available
-- live TV playback
-- HLS.js fallback
-
-Critical rule:
-
-Do not break direct desktop playback.
+- `GET /api/playback/local/:id`
+- `GET /api/playback/local/:id/stream`
+- `GET /stream/:id`
+- `GET /api/playback/ftp`
+- `GET /api/ftp/stream`
+- `GET /api/ftp/proxy`
+- `GET /api/mobile-hls/local/:id/index.m3u8`
+- `GET /api/mobile-hls/ftp/index.m3u8`
+- `GET /api/media-info/:id`
+- `GET /api/duration/:id`
+- `GET /api/qualities/:id`
+- `GET /api/subtitles/:id`
 
 ### Live TV
 
-Live TV uses:
+- `GET /api/channels`
+- `GET /live-relay/:channelId/index.m3u8`
+- `GET /live-relay/:channelId/:file`
+- `GET /api/live-relay/status`
+- `POST /api/live-relay/stop`
 
-- `channels.json`
-- `livetv.js`
-- `/api/channels`
+### Artwork and downloads
 
-Supported channel categories include:
+- `GET /poster-cache`
+- `GET /api/downloads`
+- `GET /download/:id`
 
-- Sports
-- News
-- Entertainment
+Route behavior can vary between branches. Check `server.js` before changing frontend contracts.
 
-Live TV cards can show channel names, colors, logos, and stream URLs.
+## Local backend setup
 
-### Software / Download Hub
+### Requirements
 
-The download hub supports software, games, APKs, archives, ISO files, console files, and other downloadable items.
+- Node.js
+- npm
+- FFmpeg
+- FFprobe
+- Access to the configured catalogs or media sources
 
-Important file:
-
-- `downloads.js`
-
-Download hub goals:
-
-- list large software catalogs
-- avoid rendering too many cards at once
-- use pagination/progressive rendering
-- redirect downloads instead of proxying files
-- keep server bandwidth low
-- avoid storing every external file locally
-
-Download route:
-
-- `/download/:id`
-
----
-
-## 7. Data Pipeline
-
-Basic StreamVault data flow:
-
-```text
-BDIX/FTP source
--> crawler/scanner
--> raw catalog
--> title cleanup
--> metadata enrichment
--> poster cache
--> dedupe
--> API response
--> frontend rendering
--> playback/download
-```
-
-Catalog cleanup goals:
-
-- remove duplicates
-- normalize dirty filenames
-- extract years
-- reject invalid files
-- prefer better posters
-- prefer higher quality sources
-- keep homepage sections clean
-
----
-
-## 8. Poster System
-
-Poster system goals:
-
-- load TMDB posters quickly
-- cache poster images
-- use smaller image sizes for mobile
-- avoid broken poster URLs
-- fallback to backdrop when poster is missing
-- fallback to placeholder when both are missing
-- avoid heavy blur effects
-- keep scrolling smooth
-
-Important files:
-
-- `poster-cache.json`
-- `sw.js`
-- `app.js`
-- `details.js`
-
----
-
-## 9. Service Worker
-
-Service worker file:
-
-- `sw.js`
-
-Responsibilities:
-
-- cache static JS/CSS assets
-- cache poster requests
-- briefly cache home feed API
-- clear stale cache versions
-- improve repeat load speed
-
-When frontend assets change, cache version should be updated.
-
----
-
-## 10. API Routes
-
-Important API routes:
-
-- `/api/health`
-- `/api/home-feed`
-- `/api/movies`
-- `/api/series`
-- `/api/search`
-- `/api/section/:id`
-- `/api/details/:type/:id`
-- `/api/channels`
-- `/api/live/test/:id`
-- `/api/downloads`
-- `/download/:id`
-- `/poster-cache`
-
----
-
-## 11. Performance Rules
-
-StreamVault handles large catalogs, so performance is critical.
-
-Rules:
-
-- never render entire huge catalogs at once
-- use pagination
-- use progressive rendering
-- use lazy-loaded posters
-- use poster cache
-- avoid blocking the browser main thread
-- avoid loading 10k+ cards in one render
-- avoid unnecessary FFmpeg
-- keep homepage rows limited and curated
-- keep full catalog searchable
-- use mobile-safe scrolling
-- keep horizontal overflow disabled on mobile details pages
-
----
-
-## 12. Mobile Rules
-
-Mobile goals:
-
-- vertical-only scrolling
-- no sideways page movement
-- optimized posters
-- HLS playback where needed
-- smooth details page
-- stable bottom navigation
-- safe layout for iPhone Safari
-- no heavy background effects
-
----
-
-## 13. Haskell Migration Plan
-
-Long-term goal:
-
-Move backend APIs from Node.js to Haskell safely while preserving exact frontend API compatibility.
-
-Migration order:
-
-1. Downloads API
-2. Movies API
-3. Home-feed API
-4. Series API
-5. Search API
-6. Section APIs
-7. Details/TMDB APIs
-8. Live TV APIs
-9. Playback/direct stream routes
-10. FFmpeg/HLS routes last
-
-Reason:
-
-Playback and FFmpeg are the riskiest systems and must remain stable until all safer APIs are proven.
-
-Current strategy:
-
-- Node.js remains production backend
-- Haskell runs as shadow/test backend
-- compare JSON parity before switching frontend
-- migrate one API group at a time
-- never break working Node routes
-
----
-
-## 14. Git Branch Strategy
-
-The project uses branches for testing risky changes.
-
-Common branch types:
-
-- stable master branch
-- Haskell migration branches
-- frontend shadow API branches
-- backend parity testing branches
-- safe tool/prototype branches
-
-Rule:
-
-Do not merge large experimental branches into master unless tested.
-
-For small safe changes like README updates, commit directly to master or cherry-pick only the specific README commit.
-
----
-
-## 15. Development Rules
-
-When changing this project:
-
-- preserve playback
-- preserve desktop direct play
-- preserve mobile streaming
-- preserve live TV
-- preserve search
-- preserve details pages
-- preserve TMDB metadata
-- preserve downloads section
-- preserve continue watching
-- preserve watch history
-- preserve homepage rows
-- preserve service worker behavior
-- preserve poster cache
-- preserve UI design
-- preserve mobile layout
-- preserve existing APIs
-
-Avoid:
-
-- deleting homepage sections
-- changing all frontend files blindly
-- forcing FFmpeg on desktop
-- rendering huge catalogs all at once
-- showing raw FTP filenames
-- polluting Marvel/DC/Netflix rows
-- breaking poster cache
-- breaking mobile scrolling
-- merging experimental branches into master without testing
-
----
-
-## 16. Install
+### Install
 
 ```bash
 npm install
 ```
 
----
-
-## 17. Run
+### Run
 
 ```bash
-npm start
+node server.js
 ```
 
-Then open:
+The backend listens on port `3000` unless `PORT` is provided.
 
-```text
-http://localhost:3000
-```
-
----
-
-## 18. Health Check
+### Verify
 
 ```bash
-curl http://127.0.0.1:3000/api/health
+curl http://127.0.0.1:3000/api/version
+curl http://127.0.0.1:3000/api/catalog-stats
+curl http://127.0.0.1:3000/api/channels
 ```
 
----
+## Configuration
 
-## 19. Common Local Test URLs
+Common runtime settings include:
+
+- `PORT`
+- `FFMPEG_BIN` or `FFMPEG_PATH`
+- `FFPROBE_BIN` or `FFPROBE_PATH`
+- `OMDB_API_KEY`
+- `YOUTUBE_API_KEY`
+- `MOBILE_HLS_IDLE_MS`
+- `MOBILE_HLS_MAX_SESSIONS`
+- `MOBILE_HLS_FFMPEG_THREADS`
+- `MOBILE_HLS_MAX_WIDTH`
+- `MOBILE_HLS_MAX_FPS`
+- `MOBILE_HLS_VIDEO_MAXRATE`
+- `MOBILE_HLS_VIDEO_BUFSIZE`
+- `MOBILE_HLS_AUDIO_BITRATE`
+
+The frontend backend origin is configured separately in `hostinger/runtime-config.js`.
+
+Do not commit API tokens, tunnel credentials, private upstream URLs, or machine-specific secrets.
+
+## Service Worker and caching
+
+Production uses a versioned service worker rather than relying only on an unversioned `sw.js`.
+
+Current frontend baseline:
 
 ```text
-http://127.0.0.1:3000
-http://127.0.0.1:3000/api/home-feed
-http://127.0.0.1:3000/api/movies
-http://127.0.0.1:3000/api/series
-http://127.0.0.1:3000/api/channels
-http://127.0.0.1:3000/api/downloads
+/sw-20260714-v4.js
 ```
 
----
+Rules:
 
-## 20. Project Status
+- register with `updateViaCache: "none"`
+- version cache namespaces when frontend assets change
+- serve `/`, `/index.html`, and service-worker files without stale HTML caching
+- cache static assets such as images, CSS, JavaScript, SVG, and fonts
+- do not cache `/api/*` or `/live-relay/*` as static files
+- retain graceful offline behavior for the frontend shell
 
-StreamVault is an active personal streaming website project.
+## Performance rules
 
-Current production direction:
+- Never render the full catalog in one DOM operation
+- Paginate or progressively render large result sets
+- Keep the homepage feed compact and prebuilt
+- Lazy-load noncritical artwork
+- Limit eager image requests
+- Deduplicate titles and poster identities across homepage rows
+- Avoid blocking metadata work during first paint
+- Preserve HTTP range streaming and seek behavior
+- Limit concurrent FFmpeg sessions
+- Clean idle HLS sessions and temporary cache files
+- Keep backend failures from breaking the static frontend shell
 
-- Node.js server remains primary
-- Haskell backend migration is experimental/shadow
-- homepage and playback stability are highest priority
-- direct desktop playback must remain intact
-- mobile HLS should be optimized and cached
-- software/download hub should stay redirect-based
-- full catalog search should remain available
-- curated homepage should remain fast and clean
+## Production safety rules
+
+Before deployment, preserve all of the following:
+
+- Desktop direct playback
+- Mobile playback fallback
+- Movie and series hydration
+- Live TV relay
+- Audio and subtitle selection
+- Search across the full catalog
+- Homepage rows and ordering
+- Poster cache behavior
+- High-resolution detail artwork
+- Continue watching and watch history
+- Download redirects
+- Service-worker update behavior
+- Backend URL normalization
+- Offline/online state recovery
+
+Do not deploy broad playback changes together with unrelated UI or catalog refactors.
+
+## Branch and release strategy
+
+- `hostinger-frontend-only` — production-oriented static frontend branch
+- `stable-production-macmini` — Mac mini production baseline
+- feature branches — isolated playback, audio, UI, Haskell, and infrastructure work
+- annotated tags — stable rollback points before and after production changes
+
+Known production checkpoints include:
+
+- `stable-hostinger-playback-20260714`
+- `stable-before-audio-livev2-20260715`
+- `stable-production-frontend-20260716`
+- `production-modal-hd-artwork-20260716`
+- `production-modal-hd-artwork-v2-20260716`
+
+Experimental branches must not be merged into production without browser, playback, backend, and rollback verification.
+
+## Haskell migration policy
+
+The long-term migration remains incremental:
+
+1. Low-risk read-only APIs
+2. Download and catalog endpoints
+3. Homepage and section APIs
+4. Search and details APIs
+5. Live TV metadata APIs
+6. Playback planning
+7. Direct streams, relay, and FFmpeg last
+
+Each Haskell route must match the Node.js JSON contract before frontend traffic is switched.
+
+## Legal and operational notice
+
+StreamVault is a personal, self-hosted engineering project. Only index, stream, or distribute media and downloadable files that you are legally authorized to use. Repository documentation must not expose private infrastructure credentials or protected upstream sources.
+
+## Project priorities
+
+1. Playback stability
+2. Frontend availability independent of backend uptime
+3. Fast catalog discovery and search
+4. Reliable poster and metadata delivery
+5. Low backend bandwidth through direct play and redirects
+6. Controlled FFmpeg usage
+7. Safe, reversible infrastructure migration

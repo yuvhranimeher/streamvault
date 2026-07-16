@@ -63,6 +63,7 @@ assert.doesNotMatch(playbackSession, /dual[^]*return \{ language: 'hi'/i, 'Dual 
 
 assert.match(server, /selectAudioTrack\(\{/ , 'backend uses the centralized selector');
 assert.match(server, /requestedStreamIndex/, 'backend honors absolute manual stream requests');
+assert.match(server, /explicit-absolute-stream-request/, 'backend keeps an explicit FTP absolute stream authoritative');
 assert.match(server, /'-map', audioMap \|\| '0:a:0\?'/, 'HLS uses the selected audio map');
 assert.match(server, /audioMap: audioSelection\.audioMap/, 'remux paths receive the selected audio map');
 assert.match(server, /app\.get\('\/api\/subtitles\/:id'/, 'subtitle routes remain present');

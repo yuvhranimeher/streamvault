@@ -1465,6 +1465,16 @@ function selectedAudioTrack(){
   return availableAudio[currentAudioIdx] || availableAudio[0] || null;
 }
 
+function selectedAudioServerStreamIndex(track=selectedAudioTrack(), index=currentAudioIdx){
+  const discovered=audioTrackStreamIndex(track);
+  if(discovered !== null)return discovered;
+  if(track?.filenameHint){
+    const relative=audioTrackRelativeIndex(track,index);
+    return Number.isInteger(relative) && relative >= 0 ? relative + 1 : null;
+  }
+  return null;
+}
+
 function selectPreferredAudioTrack(context, options={}){
   const previous=currentAudioIdx;
   const decision=svPreferredAudioDecision(availableAudio,context);
@@ -1501,22 +1511,27 @@ function appendSelectedAudioParams(params, caller='appendSelectedAudioParams'){
     applyDiscovered:false,
   });
   const selected=selectedAudioTrack();
-  const streamIndex=selected?.streamIndex ?? selected?.sourceIndex;
-  if(Number.isFinite(streamIndex)){
-    const previous={
-      audio:params.get('audio'),
-      audioStream:params.get('audioStream'),
-    };
-    params.set('audio', String(Math.max(0,currentAudioIdx || 0)));
+  const streamIndex=selectedAudioServerStreamIndex(selected,currentAudioIdx);
+  const logicalIndex=Math.max(0,currentAudioIdx || 0);
+  const previous={
+    audio:params.get('audio'),
+    audioStream:params.get('audioStream'),
+  };
+  params.set('audio', String(logicalIndex));
+  if(streamIndex !== null){
     params.set('audioStream', String(streamIndex));
-    svAudioDebugAssignment(caller,previous,{
-      audio:currentAudioIdx,
-      audioStream:streamIndex,
-    },'authoritative server audio stream query',{
-      assignment:'server-audio-query-parameters',
-      target:audioDebugSummary(selected,currentAudioIdx),
-    });
+  }else{
+    params.delete('audioStream');
   }
+  svAudioDebugAssignment(caller,previous,{
+    audio:logicalIndex,
+    audioStream:streamIndex,
+  },streamIndex !== null
+    ? (selected?.filenameHint ? 'authoritative filename-mapped server audio query' : 'authoritative server audio stream query')
+    : 'authoritative relative server audio query',{
+    assignment:'server-audio-query-parameters',
+    target:audioDebugSummary(selected,currentAudioIdx),
+  });
 }
 
 function planOptionsNeedAudioMap(options={}){

@@ -8,6 +8,7 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 const appSource = read('hostinger/app-v3.js');
+const serverSource = read('server.js');
 const seriesOverlaySource = read('hostinger/series-modal-episodes-v7.js');
 const movieOverlaySource = read('hostinger/movie-play-button-v10.js');
 const playerOverlaySource = read('hostinger/player-runtime-v2.js');
@@ -161,8 +162,10 @@ function runAudioRuntimePath() {
     'audioTrackText',
     'audioTrackIsAudible',
     'audioTrackStreamIndex',
+    'audioTrackRelativeIndex',
     'audioDebugSummary',
     'selectedAudioTrack',
+    'selectedAudioServerStreamIndex',
     'setAppliedAudioIndex',
     'svAudioDebugAssignment',
     'svSetCurrentAudioIndex',
@@ -280,6 +283,17 @@ function runAudioRuntimePath() {
   }
   context.window.SV_AUDIO_DEBUG = false;
 
+  context.availableAudio = [
+    { index: 0, relativeIndex: 0, language: 'Hindi', title: 'Hindi', filenameHint: true },
+    { index: 1, relativeIndex: 1, language: 'English', title: 'English', filenameHint: true },
+  ];
+  context.currentAudioIdx = 1;
+  context.svMediaPlayerState.serverAudioIndex = 1;
+  const hintedParams = new URLSearchParams();
+  context.appendSelectedAudioParams(hintedParams, 'Breaking Bad filename fallback');
+  assert.equal(hintedParams.get('audio'), '1', 'filename fallback preserves the logical English audio index');
+  assert.equal(hintedParams.get('audioStream'), '2', 'filename fallback maps the second audio track to absolute stream 2');
+
   const manualHls = beginEnglishSeries('Game of Thrones', 'got-manual');
   context.recordManualAudioSelection(0, 'runtime harness manual Hindi');
   context.svApplyActiveAudioAuthority(manualHls, context.vid, 'setAudio', {
@@ -292,6 +306,59 @@ function runAudioRuntimePath() {
     reason: 'new session preferred language',
   });
   assert.equal(nextHls.audioTrack, 1, 'manual selection does not leak into the next playback session');
+}
+
+async function runBackendAbsoluteAudioPath() {
+  const tracks = [
+    { index: 1, streamIndex: 1, relativeIndex: 0, language: 'hin', codec: 'ac3', duration: 100, channels: 2 },
+    { index: 2, streamIndex: 2, relativeIndex: 1, language: 'eng', codec: 'aac', duration: 100, channels: 6 },
+  ];
+  const context = vm.createContext({
+    playbackAudioSelectionFromReq: req => ({
+      audioIdx: Number(req.query.audio),
+      audioStreamIdx: Number(req.query.audioStream),
+      audioMap: `0:${req.query.audioStream}`,
+      source: 'absolute-stream',
+    }),
+    isFtpPlaybackInput: () => true,
+    playbackTitleMetadata: () => ({}),
+    playbackAudioSelectionCacheKey: () => 'test',
+    playbackAudioSelectionCache: new Map(),
+    clonePlaybackAudioSelection: value => ({ ...value }),
+    getCachedAudioOnlyMediaInfo: async () => ({
+      audioTracks: tracks,
+      videoStartTime: 0,
+      videoIndex: 0,
+      videoCodec: 'hevc',
+    }),
+    streamStartSeconds: value => Number(value) || 0,
+    serverAudioTrackAbsoluteIndex: track => Number(track.streamIndex),
+    serverAudioCodecIsPlayable: track => /^(aac|ac3)$/.test(track.codec),
+    serverAudioTrackHasDuration: track => Number(track.duration) > 0,
+    serverAudioTrackIsAudible: track => Number(track.channels) > 0,
+    selectionFromAbsoluteAudio: (_req, track, source) => ({
+      audioIdx: track.relativeIndex,
+      audioStreamIdx: track.streamIndex,
+      audioMap: `0:${track.streamIndex}`,
+      source,
+    }),
+    firstValidDecodedAudioStream: async () => {
+      throw new Error('explicit stream must not enter decoded-default fallback');
+    },
+    rememberPlaybackAudioSelection: (_key, value) => value,
+    audioLanguageDecision: () => ({ selectedTrack: null }),
+    logAudioSelectionFix: () => {},
+  });
+  installFunctions(context, serverSource, ['resolvePlaybackAudioSelection']);
+
+  const selected = await context.resolvePlaybackAudioSelection(
+    { query: { audio: '1', audioStream: '2' } },
+    'http://media.example/dual-audio.mkv',
+    'Dual Audio'
+  );
+  assert.equal(selected.audioIdx, 1, 'backend preserves the requested relative English index');
+  assert.equal(selected.audioStreamIdx, 2, 'backend preserves explicit English stream 2');
+  assert.equal(selected.audioSelectionReason, 'explicit-absolute-stream-request', 'backend does not run decoded-default fallback');
 }
 
 async function runModalRuntimePath() {
@@ -564,6 +631,7 @@ async function runLaterOverlayPaths() {
 
 async function main() {
   runAudioRuntimePath();
+  await runBackendAbsoluteAudioPath();
   await runModalRuntimePath();
   await runLaterOverlayPaths();
 

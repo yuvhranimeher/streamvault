@@ -2224,6 +2224,28 @@ async function resolvePlaybackAudioSelection(req, input, label = 'media', suppli
   }
 
   if (isFtpInput) {
+    if (selection.audioStreamIdx !== null) {
+      const requestedTrack = tracks.find(track =>
+        serverAudioTrackAbsoluteIndex(track) === selection.audioStreamIdx
+      );
+      if (
+        requestedTrack
+        && serverAudioCodecIsPlayable(requestedTrack)
+        && serverAudioTrackHasDuration(requestedTrack)
+        && serverAudioTrackIsAudible(requestedTrack)
+      ) {
+        const requestedIndex = tracks.indexOf(requestedTrack);
+        return {
+          ...selectionFromAbsoluteAudio(req, requestedTrack, 'explicit-absolute-stream-request', videoStartTime, videoStreamIdx, info?.videoCodec || ''),
+          defaultAudioIndex: requestedIndex,
+          audioIndex: requestedIndex,
+          ftpAudioValidated: true,
+          preferredAudioLanguage: requestedTrack.language || requestedTrack.lang || null,
+          audioSelectionReason: 'explicit-absolute-stream-request',
+          titleLanguageReason: 'explicit-request',
+        };
+      }
+    }
     const validated = await firstValidDecodedAudioStream(input, tracks, label, { req, titleMetadata });
     const selectedTrack = validated.selectedTrack;
     if (!selectedTrack) return selection;

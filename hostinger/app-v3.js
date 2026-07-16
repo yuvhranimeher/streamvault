@@ -100,12 +100,15 @@ let svPlayerLaunchItem = null;
 let svPlayerClosePending = false;
 let svModalArtworkToken = 0;
 let svModalPreloadActive = 0;
-const svModalArtworkUrlCache = new Map();
+const svModalArtworkPreviewCache = new Map();
+const svModalArtworkHdCache = new Map();
+const svModalArtworkFailureCache = new Map();
 const svModalArtworkDecodeCache = new Map();
 const svModalArtworkDimensionsCache = new Map();
 const svModalPreloadQueue = [];
 const SV_MODAL_ARTWORK_CACHE_LIMIT = 80;
 const SV_MODAL_PRELOAD_LIMIT = 2;
+const SV_MODAL_ARTWORK_RETRY_COOLDOWN_MS = 15000;
 const svMediaInfoDataCache = new Map();
 const svMediaInfoPromiseCache = new Map();
 let currentDetailMovie = null;
@@ -8154,23 +8157,59 @@ function svTrimMap(map, limit){
   while(map.size > limit)map.delete(map.keys().next().value);
 }
 
+function svModalArtworkMediaKey(item, type='movie'){
+  const mediaType=type === 'tv' || item?.type === 'tv' || item?.type === 'series' || item?.seasons ? 'series' : 'movie';
+  const identities=[
+    ['id',item?.id],
+    ['tmdb',item?.tmdbId],
+    ['stream',item?.streamId],
+    ['url',item?.streamUrl],
+    ['file',item?.file || item?.filename]
+  ];
+  const match=identities.find(([,value])=>value !== undefined && value !== null && String(value).trim());
+  if(match)return `${mediaType}:${match[0]}:${String(match[1]).trim()}`;
+  const title=cleanDisplayTitle(item?.name || item?.title || 'untitled') || 'untitled';
+  const year=String(item?.year || 'unknown').trim();
+  const source=String(item?.category || item?.genre || mediaType).trim();
+  return `${mediaType}:composite:${title}:${year}:${source}`;
+}
+
+function svModalArtworkCacheKey(item, type='movie', kind='backdrop'){
+  return `${svModalArtworkMediaKey(item,type)}:${kind}`;
+}
+
+function svModalArtworkCacheGet(cache,key){
+  if(!cache.has(key))return null;
+  const value=cache.get(key);
+  cache.delete(key);
+  cache.set(key,value);
+  return value;
+}
+
+function svModalArtworkCacheSet(cache,key,value){
+  cache.delete(key);
+  cache.set(key,value);
+  svTrimMap(cache,SV_MODAL_ARTWORK_CACHE_LIMIT);
+  return value;
+}
+
 function svModalArtworkEntries(item, type='movie', kind='backdrop'){
-  const fallback = imageFallbackData(item?.name || item?.title || 'StreamVault');
-  const entries = kind === 'poster'
-    ? [
-        {src:item?.poster || '',sourceKind:'poster'},
-        {src:item?.backdrop || '',sourceKind:'backdrop'},
-        {src:fallback,sourceKind:'fallback'}
-      ]
-    : [
-        {src:item?.backdrop || '',sourceKind:'backdrop'},
-        {src:item?.still || '',sourceKind:'backdrop'},
-        {src:item?.poster || '',sourceKind:'poster'},
-        {src:fallback,sourceKind:'fallback'}
-      ];
-  const seen = new Set();
+  const fallback=imageFallbackData(item?.name || item?.title || 'StreamVault');
+  const landscape=[
+    {src:item?.backdrop || '',sourceKind:'backdrop',priority:0},
+    {src:item?.backdropUrl || item?.backdrop_url || '',sourceKind:'backdrop',priority:1},
+    {src:item?.still || item?.stillUrl || '',sourceKind:'backdrop',priority:2}
+  ];
+  const portraits=[
+    {src:item?.poster || '',sourceKind:'poster',priority:10},
+    {src:item?.posterUrl || item?.poster_url || '',sourceKind:'poster',priority:11}
+  ];
+  const entries=kind === 'poster'
+    ? [...portraits,...landscape,{src:fallback,sourceKind:'fallback',priority:99}]
+    : [...landscape,...portraits,{src:fallback,sourceKind:'fallback',priority:99}];
+  const seen=new Set();
   return entries.filter(entry=>{
-    const src=String(entry.src || '');
+    const src=String(entry.src || '').trim();
     if(!src || seen.has(src))return false;
     seen.add(src);
     entry.src=src;
@@ -8178,156 +8217,318 @@ function svModalArtworkEntries(item, type='movie', kind='backdrop'){
   });
 }
 
+function svModalTmdbUrl(src=''){
+  const raw=String(src || '').trim();
+  if(!raw)return null;
+  try{
+    const url=new URL(raw);
+    if(url.hostname.toLowerCase() !== 'image.tmdb.org')return null;
+    if(!/^\/t\/p\/(?:original|w\d+)\//i.test(url.pathname))return null;
+    return url;
+  }catch(_){
+    return null;
+  }
+}
+
 function svModalHdArtworkUrl(src='', kind='backdrop', sourceKind=kind){
-  const url = String(src || '');
-  if(!url.includes('image.tmdb.org/t/p/'))return url;
-  const size = sourceKind === 'poster' ? 'w780' : 'w1280';
-  return url.replace(/\/t\/p\/(?:original|w\d+)\//, `/t/p/${size}/`);
+  const tmdb=svModalTmdbUrl(src);
+  if(!tmdb)return String(src || '');
+  const size=sourceKind === 'poster' ? 'w780' : 'w1280';
+  tmdb.pathname=tmdb.pathname.replace(/\/t\/p\/(?:original|w\d+)\//i,`/t/p/${size}/`);
+  tmdb.searchParams.set('sv-modal-hd','v2');
+  return tmdb.toString();
+}
+
+function svModalArtworkUrlIdentity(src=''){
+  const tmdb=svModalTmdbUrl(src);
+  if(tmdb){
+    return `${tmdb.hostname}${tmdb.pathname.replace(/\/t\/p\/(?:original|w\d+)\//i,'/t/p/size/')}`;
+  }
+  return String(src || '').split('#')[0].split('?')[0];
 }
 
 function svModalArtworkCandidates(item, type='movie', kind='backdrop'){
   return svModalArtworkEntries(item,type,kind)
-    .map(entry=>svModalHdArtworkUrl(entry.src,kind,entry.sourceKind));
+    .map(entry=>({...entry,url:svModalHdArtworkUrl(entry.src,kind,entry.sourceKind)}));
 }
 
 function svResolveModalArtwork(item, type='movie', kind='backdrop'){
-  const candidates = svModalArtworkCandidates(item,type,kind);
-  const key = `${svStableMediaKey(item,type)}:${kind}:${candidates.join('|')}`;
-  if(svModalArtworkUrlCache.has(key))return svModalArtworkUrlCache.get(key);
-  const url = candidates[0] || '';
-  svModalArtworkUrlCache.set(key,url);
-  svTrimMap(svModalArtworkUrlCache, SV_MODAL_ARTWORK_CACHE_LIMIT);
-  return url;
+  const key=svModalArtworkCacheKey(item,type,kind);
+  const verified=svModalArtworkCacheGet(svModalArtworkHdCache,key);
+  if(verified)return verified.url;
+  return svModalArtworkCandidates(item,type,kind)[0]?.url || '';
+}
+
+function svForgetDecodedArtwork(url){
+  svModalArtworkDecodeCache.delete(url);
+  svModalArtworkDimensionsCache.delete(url);
 }
 
 function svDecodeImage(url){
   if(!url)return Promise.resolve('');
   if(svModalArtworkDecodeCache.has(url))return svModalArtworkDecodeCache.get(url);
-  const promise = new Promise(resolve=>{
-    const img = new Image();
-    img.decoding = 'async';
-    img.onload = async ()=>{
-      try{ await img.decode?.(); }catch(_){}
-      svModalArtworkDimensionsCache.set(url,{
+  const promise=new Promise(resolve=>{
+    const img=new Image();
+    img.decoding='async';
+    img.onload=async ()=>{
+      try{await img.decode?.();}catch(_){
+        // A loaded image remains renderable even when decode() rejects.
+      }
+      const dimensions={
         width:Number(img.naturalWidth || img.width || 0),
         height:Number(img.naturalHeight || img.height || 0)
-      });
-      svTrimMap(svModalArtworkDimensionsCache, SV_MODAL_ARTWORK_CACHE_LIMIT);
+      };
+      if(!dimensions.width || !dimensions.height){
+        svForgetDecodedArtwork(url);
+        resolve('');
+        return;
+      }
+      svModalArtworkCacheSet(svModalArtworkDimensionsCache,url,dimensions);
       resolve(url);
     };
-    img.onerror = ()=>resolve('');
-    img.src = url;
+    img.onerror=()=>{
+      svForgetDecodedArtwork(url);
+      resolve('');
+    };
+    img.src=url;
   });
-  svModalArtworkDecodeCache.set(url,promise);
-  svTrimMap(svModalArtworkDecodeCache, SV_MODAL_ARTWORK_CACHE_LIMIT);
+  svModalArtworkCacheSet(svModalArtworkDecodeCache,url,promise);
   return promise;
 }
 
-function svModalArtworkIsHd(url, kind='backdrop', sourceKind=kind){
+function svModalArtworkValidation(url, kind='backdrop', sourceKind=kind){
   const dimensions=svModalArtworkDimensionsCache.get(url);
-  if(!dimensions)return false;
-  if(sourceKind === 'fallback')return false;
+  if(!dimensions || sourceKind === 'fallback')return {valid:false};
+  const width=Number(dimensions.width || 0);
+  const height=Number(dimensions.height || 0);
+  const ratio=height ? width/height : 0;
   if(sourceKind === 'poster'){
-    return dimensions.width >= 700 && dimensions.height > dimensions.width;
+    return {
+      valid:width >= 650 && height > width,
+      width,height,ratio,
+      state:'portrait-fallback'
+    };
   }
-  return dimensions.width >= 1200 && dimensions.width > dimensions.height;
+  return {
+    valid:width >= 1000 && height >= 500 && width > height,
+    width,height,ratio,
+    state:'decoded-hd'
+  };
 }
 
-function svSetModalImageImmediate(img, entry, token){
+function svModalArtworkIsHd(url, kind='backdrop', sourceKind=kind){
+  return !!svModalArtworkValidation(url,kind,sourceKind).valid;
+}
+
+function svModalArtworkFailureKey(cacheKey,url){
+  return `${cacheKey}:${url}`;
+}
+
+function svModalArtworkCanRetry(cacheKey,url,now=Date.now()){
+  const failure=svModalArtworkFailureCache.get(svModalArtworkFailureKey(cacheKey,url));
+  return !failure || now >= failure.retryAt;
+}
+
+function svModalArtworkRecordFailure(cacheKey,url,now=Date.now()){
+  return svModalArtworkCacheSet(svModalArtworkFailureCache,svModalArtworkFailureKey(cacheKey,url),{
+    failedAt:now,
+    retryAt:now+SV_MODAL_ARTWORK_RETRY_COOLDOWN_MS
+  });
+}
+
+function svModalArtworkClearFailure(cacheKey,url){
+  svModalArtworkFailureCache.delete(svModalArtworkFailureKey(cacheKey,url));
+}
+
+async function svResolveVerifiedModalArtwork(item,type='movie',kind='backdrop'){
+  const cacheKey=svModalArtworkCacheKey(item,type,kind);
+  const candidates=svModalArtworkCandidates(item,type,kind);
+  const cached=svModalArtworkCacheGet(svModalArtworkHdCache,cacheKey);
+  const hasLandscape=candidates.some(candidate=>candidate.sourceKind === 'backdrop');
+  if(cached && !(cached.sourceKind === 'poster' && hasLandscape))return cached;
+
+  for(const candidate of candidates){
+    if(candidate.sourceKind === 'fallback' || !svModalArtworkCanRetry(cacheKey,candidate.url))continue;
+    const decoded=await svDecodeImage(candidate.url);
+    if(!decoded){
+      svModalArtworkRecordFailure(cacheKey,candidate.url);
+      continue;
+    }
+    const validation=svModalArtworkValidation(decoded,kind,candidate.sourceKind);
+    if(!validation.valid){
+      svForgetDecodedArtwork(candidate.url);
+      svModalArtworkRecordFailure(cacheKey,candidate.url);
+      continue;
+    }
+    svModalArtworkClearFailure(cacheKey,candidate.url);
+    return svModalArtworkCacheSet(svModalArtworkHdCache,cacheKey,{
+      url:decoded,
+      width:validation.width,
+      height:validation.height,
+      ratio:validation.ratio,
+      sourceKind:candidate.sourceKind,
+      state:kind === 'backdrop' && candidate.sourceKind === 'poster' ? 'portrait-fallback' : 'decoded-hd',
+      verifiedAt:Date.now()
+    });
+  }
+  return null;
+}
+
+function svModalArtworkPreviewEntry(item,type='movie',kind='backdrop'){
+  const cacheKey=svModalArtworkCacheKey(item,type,kind);
+  const candidates=svModalArtworkEntries(item,type,kind);
+  if(kind === 'backdrop'){
+    const pending=window.__svPendingModalArtworkPreview;
+    const age=Date.now()-Number(pending?.capturedAt || 0);
+    const identities=new Set(candidates.map(entry=>svModalArtworkUrlIdentity(entry.src)));
+    if(pending?.url && age >= 0 && age < 1500 && identities.has(svModalArtworkUrlIdentity(pending.url))){
+      return svModalArtworkCacheSet(svModalArtworkPreviewCache,cacheKey,{
+        src:pending.url,
+        sourceKind:'poster'
+      });
+    }
+  }
+  const cached=svModalArtworkCacheGet(svModalArtworkPreviewCache,cacheKey);
+  if(cached)return cached;
+  const immediate=candidates[0] || null;
+  return immediate
+    ? svModalArtworkCacheSet(svModalArtworkPreviewCache,cacheKey,{
+        src:immediate.src,
+        sourceKind:immediate.sourceKind
+      })
+    : null;
+}
+
+window.svCaptureModalArtworkPreview=function(src){
+  const url=String(src || '').trim();
+  if(!url)return;
+  window.__svPendingModalArtworkPreview={url,capturedAt:Date.now()};
+};
+
+function svSetArtworkState(element,state,sourceKind=''){
+  if(!element)return;
+  element.dataset.artworkState=state;
+  element.dataset.artworkSource=sourceKind;
+}
+
+function svSetModalImagePreview(img,entry,token){
   if(!img)return;
   const url=entry?.src || '';
   img.dataset.svArtworkToken=String(token);
-  img.dataset.artworkSource=entry?.sourceKind || '';
+  svSetArtworkState(img,'preview',entry?.sourceKind || '');
+  img.classList.remove('is-hd');
   if(url){
-    img.src = url;
-    img.style.display = '';
-    img.classList.remove('is-hd');
+    img.src=url;
+    img.style.display='';
   }else{
     img.removeAttribute('src');
-    img.style.display = 'none';
+    img.style.display='none';
   }
 }
 
-async function svUpgradeModalImage(img, item, type='movie', kind='backdrop', token=0){
-  const entries=svModalArtworkEntries(item,type,kind);
-  for(const entry of entries){
-    const hdUrl=svModalHdArtworkUrl(entry.src,kind,entry.sourceKind);
-    const decoded=await svDecodeImage(hdUrl);
-    if(token !== svModalArtworkToken || img?.dataset.svArtworkToken !== String(token) || !img?.isConnected)return;
-    if(!decoded || !svModalArtworkIsHd(decoded,kind,entry.sourceKind))continue;
-    if(img.getAttribute('src') !== decoded)img.src = decoded;
-    img.dataset.artworkSource=entry.sourceKind;
-    img.style.display = '';
-    requestAnimationFrame(()=>{
-      if(token === svModalArtworkToken && img.dataset.svArtworkToken === String(token))img.classList.add('is-hd');
-    });
+function svSetModalImageFinal(img,verified,token){
+  if(!img || !verified)return;
+  img.dataset.svArtworkToken=String(token);
+  svSetArtworkState(img,verified.state,verified.sourceKind);
+  if(img.getAttribute('src') !== verified.url)img.src=verified.url;
+  img.style.display='';
+  requestAnimationFrame(()=>{
+    if(token === svModalArtworkToken && img.dataset.svArtworkToken === String(token))img.classList.add('is-hd');
+  });
+}
+
+async function svUpgradeModalImage(img,item,type='movie',kind='backdrop',token=0){
+  if(!img)return;
+  svSetArtworkState(img,'resolving',img.dataset.artworkSource || '');
+  const verified=await svResolveVerifiedModalArtwork(item,type,kind);
+  if(token !== svModalArtworkToken || img.dataset.svArtworkToken !== String(token) || !img.isConnected)return;
+  if(!verified){
+    svSetArtworkState(img,'failed-hd',img.dataset.artworkSource || '');
     return;
   }
+  svSetModalImageFinal(img,verified,token);
 }
 
 function svApplyModalArtwork({item,type='movie',backdropId,posterId}){
-  const token = ++svModalArtworkToken;
-  const backdrop = document.getElementById(backdropId);
-  const poster = posterId ? document.getElementById(posterId) : null;
-  svSetModalImageImmediate(backdrop, svModalArtworkEntries(item,type,'backdrop')[0], token);
-  svSetModalImageImmediate(poster, svModalArtworkEntries(item,type,'poster')[0], token);
-  svUpgradeModalImage(backdrop,item,type,'backdrop',token);
-  if(poster)svUpgradeModalImage(poster,item,type,'poster',token);
+  const token=++svModalArtworkToken;
+  const backdrop=document.getElementById(backdropId);
+  const poster=posterId ? document.getElementById(posterId) : null;
+  const backdropKey=svModalArtworkCacheKey(item,type,'backdrop');
+  const posterKey=svModalArtworkCacheKey(item,type,'poster');
+  const backdropCached=svModalArtworkCacheGet(svModalArtworkHdCache,backdropKey);
+  const posterCached=svModalArtworkCacheGet(svModalArtworkHdCache,posterKey);
+
+  if(backdropCached)svSetModalImageFinal(backdrop,backdropCached,token);
+  else svSetModalImagePreview(backdrop,svModalArtworkPreviewEntry(item,type,'backdrop'),token);
+  if(posterCached)svSetModalImageFinal(poster,posterCached,token);
+  else svSetModalImagePreview(poster,svModalArtworkPreviewEntry(item,type,'poster'),token);
+
+  const hasNewLandscape=svModalArtworkEntries(item,type,'backdrop').some(entry=>entry.sourceKind === 'backdrop');
+  if(!backdropCached || (backdropCached.sourceKind === 'poster' && hasNewLandscape)){
+    svUpgradeModalImage(backdrop,item,type,'backdrop',token);
+  }
+  if(poster && !posterCached)svUpgradeModalImage(poster,item,type,'poster',token);
 }
 
-function svSetMediaModalArtwork(preview, url, sourceKind, token){
-  if(!preview)return;
+function svSetMediaModalArtwork(preview,artwork,token){
+  if(!preview || !artwork)return;
+  const url=artwork.url || artwork.src || '';
+  const sourceKind=artwork.sourceKind || '';
+  const state=artwork.state || 'preview';
+  const hero=preview.closest?.('.hero-section');
   preview.dataset.svArtworkToken=String(token);
-  preview.dataset.artworkSource=sourceKind || '';
-  preview.poster=url || '';
+  svSetArtworkState(preview,state,sourceKind);
+  preview.poster=url;
   preview.style.backgroundImage=url ? `url("${String(url).replace(/"/g,'%22')}")` : '';
-  preview.classList.remove('is-hd');
-}
-
-async function svUpgradeMediaModalArtwork(preview, item, type, modalItem, token){
-  const entries=svModalArtworkEntries(item,type,'backdrop');
-  for(const entry of entries){
-    const hdUrl=svModalHdArtworkUrl(entry.src,'backdrop',entry.sourceKind);
-    const decoded=await svDecodeImage(hdUrl);
-    const modal=document.getElementById('mediaModal');
-    if(token !== svModalArtworkToken
-      || preview?.dataset.svArtworkToken !== String(token)
-      || currentMediaModalItem !== modalItem
-      || modal?.classList.contains('hidden'))return;
-    if(!decoded || !svModalArtworkIsHd(decoded,'backdrop',entry.sourceKind))continue;
-    svSetMediaModalArtwork(preview,decoded,entry.sourceKind,token);
-    requestAnimationFrame(()=>{
-      if(token === svModalArtworkToken && preview.dataset.svArtworkToken === String(token))preview.classList.add('is-hd');
-    });
-    return;
+  preview.classList.toggle('is-hd',state === 'decoded-hd' || state === 'portrait-fallback');
+  hero?.classList.toggle('is-portrait-artwork',sourceKind === 'poster');
+  if(hero){
+    hero.style.setProperty('--sv-modal-artwork',url ? `url("${String(url).replace(/"/g,'%22')}")` : 'none');
   }
 }
 
-function svApplyMediaModalArtwork(preview, item, type='movie', modalItem=item){
-  const token=++svModalArtworkToken;
-  const immediate=svModalArtworkEntries(item,type,'backdrop')[0];
-  svSetMediaModalArtwork(preview,immediate?.src || '',immediate?.sourceKind || '',token);
-  svUpgradeMediaModalArtwork(preview,item,type,modalItem,token);
+async function svUpgradeMediaModalArtwork(preview,item,type,modalItem,token){
+  svSetArtworkState(preview,'resolving',preview.dataset.artworkSource || '');
+  const verified=await svResolveVerifiedModalArtwork(item,type,'backdrop');
+  const modal=document.getElementById('mediaModal');
+  if(token !== svModalArtworkToken
+    || preview?.dataset.svArtworkToken !== String(token)
+    || currentMediaModalItem !== modalItem
+    || modal?.classList.contains('hidden'))return;
+  if(!verified){
+    svSetArtworkState(preview,'failed-hd',preview.dataset.artworkSource || '');
+    return;
+  }
+  svSetMediaModalArtwork(preview,verified,token);
 }
 
-function svQueueModalArtworkPreload(item, type='movie'){
+function svApplyMediaModalArtwork(preview,item,type='movie',modalItem=item){
+  const token=++svModalArtworkToken;
+  const cacheKey=svModalArtworkCacheKey(item,type,'backdrop');
+  const cached=svModalArtworkCacheGet(svModalArtworkHdCache,cacheKey);
+  const hasNewLandscape=svModalArtworkEntries(item,type,'backdrop').some(entry=>entry.sourceKind === 'backdrop');
+  if(cached)svSetMediaModalArtwork(preview,cached,token);
+  else svSetMediaModalArtwork(preview,svModalArtworkPreviewEntry(item,type,'backdrop'),token);
+  if(!cached || (cached.sourceKind === 'poster' && hasNewLandscape)){
+    svUpgradeMediaModalArtwork(preview,item,type,modalItem,token);
+  }
+}
+
+function svQueueModalArtworkPreload(item,type='movie'){
   if(!item)return;
-  const urls = [
-    svResolveModalArtwork(item,type,'backdrop'),
-    svResolveModalArtwork(item,type,'poster')
-  ].filter(Boolean);
-  urls.forEach(url=>{
-    if(svModalArtworkDecodeCache.has(url) || svModalPreloadQueue.includes(url))return;
-    svModalPreloadQueue.push(url);
+  ['backdrop','poster'].forEach(kind=>{
+    const key=svModalArtworkCacheKey(item,type,kind);
+    if(svModalArtworkHdCache.has(key) || svModalPreloadQueue.some(task=>task.key === key))return;
+    svModalPreloadQueue.push({item,type,kind,key});
   });
   svDrainModalArtworkPreloadQueue();
 }
 
 function svDrainModalArtworkPreloadQueue(){
   while(svModalPreloadActive < SV_MODAL_PRELOAD_LIMIT && svModalPreloadQueue.length){
-    const url = svModalPreloadQueue.shift();
+    const task=svModalPreloadQueue.shift();
     svModalPreloadActive++;
-    svDecodeImage(url).finally(()=>{
+    svResolveVerifiedModalArtwork(task.item,task.type,task.kind).finally(()=>{
       svModalPreloadActive--;
       svDrainModalArtworkPreloadQueue();
     });

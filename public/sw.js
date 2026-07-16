@@ -1,4 +1,4 @@
-const CACHE_VERSION = '20260716-modal-hd-artwork-v1';
+const CACHE_VERSION = '20260716-modal-hd-artwork-v2';
 const CACHE_PREFIX = 'streamvault-';
 const SHELL_CACHE = `${CACHE_PREFIX}shell-${CACHE_VERSION}`;
 const STATIC_CACHE = `${CACHE_PREFIX}static-${CACHE_VERSION}`;
@@ -99,6 +99,13 @@ function isPosterRequest(request,url){
   return request.method === 'GET'
     && request.destination === 'image'
     && url.hostname === 'image.tmdb.org';
+}
+
+function isModalHdArtworkRequest(request,url){
+  return request.method === 'GET'
+    && request.destination === 'image'
+    && url.hostname === 'image.tmdb.org'
+    && url.searchParams.get('sv-modal-hd') === 'v2';
 }
 
 function isStaticRequest(request,url){
@@ -238,6 +245,11 @@ self.addEventListener('fetch',event=>{
 
   if(request.mode === 'navigate'){
     event.respondWith(navigationNetworkFirst(request));
+    return;
+  }
+
+  if(isModalHdArtworkRequest(request,url)){
+    event.respondWith(networkOnly(request));
     return;
   }
 

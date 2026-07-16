@@ -3,9 +3,6 @@
   if(window.__svMediaPopupPolishV8)return;
   window.__svMediaPopupPolishV8=true;
 
-  let pendingPoster="";
-  let posterToken=0;
-
   function seriesPopup(){
     const context=[
       document.getElementById("modalTitle")?.textContent||"",
@@ -16,48 +13,9 @@
     return /\b(series|season|tv series)\b/i.test(context);
   }
 
-  function safeCssUrl(src){
-    return 'url("' +
-      String(src||"").replace(/["\\\r\n]/g,"\\$&") +
-      '")';
-  }
-
   function applyPosterImmediately(src){
     if(!src)return;
-
-    pendingPoster=src;
-    const token=++posterToken;
-
-    const preview=document.getElementById("modalPreview");
-    const hero=document.querySelector("#mediaModal .modal-hero");
-
-    if(preview){
-      preview.poster=src;
-      preview.setAttribute("poster",src);
-      preview.style.backgroundImage=safeCssUrl(src);
-      preview.style.backgroundSize="cover";
-      preview.style.backgroundPosition="center";
-    }
-
-    if(hero){
-      hero.style.backgroundImage=safeCssUrl(src);
-      hero.style.backgroundSize="cover";
-      hero.style.backgroundPosition="center";
-    }
-
-    // Protect the clicked title poster briefly from an older async response.
-    const protect=setInterval(()=>{
-      if(token!==posterToken){
-        clearInterval(protect);
-        return;
-      }
-
-      if(preview && preview.getAttribute("poster")!==src){
-        preview.poster=src;
-      }
-    },40);
-
-    setTimeout(()=>clearInterval(protect),900);
+    window.svCaptureModalArtworkPreview?.(src);
   }
 
   function clickedPoster(target){
@@ -122,13 +80,6 @@
       buttons.style.display="none";
     }
 
-    if(pendingPoster){
-      const preview=document.getElementById("modalPreview");
-
-      if(preview && !preview.getAttribute("poster")){
-        preview.poster=pendingPoster;
-      }
-    }
   }
 
   const style=document.createElement("style");
@@ -146,12 +97,6 @@
       margin-top:28px;
     }
 
-    #mediaModal .modal-hero,
-    #mediaModal #modalPreview{
-      background-size:cover;
-      background-position:center;
-      background-repeat:no-repeat;
-    }
   `;
 
   document.head.appendChild(style);

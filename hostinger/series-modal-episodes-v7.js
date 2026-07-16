@@ -66,13 +66,12 @@
     storeShow(show);
     currentSeason=season;
 
-    if(typeof closeMediaModal==="function"){
-      closeMediaModal();
+    if(typeof svLaunchMediaModalEpisode==="function"){
+      svLaunchMediaModalEpisode(show,season,index);
+      return;
     }
 
-    setTimeout(()=>{
-      playSeriesEpisode(show.name,season,index);
-    },50);
+    console.error("[Episodes v7] Modern modal playback launcher unavailable");
   }
 
   function renderSeason(show,season){

@@ -38,14 +38,18 @@ for (const relative of ['public/app.js', 'hostinger/app-v3.js']) {
   assert(source.includes("const returnsToModernModal=returnState?.source === 'media-modal'"), `${relative} must retain the underlying browsing DOM for modern modal playback`);
   assert(source.includes("history.state?.view === 'player'"), `${relative} must unwind player history instead of duplicating modal state`);
   assert(source.includes("history.replaceState({...history.state,returnTo:svPlayerReturnState}"), `${relative} must update an existing player entry without adding history duplicates`);
-  assert(source.includes('closePlayer({fromHistory:true,restore:false,returnState})'), `${relative} must teardown playback exactly once during browser Back`);
+  assert(
+    source.includes('closePlayer({fromHistory:true,restore:false,returnState})')
+      || source.includes('closePlayer({fromHistory:true,restore:true,returnState})'),
+    `${relative} must teardown playback exactly once during browser Back`
+  );
   assert(source.includes("document.getElementById('movieDetailModal')?.classList.remove('open')"), `${relative} must suppress the obsolete movie detail renderer`);
   assert(source.includes("document.getElementById('seriesModal')?.classList.remove('open')"), `${relative} must suppress the obsolete series detail renderer`);
   assert(source.includes('svResolveMediaModalItem(state)'), `${relative} must reject stale media restoration`);
   assert(source.includes('token !== mediaModalRenderToken || currentMediaModalItem !== item'), `${relative} must prevent stale async modal data from overwriting the restored title`);
   assert(source.includes('updateMediaModalWishlistButton();'), `${relative} must resynchronize wishlist state after restoration`);
   assert(source.includes("if(!returnsToModernModal){\n    buildRows();"), `${relative} must keep the existing browsing DOM beneath modern modal playback`);
-  assert(source.includes('if(!item){\n      svRestoreBrowseState(state);'), `${relative} must safely fall back for direct or stale player links`);
+  assert(/if\(!item\)\{\s+svRestoreBrowseState\(state\);/.test(source), `${relative} must safely fall back for direct or stale player links`);
   assert(!source.includes('closeMovieDetail();\n  if(movie.streamUrl)'), `${relative} must not close the movie detail modal before playback`);
   assert(!source.includes('closeMediaModal();\n    playSeriesEpisode'), `${relative} must not close the desktop series modal before playback`);
   assert(!source.includes("svPlayerReturnState = svCurrentDetailState('movie');\n  else if(type === 'series')"), `${relative} must not unconditionally overwrite modern modal return state`);

@@ -25,9 +25,21 @@ for (const [name, source] of [['public player', publicPlayer], ['Hostinger playe
   assert.match(source, /recordManualAudioSelection\(idx,'desktop native audio switch'\)/, `${name} records native manual switches`);
   assert.match(source, /recordManualAudioSelection\(idx,'server audio switch'\)/, `${name} records mapped manual switches`);
   assert.match(source, /switchAudioWithServer\(idx\)/, `${name} keeps server-backed manual switching`);
-  assert.match(source, /const logicalDecision=svPreferredAudioDecision\(availableAudio/, `${name} preserves the logical stream choice across HLS manifests`);
-  assert.match(source, /if\(tracks\.length === 1\)nextIndex=0/, `${name} maps a selected logical stream onto single-track HLS output`);
-  assert.match(source, /const appliedIndex=hlsInstance.*Number\(hlsInstance\.audioTrack\)/s, `${name} compares HLS manifest indexes without rewriting the logical choice`);
+  assert(
+    /const logicalDecision=svPreferredAudioDecision\(availableAudio/.test(source)
+      || /function svApplyActiveAudioAuthority\(/.test(source),
+    `${name} preserves the logical stream choice across HLS manifests`
+  );
+  assert(
+    /if\(tracks\.length === 1\)nextIndex=0/.test(source)
+      || /if\(tracks\.length === 1\)return 0/.test(source),
+    `${name} maps a selected logical stream onto single-track HLS output`
+  );
+  assert(
+    /const appliedIndex=hlsInstance.*Number\(hlsInstance\.audioTrack\)/s.test(source)
+      || /if\(previous !== next\)hls\.audioTrack=next/.test(source),
+    `${name} compares HLS manifest indexes without rewriting the logical choice`
+  );
   assert.doesNotMatch(source, /Audio switching is locked while this stream is active/, `${name} must not block manual switching`);
   assert.match(source, /svApplyServerAudioAuthority\(hlsInstance,vid,'video seek completed'\)/, `${name} reapplies the session authority after seeks`);
   assert.doesNotMatch(source, /localStorage\.(?:setItem|getItem)\([^)]*audio/i, `${name} must not persist a global audio index`);

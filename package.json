@@ -24,9 +24,10 @@
     "test:audio-language": "node tests/audio-language.test.js",
     "test:frontend-playback-session": "node tests/frontend-playback-session.test.js",
     "test:audio-playback-regression": "node tests/audio-playback-regression.test.js",
+    "test:runtime-handler-paths": "node tests/runtime-handler-paths.test.js",
     "test:player-ui": "node tests/player-loading-encoding.test.js",
     "test:modal-ui": "node tests/media-modal-ui.test.js",
-    "test:playback": "npm run test:player-ui && npm run test:modal-ui && npm run test:audio-language && npm run test:frontend-playback-session && npm run test:audio-playback-regression && npm run test:hostinger"
+    "test:playback": "npm run test:player-ui && npm run test:modal-ui && npm run test:audio-language && npm run test:frontend-playback-session && npm run test:audio-playback-regression && npm run test:runtime-handler-paths && npm run test:hostinger"
   },
   "dependencies": {
     "axios": "^1.15.0",

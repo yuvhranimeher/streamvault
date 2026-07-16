@@ -60,40 +60,10 @@
     try{
       currentDetailMovie=movie;
 
-      if(typeof hydrateMoviePlayback==="function"){
-        await hydrateMoviePlayback(movie);
-      }
-
-      if(
-        typeof isMovieUnavailable==="function" &&
-        isMovieUnavailable(movie)
-      ){
-        showToast("This movie is not ready to play yet");
-        return;
-      }
-
-      if(typeof recordWatchHistory==="function"){
-        recordWatchHistory(
-          typeof movieIdentity==="function"
-            ? movieIdentity(movie)
-            : movie.id,
-          movie.name,
-          movie.genre||"",
-          "movie"
-        );
-      }
-
-      if(typeof closeMediaModal==="function"){
-        closeMediaModal();
-      }
-
-      if(movie.streamUrl){
-        movie.streamUrl=window.StreamVaultConfig?.normalizeBackendUrls?.(movie.streamUrl) ?? movie.streamUrl;
-        playFtpMedia(movie.streamUrl,movie.name,movie.year||"");
-      }else if(movie.id!==undefined && movie.id!==null){
-        playMedia(movie.id,movie.name,movie.year||"");
+      if(typeof svLaunchMediaModalMovie==="function"){
+        await svLaunchMediaModalMovie(movie);
       }else{
-        showToast("No playable movie source found");
+        throw new Error("Modern modal playback launcher unavailable");
       }
     }catch(error){
       console.error("[Movie Play v10]",error);

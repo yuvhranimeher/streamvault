@@ -8,7 +8,7 @@ function svNormalizeBackendUrls(value){
 }
 const SV_THEME_KEY = 'sv_theme';
 const SV_MEDIA_FIX_MARKER = 'SV_MEDIA_FIX_ACTIVE_stable_tracks_layout';
-const SV_ASSET_VERSION = '20260716-backend-audio-authority-v1';
+const SV_ASSET_VERSION = '20260716-runtime-audio-modal-return-v2';
 const SV_SMOOTH_BUFFER_TRIGGER_COUNT = Math.max(1, Number(window.SMOOTH_BUFFER_TRIGGER_COUNT || 3) || 3);
 const svNativeConsoleLog = (()=>{try{return console.log.bind(console);}catch(_){return ()=>{};}})();
 function svLiveConsoleLog(...args){

@@ -18,7 +18,7 @@ const SHELL_ASSETS = [
   '/downloads.js',
   '/search.js',
   '/livetv.js',
-  '/player.js',
+  '/player-runtime-v2.js',
   '/live-fast.js',
   '/boot.js',
   '/hostinger-poster-fix.js',

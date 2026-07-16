@@ -10,7 +10,7 @@ const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 const appSource = read('hostinger/app-v3.js');
 const seriesOverlaySource = read('hostinger/series-modal-episodes-v7.js');
 const movieOverlaySource = read('hostinger/movie-play-button-v10.js');
-const playerOverlaySource = read('hostinger/player.js');
+const playerOverlaySource = read('hostinger/player-runtime-v2.js');
 const sessionApi = require(path.join(root, 'hostinger', 'frontend-playback-session.js'));
 
 function extractFunction(source, name) {

@@ -466,9 +466,11 @@ function readSnapshotModule(filename) {
   const source = fs.readFileSync(filename, 'utf8');
   const prefix = 'global.STREAMVAULT_HOME_SNAPSHOT = Object.freeze(';
   const start = source.indexOf(prefix);
-  const end = source.lastIndexOf(');\n})(window);');
+  const end = source.lastIndexOf('\n})(window);');
   if (start < 0 || end < 0) throw new Error(`Invalid snapshot module: ${filename}`);
-  return JSON.parse(source.slice(start + prefix.length, end));
+  let json = source.slice(start + prefix.length, end).trim();
+  if (json.endsWith(');')) json = json.slice(0, -2).trim();
+  return JSON.parse(json);
 }
 
 async function startProxyServer(root, upstream = DEFAULT_FRONTEND_URL) {

@@ -395,7 +395,7 @@ window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE ||
     };
     const renderRows = data=>{
       const feedRows = Array.isArray(data?.rows) ? data.rows : [];
-      const rowMap = Object.fromEntries(feedRows.map(row=>[row.rowId,row]));
+      const rowMap = Object.fromEntries(feedRows.map(row=>[row.rowId,{...row,_svSnapshot:true}]));
       svRenderHeroFromFeed(data);
       svApplyHomeOrder();
       immediate.forEach(meta=>svPrepareHomeRow(meta.rowId, rowMap[meta.rowId] || null, true));
@@ -442,8 +442,11 @@ window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE ||
     const row = svEnsureHomeRow(rowId);
     if(!row || !meta)return;
     const rawItems = Array.isArray(rowData?.items) ? rowData.items : [];
-    const items = typeof filterPlayableMediaItems === 'function' ? filterPlayableMediaItems(rawItems) : rawItems;
+    const items = rowData?._svSnapshot
+      ? rawItems
+      : (typeof filterPlayableMediaItems === 'function' ? filterPlayableMediaItems(rawItems) : rawItems);
     const track = document.getElementById(meta.trackId);
+    if(rowData?._svSnapshot && track?.querySelector('.card,.live-ch-card'))track.innerHTML = '';
     if(rowData && svShouldRefillHomeRow(rowId, items, rowData) && !row._svRefillStarted){
       row._svRefillStarted = true;
       svFetchHomeSection(meta, { summary:false, limit:SV_HOME_ROW_LIMIT }).then(fresh=>{
@@ -478,6 +481,7 @@ window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE ||
       return;
     }
     row._svFresh = !!rowData?._svFresh;
+    row._svSnapshot = !!rowData?._svSnapshot;
     row._svSectionTotal = rowData?.total || items.length;
     if(track?.querySelector('.card,.live-ch-card')){
       row._svItems = items;
@@ -489,6 +493,7 @@ window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE ||
         initial:svInitialCardCount(rowId),
         buffer:svWeakDevice ? (window.innerWidth < 760 ? 1 : 2) : (window.innerWidth < 760 ? 3 : 4),
         fresh:!!rowData?._svFresh,
+        snapshot:!!rowData?._svSnapshot,
         virtual:true
       });
       show(rowId);
@@ -526,6 +531,7 @@ window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE ||
       initial:svInitialCardCount(rowId),
       buffer:svWeakDevice ? (window.innerWidth < 760 ? 1 : 2) : (window.innerWidth < 760 ? 3 : 4),
       fresh:!!row._svFresh,
+      snapshot:!!row._svSnapshot,
       virtual:true
     });
     row._svLoaded = true;
@@ -701,8 +707,12 @@ window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE ||
     if(!track){ hide(rowId); return; }
     const limit = opts.limit || (SV_PERF_HOME_BY_ID[rowId] ? SV_HOME_ROW_LIMIT : 50);
     const shouldClaim = !!(rowId && (SV_PERF_HOME_BY_ID[rowId] || ['continueRow','becauseRow'].includes(rowId)));
-    const playable = typeof filterPlayableMediaItems === 'function' ? filterPlayableMediaItems(items) : (items || []);
-    const list = shouldClaim ? svClaimHomeItems(rowId, playable, limit) : playable.slice(0, limit);
+    const playable = opts.snapshot
+      ? (Array.isArray(items) ? items : [])
+      : (typeof filterPlayableMediaItems === 'function' ? filterPlayableMediaItems(items) : (items || []));
+    const list = opts.snapshot
+      ? playable.slice(0, limit)
+      : (shouldClaim ? svClaimHomeItems(rowId, playable, limit) : playable.slice(0, limit));
     if(opts.fresh && SV_PERF_HOME_BY_ID[rowId])svLogShortHomeRow(rowId, list.length, 'section');
     if(!list.length){
       if(track.querySelector('.card,.live-ch-card')){

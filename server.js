@@ -1,3 +1,5 @@
+'use strict';
+
 const express = require('express');
 const fs      = require('fs');
 const path    = require('path');
@@ -12,7 +14,7 @@ const dashboardRoutes = require('./routes/dashboard');
 const { createInfraTelemetry } = require('./infra-telemetry');
 
 const app  = express();
-const PORT = 3000;
+const PORT = Math.max(0, Math.min(65535, Number(process.env.SV_PORT || process.env.PORT || 3000) || 3000));
 const infraTelemetry = createInfraTelemetry({
   app,
   nodeName: 'mac-mini-streamvault',
@@ -22,13 +24,13 @@ const FFMPEG_BIN = process.env.FFMPEG_BIN || process.env.FFMPEG_PATH || 'ffmpeg'
 const FFPROBE_BIN = process.env.FFPROBE_BIN || process.env.FFPROBE_PATH || 'ffprobe';
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
-const MEDIA_ROOT   = 'C:\\Users\\Mac Mini\\Desktop\\Website Host\\Streaming_Website\\streamvault';
-const MOVIES_DIR   = 'C:\\Users\\Mac Mini\\Desktop\\Website Host\\Streaming_Website\\streamvault\\movies';
-const SERIES_DIR   = 'C:\\Users\\Mac Mini\\Desktop\\Website Host\\Streaming_Website\\streamvault\\series';
+const MEDIA_ROOT   = process.env.SV_MEDIA_ROOT || 'C:\\Users\\Mac Mini\\Desktop\\Website Host\\Streaming_Website\\streamvault';
+const MOVIES_DIR   = process.env.SV_MOVIES_DIR || path.join(MEDIA_ROOT, 'movies');
+const SERIES_DIR   = process.env.SV_SERIES_DIR || path.join(MEDIA_ROOT, 'series');
 const CACHE_FILE   = path.join(__dirname, 'poster-cache.json');
 const HISTORY_FILE = path.join(__dirname, 'watch-history.json');
-const INDEX_FILE   = path.join(__dirname, 'file-index.json');
-const CHANNELS_FILE = path.join(__dirname, 'channels.json');
+const INDEX_FILE   = process.env.SV_FILE_INDEX_PATH || path.join(__dirname, 'file-index.json');
+const CHANNELS_FILE = process.env.SV_CHANNELS_PATH || path.join(__dirname, 'channels.json');
 const MASSIVE_CATALOG_FILE = path.join(__dirname, 'scan-output', 'clean-catalog.json');
 const SV_CACHE_DIR = path.join(__dirname, 'cache');
 const SV_BOOT_SEARCH_FILE = path.join(SV_CACHE_DIR, 'boot-search-index.json');
@@ -74,6 +76,53 @@ const COMPAT_STREAM_SEEK_PREROLL_SEC = Math.max(0, Math.min(8, Number(process.en
 const SV_PLAYBACK_VERBOSE = process.env.SV_PLAYBACK_VERBOSE === '1';
 const SV_DETAIL_VERBOSE = process.env.SV_DETAIL_VERBOSE === '1';
 let activeMediaFfmpegStreams = 0;
+
+const PACKAGE_VERSION = (() => {
+  try { return String(require('./package.json').version || 'unknown'); }
+  catch { return 'unknown'; }
+})();
+
+function resolveBuildCommit() {
+  const environmentCommit = [
+    process.env.SV_COMMIT,
+    process.env.GIT_COMMIT,
+    process.env.VERCEL_GIT_COMMIT_SHA
+  ].find(value => /^[a-f\d]{7,64}$/i.test(String(value || '')));
+  if (environmentCommit) return String(environmentCommit);
+  try {
+    const gitDir = path.join(__dirname, '.git');
+    const head = fs.readFileSync(path.join(gitDir, 'HEAD'), 'utf8').trim();
+    if (/^[a-f\d]{40,64}$/i.test(head)) return head;
+    const match = /^ref:\s+(.+)$/.exec(head);
+    if (match) {
+      const loose = path.join(gitDir, ...match[1].split('/'));
+      if (fs.existsSync(loose)) {
+        const value = fs.readFileSync(loose, 'utf8').trim();
+        if (/^[a-f\d]{40,64}$/i.test(value)) return value;
+      }
+      const packed = fs.readFileSync(path.join(gitDir, 'packed-refs'), 'utf8');
+      const packedLine = packed.split(/\r?\n/).find(line => line.endsWith(` ${match[1]}`));
+      const value = packedLine?.split(' ')[0] || '';
+      if (/^[a-f\d]{40,64}$/i.test(value)) return value;
+    }
+  } catch {}
+  return 'unknown';
+}
+
+const BUILD_COMMIT = resolveBuildCommit();
+const startupReadiness = {
+  listening: false,
+  fileIndexLoaded: false,
+  playbackReady: false,
+  liveReady: false,
+  catalogReady: false,
+  searchReady: false,
+  detailsReady: false,
+  enrichmentStarted: false,
+  enrichmentReady: false,
+  startedAt: Date.now(),
+  listeningAt: null
+};
 
 const COMPAT_VIDEO_PTS_FILTER = 'setpts=PTS-STARTPTS';
 const COMPAT_AUDIO_PTS_FILTER = 'asetpts=PTS-STARTPTS,aresample=async=1';
@@ -519,19 +568,62 @@ function loadJSON(file, fallback) {
   try { if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
   return fallback;
 }
-posterCache  = loadJSON(CACHE_FILE,    {});
-watchHistory = loadJSON(HISTORY_FILE,  {});
-channels     = loadJSON(CHANNELS_FILE, []);
+function readJsonStrict(file) {
+  return JSON.parse(fs.readFileSync(file, 'utf8'));
+}
+
+let channelsConfigLoaded = false;
+function loadChannelsConfig() {
+  try {
+    const parsed = readJsonStrict(CHANNELS_FILE);
+    if (!Array.isArray(parsed) || parsed.some(channel => !channel || typeof channel !== 'object' || Array.isArray(channel))) {
+      throw new Error('channels.json must contain an array of channel objects');
+    }
+    channels = parsed;
+    channelsConfigLoaded = true;
+  } catch (error) {
+    channels = [];
+    channelsConfigLoaded = false;
+    console.warn('[Startup] channels.json unavailable or invalid:', error.message);
+  }
+}
+loadChannelsConfig();
 
 // ── FTP Catalog ───────────────────────────────────────────────────────────────
 let ftpCatalog = { movies: [], series: [] };
-try {
-  const catalogPath = path.join(__dirname, 'catalog.json');
-  if (fs.existsSync(catalogPath)) {
-    ftpCatalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
-    console.log(`📡 FTP Catalog loaded: ${ftpCatalog.movies.length} movies, ${ftpCatalog.series.length} series`);
+const FTP_CATALOG_FILE = path.join(__dirname, 'catalog.json');
+
+function loadNonessentialCatalogFiles() {
+  const nextPosterCache = loadJSON(CACHE_FILE, {});
+  const nextWatchHistory = loadJSON(HISTORY_FILE, {});
+  posterCache = nextPosterCache && typeof nextPosterCache === 'object' && !Array.isArray(nextPosterCache) ? nextPosterCache : {};
+  watchHistory = nextWatchHistory && typeof nextWatchHistory === 'object' && !Array.isArray(nextWatchHistory) ? nextWatchHistory : {};
+
+  try {
+    const parsed = readJsonStrict(FTP_CATALOG_FILE);
+    if (!parsed || !Array.isArray(parsed.movies) || !Array.isArray(parsed.series)) {
+      throw new Error('catalog.json must contain movies and series arrays');
+    }
+    ftpCatalog = parsed;
+    console.log(`[Startup] FTP catalog loaded: ${ftpCatalog.movies.length} movies, ${ftpCatalog.series.length} series`);
+  } catch (error) {
+    ftpCatalog = { movies: [], series: [] };
+    console.warn('[Startup] catalog.json unavailable or invalid:', error.message);
   }
-} catch (e) { console.warn('⚠ Could not load catalog.json:', e.message); }
+
+  _dedupedMovies = null;
+  _dedupedSeries = null;
+  _svFastSearchIndex = null;
+  _svBootSearchIndex = null;
+  _svBootSearchAllItems = null;
+  _svDetailCatalogIndex = null;
+  svNormalMovieItemsCache = null;
+  svNormalSeriesItemsCache = null;
+  svSectionListCache.clear();
+  loadPrebuiltHomeFeedData();
+  loadEpisodeTitleCache();
+  loadDiskDetailCache();
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // AGGRESSIVE CARTOON / ANIME FILTER
@@ -2850,18 +2942,120 @@ function findSubtitleTracks(dir, videoFile) {
 }
 
 // ── Build file index ──────────────────────────────────────────────────────────
-function buildFileIndex() {
-  fileIndex = [];
-  let movieFiles = [];
-  try { movieFiles = fs.readdirSync(MOVIES_DIR).filter(f => VIDEO_EXTS.includes(path.extname(f).toLowerCase())); } catch (e) { console.warn('⚠ Cannot read MOVIES_DIR:', e.message); }
-  for (const f of movieFiles) fileIndex.push({ dir: MOVIES_DIR, file: f, type: 'movie' });
-  console.log(`📁 Indexed ${movieFiles.length} movie files`);
+function fileIndexEntries(value) {
+  if (Array.isArray(value)) return value;
+  if (value && value.version === 1 && Array.isArray(value.entries)) return value.entries;
+  return null;
+}
 
-  let seriesFiles = [];
-  try { seriesFiles = fs.readdirSync(SERIES_DIR).filter(f => VIDEO_EXTS.includes(path.extname(f).toLowerCase())); } catch (e) { console.warn('⚠ Cannot read SERIES_DIR:', e.message); }
-  for (const f of seriesFiles) fileIndex.push({ dir: SERIES_DIR, file: f, type: 'episode' });
-  console.log(`📺 Indexed ${seriesFiles.length} series episode files`);
-  console.log(`✅ Total stream IDs: ${fileIndex.length}`);
+function fileIndexIdentity(entry) {
+  return `${path.resolve(entry.dir).toLowerCase()}\0${String(entry.file).toLowerCase()}\0${entry.type}`;
+}
+
+function validateFileIndex(value) {
+  const entries = fileIndexEntries(value);
+  if (!entries) return { valid: false, reason: 'file index must be an array or v1 envelope', entries: [] };
+  if (!entries.length) return { valid: false, reason: 'file index is empty', entries: [] };
+  if (entries.length > 1000000) return { valid: false, reason: 'file index is unreasonably large', entries: [] };
+
+  const movieRoot = path.resolve(MOVIES_DIR).toLowerCase();
+  const seriesRoot = path.resolve(SERIES_DIR).toLowerCase();
+  const identities = new Set();
+  const normalized = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      return { valid: false, reason: 'file index contains a non-object entry', entries: [] };
+    }
+    const dir = path.resolve(String(entry.dir || ''));
+    const file = String(entry.file || '');
+    const type = String(entry.type || '');
+    const root = dir.toLowerCase();
+    if ((type === 'movie' && root !== movieRoot) || (type === 'episode' && root !== seriesRoot) || !['movie', 'episode'].includes(type)) {
+      return { valid: false, reason: 'file index entry has an invalid root or type', entries: [] };
+    }
+    if (!file || file !== path.basename(file) || file.includes('\0') || !VIDEO_EXTS.includes(path.extname(file).toLowerCase())) {
+      return { valid: false, reason: 'file index entry has an invalid filename', entries: [] };
+    }
+    const normalizedEntry = { dir, file, type };
+    const identity = fileIndexIdentity(normalizedEntry);
+    if (identities.has(identity)) return { valid: false, reason: 'file index contains duplicate entries', entries: [] };
+    identities.add(identity);
+    normalized.push(normalizedEntry);
+  }
+  return { valid: true, reason: '', entries: normalized };
+}
+
+function loadPersistedFileIndexBeforeListen() {
+  try {
+    const parsed = readJsonStrict(INDEX_FILE);
+    const validation = validateFileIndex(parsed);
+    if (!validation.valid) throw new Error(validation.reason);
+    fileIndex = validation.entries;
+    startupReadiness.fileIndexLoaded = true;
+    startupReadiness.playbackReady = true;
+    console.log(`[Startup] Persisted file index loaded: ${fileIndex.length} stable playback IDs`);
+    return true;
+  } catch (error) {
+    fileIndex = [];
+    startupReadiness.fileIndexLoaded = false;
+    startupReadiness.playbackReady = false;
+    console.warn('[Startup] Persisted file index unavailable or invalid; playback will rebuild in background:', error.message);
+    return false;
+  }
+}
+
+async function scanMediaDirectory(dir, type) {
+  let entries = [];
+  try {
+    entries = await fs.promises.readdir(dir, { withFileTypes: true });
+  } catch (error) {
+    console.warn(`[File Index] Cannot read ${type} directory:`, error.message);
+    return [];
+  }
+  return entries
+    .filter(entry => entry.isFile() && VIDEO_EXTS.includes(path.extname(entry.name).toLowerCase()))
+    .map(entry => ({ dir: path.resolve(dir), file: entry.name, type }))
+    .sort((a, b) => a.file.localeCompare(b.file, 'en', { sensitivity: 'base', numeric: true }));
+}
+
+async function writeFileIndexAtomically(entries) {
+  const temporary = `${INDEX_FILE}.tmp-${process.pid}-${Date.now()}`;
+  const payload = JSON.stringify({ version: 1, generatedAt: new Date().toISOString(), entries }, null, 2);
+  await fs.promises.writeFile(temporary, payload, 'utf8');
+  try {
+    await fs.promises.rename(temporary, INDEX_FILE);
+  } catch (error) {
+    try { await fs.promises.unlink(temporary); } catch {}
+    throw error;
+  }
+}
+
+async function refreshFileIndexInBackground() {
+  const movieEntries = await scanMediaDirectory(MOVIES_DIR, 'movie');
+  const seriesEntries = await scanMediaDirectory(SERIES_DIR, 'episode');
+  const scanned = [...movieEntries, ...seriesEntries];
+
+  // Existing entries remain at their exact array positions. Removed files stay
+  // as stable tombstones, and newly discovered files append after all existing
+  // playback IDs.
+  const next = fileIndex.map(entry => ({ ...entry }));
+  const identities = new Set(next.map(fileIndexIdentity));
+  for (const entry of scanned) {
+    const identity = fileIndexIdentity(entry);
+    if (!identities.has(identity)) {
+      identities.add(identity);
+      next.push(entry);
+    }
+  }
+
+  const validation = validateFileIndex(next);
+  if (!validation.valid) throw new Error(`rebuilt file index rejected: ${validation.reason}`);
+  await writeFileIndexAtomically(validation.entries);
+  fileIndex = validation.entries;
+  startupReadiness.fileIndexLoaded = true;
+  startupReadiness.playbackReady = true;
+  console.log(`[File Index] Atomic refresh ready: ${fileIndex.length} stable playback IDs`);
+  return fileIndex.length;
 }
 function entryPath(entry) { return path.join(entry.dir, entry.file); }
 
@@ -2947,49 +3141,53 @@ function buildInstantLists() {
 async function runBackgroundEnrichment() {
   if (_enrichBusy) return;
   _enrichBusy = true;
+  startupReadiness.enrichmentStarted = true;
+  startupReadiness.enrichmentReady = false;
   console.log('🔄 Background enrichment started...');
+  try {
+    for (const item of _movieList || []) {
+      if (item.poster) continue;
+      const info = await getPosterInfo(item.file, 'movie');
+      if (info) {
+        Object.assign(item, {
+          poster: info.poster,
+          tmdbId: info.tmdbId || item.tmdbId,
+          overview: info.overview || item.overview,
+          year: info.year || item.year,
+          rating: info.rating || item.rating,
+          genre: info.genre || item.genre,
+          runtime: info.runtime || item.runtime,
+          director: info.director || item.director,
+          language: info.language || item.language,
+          productionCompanies: info.productionCompanies || []
+        });
+      }
+    }
 
-  for (const item of _movieList) {
-    if (item.poster) continue;
-    const info = await getPosterInfo(item.file, 'movie');
-    if (info) {
-      Object.assign(item, {
-        poster:   info.poster,
-        tmdbId:   info.tmdbId   || item.tmdbId,
-        overview: info.overview || item.overview,
-        year:     info.year     || item.year,
-        rating:   info.rating   || item.rating,
-        genre:    info.genre    || item.genre,
-        runtime:  info.runtime  || item.runtime,
-        director: info.director || item.director,
-        language: info.language || item.language,
-        productionCompanies: info.productionCompanies || [],
+    for (const show of _seriesList || []) {
+      if (show.poster) continue;
+      const key = '__series__' + show.name;
+      let info = posterCache[key];
+      if (!info) {
+        info = await omdbEnqueue(show.name, 'series');
+        if (info) { posterCache[key] = info; saveCache(); }
+      }
+      if (info) Object.assign(show, {
+        poster: info.poster,
+        tmdbId: info.tmdbId || show.tmdbId || null,
+        overview: info.overview || show.overview,
+        year: info.year || show.year,
+        rating: info.rating || show.rating,
+        genre: info.genre || show.genre,
+        language: info.language || show.language,
+        productionCompanies: info.productionCompanies || []
       });
     }
+    startupReadiness.enrichmentReady = true;
+    console.log('✅ Background enrichment complete');
+  } finally {
+    _enrichBusy = false;
   }
-
-  for (const show of _seriesList) {
-    if (show.poster) continue;
-    const key = '__series__' + show.name;
-    let info = posterCache[key];
-    if (!info) {
-      info = await omdbEnqueue(show.name, 'series');
-      if (info) { posterCache[key] = info; saveCache(); }
-    }
-    if (info) Object.assign(show, {
-      poster:   info.poster,
-      tmdbId:   info.tmdbId || show.tmdbId || null,
-      overview: info.overview || show.overview,
-      year:     info.year     || show.year,
-      rating:   info.rating   || show.rating,
-      genre:    info.genre    || show.genre,
-      language: info.language || show.language,
-      productionCompanies: info.productionCompanies || [],
-    });
-  }
-
-  _enrichBusy = false;
-  console.log('✅ Background enrichment complete');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -3029,6 +3227,17 @@ app.use((_, res, next) => {
   next();
 });
 app.use(infraTelemetry.requestMiddleware);
+
+const FILE_INDEX_REQUIRED_PATH = /^\/(?:api\/(?:playback\/local|mobile-hls\/local|media-info|duration|qualities|subtitles|stream-seek)(?:\/|$)|stream(?:\/|$)|subtitles(?:\/|$))/i;
+app.use((req, res, next) => {
+  if (startupReadiness.playbackReady || !FILE_INDEX_REQUIRED_PATH.test(req.path)) return next();
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Retry-After', '1');
+  return jsonError(res, 503, 'PLAYBACK_INDEX_REBUILDING', 'Local playback is starting; retry shortly', {
+    playbackReady: false
+  });
+});
+
 app.use('/api/dashboard', dashboardRoutes);
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -3078,9 +3287,10 @@ app.get('/api/channels', (req, res) => {
 });
 
 app.post('/api/channels/reload', (req, res) => {
-  channels = loadJSON(CHANNELS_FILE, []);
+  loadChannelsConfig();
+  startupReadiness.liveReady = startupReadiness.listening && channelsConfigLoaded;
   console.log(`🔄 Reloaded ${channels.length} channels`);
-  res.json({ ok: true, count: channels.length });
+  res.json({ ok: channelsConfigLoaded, count: channels.length, liveReady: startupReadiness.liveReady });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -7173,15 +7383,36 @@ const SV_HOME_SECTIONS = [
 ];
 
 const SV_PREBUILT_HOME_FEED_FILE = path.join(__dirname, 'home-feed.json');
-const SV_PREBUILT_HOME_FEED = loadJSON(SV_PREBUILT_HOME_FEED_FILE, null);
-const SV_PREBUILT_HOME_ROWS = new Map(
-  (Array.isArray(SV_PREBUILT_HOME_FEED?.rows) ? SV_PREBUILT_HOME_FEED.rows : [])
-    .filter(row => row?.rowId && Array.isArray(row.items))
-    .map(row => [row.rowId, row])
-);
+let SV_PREBUILT_HOME_FEED = null;
+let SV_PREBUILT_HOME_ROWS = new Map();
 const svPrebuiltHomeJsonCache = new Map();
 const SV_HOME_MIN_PREBUILT_ITEMS = 8;
 const SV_DYNAMIC_HOME_SECTION_KEYS = new Set(['warner','hbo']);
+
+function loadPrebuiltHomeFeedData() {
+  const parsed = loadJSON(SV_PREBUILT_HOME_FEED_FILE, null);
+  SV_PREBUILT_HOME_FEED = parsed && typeof parsed === 'object' ? parsed : null;
+  SV_PREBUILT_HOME_ROWS = new Map(
+    (Array.isArray(SV_PREBUILT_HOME_FEED?.rows) ? SV_PREBUILT_HOME_FEED.rows : [])
+      .filter(row => row?.rowId && Array.isArray(row.items))
+      .map(row => [row.rowId, row])
+  );
+  svPrebuiltHomeJsonCache.clear();
+}
+
+function svHomeSnapshotMetadata(kind, generatedAt, rows) {
+  const safeGeneratedAt = generatedAt || new Date().toISOString();
+  const identity = rows.map(row => `${row.rowId}:${row.items?.[0]?.id || ''}:${row.items?.length || 0}`).join('|');
+  const digest = crypto.createHash('sha256').update(`${kind}|${safeGeneratedAt}|${BUILD_COMMIT}|${identity}`).digest('hex').slice(0, 20);
+  return {
+    snapshotId: `${kind}-${digest}`,
+    generatedAt: safeGeneratedAt,
+    source: {
+      backendVersion: PACKAGE_VERSION,
+      backendCommit: BUILD_COMMIT
+    }
+  };
+}
 
 function svPrebuiltHomePayload(limit) {
   if (!SV_PREBUILT_HOME_ROWS.size) return null;
@@ -7195,13 +7426,15 @@ function svPrebuiltHomePayload(limit) {
     if (!items.length) return null;
     return { rowId, sectionKey, title, items:items.slice(0, limit) };
   }).filter(Boolean);
+  if (rows.length < 43) return null;
   const hero = (rows.find(row => row.rowId === 'newRow')?.items || rows[0]?.items || [])
     .filter(item => item.poster || item.backdrop)
     .slice(0, 10);
+  const generatedAt = SV_PREBUILT_HOME_FEED.generatedAt || null;
+  if (!generatedAt || !Number.isFinite(Date.parse(String(generatedAt)))) return null;
   return {
     ok:true,
-    generatedAt:SV_PREBUILT_HOME_FEED.generatedAt || null,
-    source:`${SV_PREBUILT_HOME_FEED.source || 'prebuilt-home-feed'}:cached`,
+    ...svHomeSnapshotMetadata('prebuilt-home-feed', generatedAt, rows),
     hero,
     rows
   };
@@ -7617,8 +7850,14 @@ app.get('/api/home-feed', (req, res) => {
     const hero = (rows.find(r => r.rowId === 'newRow')?.items || rows[0]?.items || [])
       .filter(item => item.poster || item.backdrop)
       .slice(0, 10);
+    const generatedAt = new Date().toISOString();
     res.setHeader('Cache-Control', 'public, max-age=60');
-    res.json({ ok:true, hero, rows });
+    res.json({
+      ok:true,
+      ...svHomeSnapshotMetadata('live-home-feed', generatedAt, rows),
+      hero,
+      rows
+    });
   } catch (e) {
     console.error('/api/home-feed error:', e.message);
     res.json({ ok:false, hero:[], rows:[] });
@@ -7909,7 +8148,10 @@ app.get('/api/series', (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 const EP_CACHE_FILE = path.join(__dirname, 'episode-title-cache.json');
 let epTitleCache = {};
-try { if (fs.existsSync(EP_CACHE_FILE)) epTitleCache = JSON.parse(fs.readFileSync(EP_CACHE_FILE, 'utf8')); } catch {}
+function loadEpisodeTitleCache() {
+  const parsed = loadJSON(EP_CACHE_FILE, {});
+  epTitleCache = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+}
 function saveEpCache() { try { fs.writeFileSync(EP_CACHE_FILE, JSON.stringify(epTitleCache, null, 2)); } catch {} }
 
 function tmdbGet(path) {
@@ -7933,16 +8175,19 @@ const titleDetailsCache = new Map();
 const titleDetailRefreshJobs = new Map();
 const DETAIL_CACHE_FILE = path.join(__dirname, 'detail-cache.json');
 let diskDetailCache = {};
-try {
-  if (process.env.DEBUG_DETAIL_RESET === '1') {
+function loadDiskDetailCache() {
+  try {
+    if (process.env.DEBUG_DETAIL_RESET === '1') {
+      diskDetailCache = {};
+      fs.writeFileSync(DETAIL_CACHE_FILE, '{}');
+    } else {
+      const parsed = loadJSON(DETAIL_CACHE_FILE, {});
+      diskDetailCache = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    }
+  } catch (error) {
+    console.warn('Could not load detail-cache.json:', error.message);
     diskDetailCache = {};
-    fs.writeFileSync(DETAIL_CACHE_FILE, '{}');
-  } else if (fs.existsSync(DETAIL_CACHE_FILE)) {
-    diskDetailCache = JSON.parse(fs.readFileSync(DETAIL_CACHE_FILE, 'utf8'));
   }
-} catch (e) {
-  console.warn('Could not load detail-cache.json:', e.message);
-  diskDetailCache = {};
 }
 
 let detailCacheSaveTimer = null;
@@ -8625,11 +8870,30 @@ app.get('/api/title-details', async (req, res) => {
 });
 
 app.get('/api/version', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   res.json({
     ok: true,
-    version: 'title-details-route-active',
-    build: '20260624-lite-ui-preview-cleanup2',
-    time: new Date().toISOString()
+    version: PACKAGE_VERSION,
+    commit: BUILD_COMMIT
+  });
+});
+
+app.get('/api/ready', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    ok: startupReadiness.listening,
+    reachable: true,
+    listening: startupReadiness.listening,
+    fileIndexLoaded: startupReadiness.fileIndexLoaded,
+    playbackReady: startupReadiness.playbackReady,
+    liveReady: startupReadiness.liveReady,
+    catalogReady: startupReadiness.catalogReady,
+    searchReady: startupReadiness.searchReady,
+    detailsReady: startupReadiness.detailsReady,
+    enrichmentReady: startupReadiness.enrichmentReady,
+    version: PACKAGE_VERSION,
+    commit: BUILD_COMMIT,
+    uptimeSeconds: Math.max(0, Number(((Date.now() - startupReadiness.startedAt) / 1000).toFixed(3)))
   });
 });
 
@@ -10917,20 +11181,89 @@ process.on('unhandledRejection', reason => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // STARTUP
 // ═══════════════════════════════════════════════════════════════════════════════
-buildFileIndex();
-buildInstantLists();                                   // ⚡ instant — sync, ~10ms
-filterCartoonsAndAnime();                              // 🧹 remove cartoons/anime (with logging)
-svGetBootSearchIndex();                                // instant search boot payload, no massive catalog
-try { svDetailCatalogIndex(); }                        // warm playable recommendations before first detail click
-catch (e) { console.warn('Detail recommendation warmup failed:', e.message); }
-if (process.env.SV_SEARCH_WARMUP === '1') {
-  const searchWarmupDelay = Math.max(30000, parseInt(process.env.SV_SEARCH_WARMUP_DELAY_MS || '120000', 10) || 120000);
-  setTimeout(() => {
-    try { svGetFastSearchIndex(); }
-    catch (e) { console.warn('⚠ Search index warmup failed:', e.message); }
-  }, searchWarmupDelay);
+const backgroundJobs = new Map();
+let backgroundJobTail = Promise.resolve();
+
+function runBackgroundJob(name, task) {
+  if (backgroundJobs.has(name)) return backgroundJobs.get(name);
+  const execute = async () => {
+    const startedAt = Date.now();
+    console.log(`[Background] ${name} started`);
+    try {
+      const result = await task();
+      console.log(`[Background] ${name} completed in ${Date.now() - startedAt}ms`);
+      return result;
+    } catch (error) {
+      console.error(`[Background] ${name} failed after ${Date.now() - startedAt}ms:`, error.message);
+      return null;
+    }
+  };
+  const promise = backgroundJobTail
+    .then(execute, execute)
+    .then(result => {
+      return result;
+    })
+    .finally(() => backgroundJobs.delete(name));
+  backgroundJobs.set(name, promise);
+  backgroundJobTail = promise.then(() => undefined, () => undefined);
+  return promise;
 }
-setTimeout(() => runBackgroundEnrichment(), 60000);    // 🔄 fill missing posters after startup settles
+
+function scheduleBackgroundJob(name, delayMs, task) {
+  const timer = setTimeout(() => { void runBackgroundJob(name, task); }, delayMs);
+  timer.unref?.();
+  return timer;
+}
+
+const persistedFileIndexLoaded = loadPersistedFileIndexBeforeListen();
+
+async function startDeferredProductionWarmups() {
+  if (process.env.SV_SKIP_BACKGROUND_JOBS === '1') {
+    console.log('[Background] Startup warmups disabled by SV_SKIP_BACKGROUND_JOBS');
+    return;
+  }
+
+  if (process.env.SV_FILE_INDEX_ONLY === '1') {
+    await runBackgroundJob(
+      startupReadiness.playbackReady ? 'file-index-refresh' : 'file-index-rebuild',
+      refreshFileIndexInBackground
+    );
+    return;
+  }
+
+  if (!startupReadiness.playbackReady) {
+    await runBackgroundJob('file-index-rebuild', refreshFileIndexInBackground);
+  }
+
+  await runBackgroundJob('catalog-load', async () => {
+    loadNonessentialCatalogFiles();
+    buildInstantLists();
+    filterCartoonsAndAnime();
+    startupReadiness.catalogReady = true;
+  });
+
+  await runBackgroundJob('boot-search-index', async () => {
+    svGetBootSearchIndex();
+    startupReadiness.searchReady = true;
+  });
+
+  await runBackgroundJob('detail-index', async () => {
+    svDetailCatalogIndex();
+    startupReadiness.detailsReady = true;
+  });
+
+  if (persistedFileIndexLoaded) {
+    await runBackgroundJob('file-index-refresh', refreshFileIndexInBackground);
+  }
+
+  if (process.env.SV_SEARCH_WARMUP === '1') {
+    const delay = Math.max(30000, parseInt(process.env.SV_SEARCH_WARMUP_DELAY_MS || '120000', 10) || 120000);
+    scheduleBackgroundJob('massive-search-index', delay, async () => { svGetFastSearchIndex(); });
+  }
+  scheduleBackgroundJob('poster-enrichment', 60000, runBackgroundEnrichment);
+  scheduleBackgroundJob('fifa-live-warmup', 750, async () => { await svWarmFifaLiveCache('startup'); });
+  scheduleBackgroundJob('fifa-news-warmup', 2500, async () => { await svGetFifaNewsPayload(); });
+}
 
 const os = require('os');
 function getLanIP() {
@@ -10940,7 +11273,10 @@ function getLanIP() {
   return 'your-laptop-ip';
 }
 
-const server = app.listen(3000, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
+  startupReadiness.listening = true;
+  startupReadiness.listeningAt = Date.now();
+  startupReadiness.liveReady = channelsConfigLoaded;
   const lan = getLanIP();
   const configured = channels.filter(c => c.url).length;
   console.log(`\n🎬 StreamVault Enhanced → http://0.0.0.0:${PORT}`);
@@ -10956,9 +11292,6 @@ const server = app.listen(3000, '0.0.0.0', () => {
   console.log(`✨ Seeking, pausing, and all controls work instantly\n`);
   console.log(`🧹 Cartoon/Anime filter active — only real movies & series are shown`);
   console.log('ðŸ“¡ Infra telemetry active at /infra/live');
-  setTimeout(() => svWarmFifaLiveCache('startup'), 750);
-  setTimeout(() => {
-    svGetFifaNewsPayload().catch(err => svFifaWarn('startup news warmup failed', err));
-  }, 2500);
+  setImmediate(() => { void startDeferredProductionWarmups(); });
 });
 infraTelemetry.attachWebSocket(server);

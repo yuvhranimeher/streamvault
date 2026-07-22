@@ -5,6 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "start:legacy": "node server.js",
+    "test:startup": "node --test test/startup-readiness.test.js",
     "details:shadow:audit": "node tools/details-parity-v1/audit-details-fixtures.js",
     "details:shadow:schema": "node tools/details-parity-v1/validate-details-fixture-schema.js",
     "details:shadow:schema:negative": "node tools/details-parity-v1/test-details-fixture-schema-negative.js",

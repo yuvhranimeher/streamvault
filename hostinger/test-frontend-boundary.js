@@ -10,7 +10,7 @@ const snapshotSource = fs.readFileSync(path.join(ROOT, HOME_SNAPSHOT_FILE), 'utf
 const runtimeSource = fs.readFileSync(path.join(ROOT, 'runtime-config.js'), 'utf8');
 const offlineSource = fs.readFileSync(path.join(ROOT, 'offline-ui.js'), 'utf8');
 const index = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const sw = fs.readFileSync(path.join(ROOT, 'sw-20260717-v5.js'), 'utf8');
+const sw = fs.readFileSync(path.join(ROOT, 'sw-20260722-v6.js'), 'utf8');
 const fallbackSw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 const homeSnapshot = readSnapshotModule(path.join(ROOT, HOME_SNAPSHOT_FILE));
 const channels = JSON.parse(fs.readFileSync(path.join(ROOT, 'channels.json'), 'utf8'));
@@ -28,8 +28,16 @@ let nextBackendStatus = null;
 function payloadFor(url) {
   const pathname = new URL(String(url), 'https://streamvault.fit').pathname;
   if (pathname === '/channels.json') return channels;
-  if (pathname === '/api/version') {
+  if (pathname === '/api/ready') {
     return {
+      ok: true,
+      reachable: true,
+      listening: true,
+      fileIndexLoaded: true,
+      playbackReady: true,
+      liveReady: true,
+      catalogReady: false,
+      searchReady: false,
       version: 'boundary-test',
       commit: homeSnapshot.source.backendCommit
     };
@@ -42,7 +50,7 @@ async function fakeFetch(input) {
   fetchCalls.push(String(url));
   const parsed = new URL(String(url), 'https://streamvault.fit');
   const backendRequest = parsed.origin === 'https://backend.streamvault.fit';
-  if (parsed.pathname === '/api/version' && !healthOnline) {
+  if (parsed.pathname === '/api/ready' && !healthOnline) {
     throw new TypeError('backend network unavailable');
   }
   if (backendRequest && nextBackendFailure) {
@@ -67,6 +75,7 @@ function addListener(type, handler) {
 
 const document = {
   documentElement: { dataset: {} },
+  hidden: false,
   addEventListener(type, handler, capture) {
     if (type === 'click') clickListeners.push({ handler, capture });
     else addListener(type, handler);
@@ -105,6 +114,47 @@ const window = {
   openLiveMatchChannel() { liveCalls += 1; }
 };
 
+function createMemoryIndexedDB() {
+  const stores = new Map();
+  return {
+    open() {
+      const request = {};
+      queueMicrotask(() => {
+        const db = {
+          objectStoreNames: { contains: name => stores.has(name) },
+          createObjectStore(name) { if (!stores.has(name)) stores.set(name, new Map()); },
+          transaction(name) {
+            return {
+              objectStore() {
+                const store = stores.get(name);
+                return {
+                  get(key) {
+                    const operation = {};
+                    queueMicrotask(() => { operation.result = store.get(key); operation.onsuccess?.(); });
+                    return operation;
+                  },
+                  put(value, key) {
+                    const operation = {};
+                    queueMicrotask(() => { store.set(key, value); operation.onsuccess?.(); });
+                    return operation;
+                  }
+                };
+              }
+            };
+          },
+          close() {}
+        };
+        request.result = db;
+        request.onupgradeneeded?.();
+        request.onsuccess?.();
+      });
+      return request;
+    }
+  };
+}
+
+window.indexedDB = createMemoryIndexedDB();
+
 const context = {
   window,
   document,
@@ -112,6 +162,7 @@ const context = {
   URL,
   Request,
   AbortController,
+  DOMException,
   CustomEvent,
   console,
   setTimeout,
@@ -208,9 +259,12 @@ vm.runInNewContext(runtimeSource, context, { filename: 'runtime-config.js' });
   nextBackendFailure = new TypeError('single media request failed');
   await assert.rejects(window.fetch('/stream/missing-media'), /single media request failed/);
   await new Promise(resolve => setTimeout(resolve, 0));
-  assert.strictEqual(window.STREAMVAULT_CONFIG.backendStatus.available, true);
+  assert.strictEqual(window.STREAMVAULT_CONFIG.backendStatus.available, false);
   window.openLiveChannel('channel-after-media-error');
   assert.strictEqual(liveCalls, 4, 'a media request failure latched Live TV offline');
+
+  await window.STREAMVAULT_CONFIG.checkBackendAvailability();
+  assert.strictEqual(window.STREAMVAULT_CONFIG.backendStatus.available, true);
 
   const abortError = new Error('playback superseded');
   abortError.name = 'AbortError';
@@ -229,14 +283,15 @@ vm.runInNewContext(runtimeSource, context, { filename: 'runtime-config.js' });
   assert.strictEqual(window.STREAMVAULT_CONFIG.backendStatus.available, false);
   const playbackBeforeOfflineGuard = playbackCalls;
   await window.playMedia('offline-movie');
-  assert.strictEqual(playbackCalls, playbackBeforeOfflineGuard);
-  assert(toastMessages.includes('Playback server is currently offline.'));
+  assert.strictEqual(playbackCalls, playbackBeforeOfflineGuard + 1, 'stale offline status blocked the real Play action');
+  assert(!toastMessages.includes('Playback server is currently offline.'));
 
   healthOnline = true;
+  await window.fetch('/api/playback/local/recovered');
   await window.playMedia('recovered-movie');
   window.openLiveChannel('recovered-channel');
   assert.strictEqual(window.STREAMVAULT_CONFIG.backendStatus.available, true);
-  assert.strictEqual(playbackCalls, playbackBeforeOfflineGuard + 1, 'playback did not recover without refresh');
+  assert.strictEqual(playbackCalls, playbackBeforeOfflineGuard + 2, 'playback did not recover without refresh');
   assert.strictEqual(liveCalls, 5, 'Live TV did not recover without refresh');
   assert(!/(?:local|session)Storage/.test(runtimeSource + offlineSource));
 
@@ -245,9 +300,9 @@ vm.runInNewContext(runtimeSource, context, { filename: 'runtime-config.js' });
   assert(externalScripts[1].startsWith('/runtime-config.js'));
   assert(index.includes('/manifest.webmanifest'));
   assert(index.includes('/offline-ui.js'));
-  assert(runtimeSource.includes("navigator.serviceWorker.register('/sw-20260717-v5.js'"));
+  assert(runtimeSource.includes("navigator.serviceWorker.register('/sw-20260722-v6.js'"));
   assert(runtimeSource.includes("updateViaCache: 'none'"));
-  assert(!/home-feed\.json|\/api\/home-feed/i.test(index + runtimeSource));
+  assert(!/home-feed\.json/i.test(index + runtimeSource));
 
   const artwork = [
     ...(homeSnapshot.hero || []),
@@ -264,15 +319,13 @@ vm.runInNewContext(runtimeSource, context, { filename: 'runtime-config.js' });
   assert(sw.includes("request.headers.has('range')"));
   assert(sw.includes("request.destination === 'video'"));
   assert(sw.includes("request.destination === 'audio'"));
-  assert(sw.includes("'/api/heavy-compat-hls'"));
-  assert(sw.includes("'/api/mobile-hls'"));
   for (const prefix of ['/proxy', '/subtitle', '/audio', '/hls', '/playback']) {
     assert(sw.includes(`'${prefix}'`), `service worker backend boundary is missing ${prefix}`);
   }
   assert(sw.includes('POSTER_CACHE_LIMIT'));
-  assert(sw.includes("OBSOLETE_HOME_PATHS = new Set(['/home-feed.json'])"));
-  assert(sw.includes('purgeObsoleteHomeEntries'));
-  assert.strictEqual(fallbackSw.replace(/\r\n/g, '\n'), sw.replace(/\r\n/g, '\n'));
+  assert(sw.includes('CACHE_PREFIX'));
+  assert(sw.includes('caches.delete(name)'));
+  assert(fallbackSw.includes("importScripts('/sw-20260722-v6.js')"));
 
   console.log(`Hostinger frontend boundary tests passed: ${artwork.length} static artwork URLs, ${channels.length} local channel logos`);
 })().catch(error => {

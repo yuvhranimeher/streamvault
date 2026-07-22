@@ -5,23 +5,21 @@
   if(!config || global.__svOfflineGuardsInstalled)return;
   global.__svOfflineGuardsInstalled=true;
 
-  function backendIsOffline(){
-    return config.backendStatus?.available === false;
-  }
-
   function guardFunction(name, kind){
     const original=global[name];
     if(typeof original !== 'function' || original.__svOfflineGuard)return;
     const guarded=function(){
-      if(backendIsOffline()){
-        const context=this;
-        const args=arguments;
-        return config.showOfflineMessage(kind).then(message=>{
-          if(message)return;
-          return original.apply(context,args);
+      // Readiness is advisory. A stale offline result must never suppress the
+      // real playback/live request, because that request is the fastest and
+      // most authoritative recovery signal.
+      const result=original.apply(this,arguments);
+      if(result && typeof result.then === 'function'){
+        return result.catch(async error=>{
+          if(config.backendStatus?.reachable === false)await config.showOfflineMessage(kind);
+          throw error;
         });
       }
-      return original.apply(this,arguments);
+      return result;
     };
     guarded.__svOfflineGuard=true;
     guarded.__svOriginal=original;
@@ -41,16 +39,6 @@
     'openLiveMatchChannel'
   ].forEach(name=>guardFunction(name,'liveTv'));
 
-  document.addEventListener('click',event=>{
-    const link=event.target?.closest?.('a[href]');
-    if(!link || !backendIsOffline())return;
-    let url;
-    try{url=new URL(link.href,location.href);}catch(_error){return;}
-    if(url.origin !== config.backendOrigin)return;
-    event.preventDefault();
-    config.showOfflineMessage(url.pathname.startsWith('/download/') ? 'action' : 'playback')
-      .then(message=>{
-        if(!message)link.click();
-      });
-  },true);
+  // Backend links are intentionally not intercepted. Their real network
+  // result decides whether offline UI is appropriate.
 })(window);

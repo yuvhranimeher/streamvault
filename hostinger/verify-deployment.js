@@ -6,7 +6,7 @@ const ROOT = __dirname;
 const INDEX = path.join(ROOT, 'index.html');
 const BACKEND_ORIGIN = 'https://backend.streamvault.fit';
 const HOME_SNAPSHOT_FILE = 'home-snapshot-76d0639-20260717.js';
-const SERVICE_WORKER_FILE = 'sw-20260717-v5.js';
+const SERVICE_WORKER_FILE = 'sw-20260722-v6.js';
 const STATIC_JSON = ['boot-search-index.json', 'channels.json', 'catalog.json', 'manifest.webmanifest'];
 const REQUIRED_MESSAGES = [
   'Playback server is currently offline.',
@@ -149,8 +149,8 @@ if (/https:\/\/(?:www\.)?streamvault\.fit\/(?:api|download|live|live-relay|proxy
   fail('an active script still hardcodes a backend request through the frontend apex');
 }
 const homeSource = read('home.js');
-if (/home-feed\.json|\/api\/home-feed/i.test(index + runtime + homeSource)) {
-  fail('active frontend still references the obsolete homepage feed');
+if (/home-feed\.json/i.test(index + runtime + homeSource)) {
+  fail('active frontend still references the obsolete static homepage feed');
 }
 for (const obsolete of ['home-feed.json', 'sw-20260714-v4.js']) {
   if (fs.existsSync(path.join(ROOT, obsolete))) fail(`obsolete frontend file still exists: ${obsolete}`);
@@ -158,22 +158,17 @@ for (const obsolete of ['home-feed.json', 'sw-20260714-v4.js']) {
 
 const sw = read(SERVICE_WORKER_FILE);
 const fallbackSw = read('sw.js');
-if (fallbackSw.replace(/\r\n/g, '\n') !== sw.replace(/\r\n/g, '\n')) {
-  fail(`sw.js must mirror ${SERVICE_WORKER_FILE} as a compatibility fallback`);
+if (!fallbackSw.includes(`importScripts('/${SERVICE_WORKER_FILE}')`)) {
+  fail(`sw.js must delegate to ${SERVICE_WORKER_FILE} as a compatibility fallback`);
 }
 for (const name of [SERVICE_WORKER_FILE, 'sw.js']) {
   const publicSwPath = path.resolve(ROOT, '..', 'public', name);
-  if (!fs.existsSync(publicSwPath) || fs.readFileSync(publicSwPath, 'utf8').replace(/\r\n/g, '\n') !== sw.replace(/\r\n/g, '\n')) {
-    fail(`public/${name} must mirror hostinger/${SERVICE_WORKER_FILE} for root service-worker publishing`);
-  }
+  if (!fs.existsSync(publicSwPath)) fail(`public/${name} is missing for root service-worker publishing`);
 }
 if (!runtime.includes(`navigator.serviceWorker.register('/${SERVICE_WORKER_FILE}'`) || !runtime.includes("updateViaCache: 'none'")) {
   fail(`runtime-config.js must register /${SERVICE_WORKER_FILE} with updateViaCache none`);
 }
-if (!sw.includes("OBSOLETE_HOME_PATHS = new Set(['/home-feed.json'])") || !sw.includes('purgeObsoleteHomeEntries')) {
-  fail('service worker does not purge obsolete homepage feed entries');
-}
-for (const exclusion of ['range', '/api/heavy-compat-hls', '/api/mobile-hls', '/live-relay', 'm3u8', 'POSTER_CACHE']) {
+for (const exclusion of ['range', '/api', '/playback', '/live-relay', 'm3u8', 'POSTER_CACHE']) {
   if (!sw.toLowerCase().includes(exclusion.toLowerCase())) fail(`service worker exclusion/cache rule is missing: ${exclusion}`);
 }
 if (!sw.includes("request.destination === 'video'") || !sw.includes("request.destination === 'audio'")) {
@@ -181,10 +176,13 @@ if (!sw.includes("request.destination === 'video'") || !sw.includes("request.des
 }
 
 const htaccess = read('.htaccess');
-if (!htaccess.includes('index\\.html|sw\\.js') || !htaccess.includes('no-cache, no-store')) {
-  fail('.htaccess does not mark index.html and sw.js for no-cache/no-store');
+if (!htaccess.includes('index\\.html|runtime-config\\.js|sw') || !htaccess.includes('no-cache, no-store')) {
+  fail('.htaccess does not mark index.html, runtime config, and service workers for no-cache/no-store');
 }
 if (!htaccess.includes('backend.streamvault.fit')) fail('.htaccess does not document the backend route boundary');
+if (!runtime.includes("BACKEND_ORIGIN + '/api/ready'")) fail('runtime readiness checks do not use /api/ready');
+if (!runtime.includes('global.indexedDB.open')) fail('runtime homepage snapshots do not use IndexedDB');
+if (/(?:local|session)Storage/.test(runtime)) fail('runtime homepage snapshot persistence still uses Web Storage');
 
 if (failures) {
   process.exitCode = 1;

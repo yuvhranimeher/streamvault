@@ -84,6 +84,15 @@ window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE ||
   var svHomeBackgroundRefreshStarted = false;
   var svLoggedShortRows = window.__svLoggedShortRows || (window.__svLoggedShortRows = new Set());
 
+  function svUseHomeSnapshot(snapshot){
+    if(!snapshot?.snapshotId || !Array.isArray(snapshot.rows))return false;
+    SV_HOME_SNAPSHOT = snapshot;
+    SV_HOME_SNAPSHOT_ID = snapshot.snapshotId;
+    SV_HOME_SNAPSHOT_BACKEND_COMMIT = snapshot.source?.backendCommit || '';
+    SV_HOME_SNAPSHOT_ROWS = new Map(snapshot.rows.map(row=>[row.rowId,row]));
+    return true;
+  }
+
   function svInstallNormalStudioPosterSizing(){
     if(document.getElementById('svNormalStudioPosterSizing'))return;
     const style = document.createElement('style');
@@ -275,6 +284,7 @@ window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE ||
     svHomePayloadPromise = Promise.resolve(staticSnapshot)
       .then(data=>{
         data=svHomeNormalizeBackendUrls(data);
+        svUseHomeSnapshot(data);
         data._limit = requestedLimit;
         svHomePayload = data;
         return data;
@@ -375,6 +385,13 @@ window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE ||
 
   window.addEventListener('streamvault:backend-status', event=>{
     if(event.detail?.available === true)svScheduleHomeSnapshotRefresh();
+  });
+  window.addEventListener('streamvault:home-snapshot-updated', ()=>{
+    const snapshot = window.StreamVaultConfig?.getCurrentHomeSnapshot?.();
+    if(!svUseHomeSnapshot(snapshot))return;
+    svHomePayload = snapshot;
+    svHomeBackgroundRefreshStarted = false;
+    svScheduleHomeSnapshotRefresh();
   });
 
   function svLoadHomeSections(){

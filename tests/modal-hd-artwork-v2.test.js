@@ -315,15 +315,19 @@ async function flush() {
   assert(css.includes('object-position:center 18%'));
 
   for (const relative of [
-    'hostinger/sw-20260714-v4.js',
-    'hostinger/sw.js',
-    'public/sw-20260714-v4.js',
-    'public/sw.js'
+    'hostinger/sw-20260722-v6.js',
+    'public/sw-20260722-v6.js'
   ]) {
     const sw = fs.readFileSync(path.join(root, relative), 'utf8');
     assert(sw.includes('function isModalHdArtworkRequest'));
-    assert(sw.indexOf('if(isModalHdArtworkRequest(request,url))') < sw.indexOf('if(isPosterRequest(request,url))'));
+    const modalBranch = sw.search(/if\s*\(isModalHdArtworkRequest\(request,\s*url\)\)/);
+    const posterBranch = sw.search(/if\s*\(is(?:TmdbArtwork|PosterRequest)\(request,\s*url\)\)/);
+    assert(modalBranch >= 0 && posterBranch >= 0 && modalBranch < posterBranch);
     assert(sw.includes("url.searchParams.get('sv-modal-hd') === 'v2'"));
+  }
+  for (const relative of ['hostinger/sw.js', 'public/sw.js']) {
+    const sw = fs.readFileSync(path.join(root, relative), 'utf8');
+    assert(sw.includes("importScripts('/sw-20260722-v6.js')"));
   }
 
   console.log('Modal HD artwork v2 deterministic tests passed');

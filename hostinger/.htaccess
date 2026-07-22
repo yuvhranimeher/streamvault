@@ -1,17 +1,33 @@
 DirectoryIndex index.html
 
 <IfModule mod_headers.c>
-  <FilesMatch "\.(?:css|js|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|otf)$">
+  <FilesMatch "\.(?:css|js)$">
+    Header always set Cache-Control "public, max-age=300, must-revalidate"
+  </FilesMatch>
+
+  <FilesMatch "\.(?:png|jpe?g|gif|webp|svg|ico|woff2?|ttf|otf)$">
     Header always set Cache-Control "public, max-age=86400, stale-while-revalidate=604800"
   </FilesMatch>
 
-  <FilesMatch "^(?:home-feed|boot-search-index|channels)\.json$">
+  # Real content hashes are immutable. More specific runtime/snapshot rules
+  # below deliberately override this policy.
+  <FilesMatch "[.-](?=[a-f0-9]{8,64}[.-])(?=[a-f0-9]*[a-f])[a-f0-9]{8,64}(?:[.-][^./]+)*\.(?:css|js|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|otf)$">
+    Header always set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+
+  # JSON manifests/loaders can be used offline by the service worker, but the
+  # HTTP cache must revalidate them whenever the network is available.
+  <FilesMatch "^(?:home-feed|boot-search-index|channels|catalog|home-snapshot-manifest)\.json$">
     Header always set Cache-Control "no-cache, max-age=0, must-revalidate"
   </FilesMatch>
 
-  Header always set Cache-Control "no-cache, no-store, max-age=0, must-revalidate" "expr=%{REQUEST_URI} =~ m#^/(?:index\.html|sw\.js)?$#"
-  Header always set Pragma "no-cache" "expr=%{REQUEST_URI} =~ m#^/(?:index\.html|sw\.js)?$#"
-  Header always set Expires "0" "expr=%{REQUEST_URI} =~ m#^/(?:index\.html|sw\.js)?$#"
+  # Bootstrap, runtime state, service workers, and the bundled homepage snapshot
+  # must always be revalidated. Keep this last so it wins over generic rules.
+  <FilesMatch "^(?:index\.html|runtime-config\.js|sw(?:-[^/]+)?\.js|home-snapshot-[^/]+\.js|manifest\.webmanifest)$">
+    Header always set Cache-Control "no-cache, no-store, max-age=0, must-revalidate"
+    Header always set Pragma "no-cache"
+    Header always set Expires "0"
+  </FilesMatch>
 </IfModule>
 
 <IfModule mod_rewrite.c>
@@ -21,11 +37,12 @@ DirectoryIndex index.html
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
 
-  # Backend and download routes belong to backend.streamvault.fit, never the SPA shell.
-  RewriteRule ^(?:api|download|live|live-relay|proxy|stream|subtitles)(?:/|$) - [R=404,L]
+  # Backend/API/media paths belong to backend.streamvault.fit and must never
+  # receive the frontend SPA shell.
+  RewriteRule ^(?:api|playback|stream|proxy|hls|live|live-relay(?:-v2)?|audio|subtitle|subtitles|download)(?:/|$) - [R=404,L,NC]
 
-  # A missing static file must be a real 404 rather than index.html with the wrong MIME type.
-  RewriteRule \.(?:css|js|json|webmanifest|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|otf|m3u8|ts|mp4|vtt)$ - [R=404,L,NC]
+  # Missing static, playlist, and media requests are real 404 responses.
+  RewriteRule \.(?:css|js|json|webmanifest|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|otf|m3u8|ts|m4s|mp4|m4v|mkv|webm|mov|avi|mp3|m4a|aac|flac|wav|vtt)$ - [R=404,L,NC]
 
   RewriteRule ^ index.html [L]
 </IfModule>

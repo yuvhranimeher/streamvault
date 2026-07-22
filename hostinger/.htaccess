@@ -1,17 +1,29 @@
 DirectoryIndex index.html
 
 <IfModule mod_headers.c>
-  <FilesMatch "\.(?:css|js|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|otf)$">
+  # Fingerprinted/static assets can be cached, but the app bootstrap and homepage
+  # snapshot must always revalidate so offline mode never falls back to an old UI.
+  <FilesMatch "\.(?:png|jpe?g|gif|webp|svg|ico|woff2?|ttf|otf)$">
     Header always set Cache-Control "public, max-age=86400, stale-while-revalidate=604800"
   </FilesMatch>
 
-  <FilesMatch "^(?:home-feed|boot-search-index|channels)\.json$">
+  <FilesMatch "\.(?:css|js)$">
+    Header always set Cache-Control "public, max-age=300, must-revalidate"
+  </FilesMatch>
+
+  <FilesMatch "^(?:runtime-config|home|home-snapshot-.*|sw-.*)\.js$">
+    Header always set Cache-Control "no-cache, no-store, max-age=0, must-revalidate"
+    Header always set Pragma "no-cache"
+    Header always set Expires "0"
+  </FilesMatch>
+
+  <FilesMatch "^(?:home-feed|boot-search-index|channels|catalog)\.json$">
     Header always set Cache-Control "no-cache, max-age=0, must-revalidate"
   </FilesMatch>
 
-  Header always set Cache-Control "no-cache, no-store, max-age=0, must-revalidate" "expr=%{REQUEST_URI} =~ m#^/(?:index\.html|sw\.js)?$#"
-  Header always set Pragma "no-cache" "expr=%{REQUEST_URI} =~ m#^/(?:index\.html|sw\.js)?$#"
-  Header always set Expires "0" "expr=%{REQUEST_URI} =~ m#^/(?:index\.html|sw\.js)?$#"
+  Header always set Cache-Control "no-cache, no-store, max-age=0, must-revalidate" "expr=%{REQUEST_URI} =~ m#^/(?:index\.html|sw(?:-[^/]+)?\.js)?$#"
+  Header always set Pragma "no-cache" "expr=%{REQUEST_URI} =~ m#^/(?:index\.html|sw(?:-[^/]+)?\.js)?$#"
+  Header always set Expires "0" "expr=%{REQUEST_URI} =~ m#^/(?:index\.html|sw(?:-[^/]+)?\.js)?$#"
 </IfModule>
 
 <IfModule mod_rewrite.c>

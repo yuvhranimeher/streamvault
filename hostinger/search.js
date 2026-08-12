@@ -308,6 +308,26 @@
     });
   }
 
+  function searchResultKey(item){
+    const type = isSeriesItem(item) ? 'series' : 'movie';
+    const name = normalizeSearchText(item?.normalizedTitle || item?.name || item?.title || item?.file || '');
+    const year = String(item?.year || '').match(/(?:19|20)\d{2}/)?.[0] || '';
+    return `${type}|${name}|${year}`;
+  }
+
+  function mergeSearchItems(primary=[], fallback=[]){
+    const out = [];
+    const seen = new Set();
+    for(const item of [...primary, ...fallback]){
+      if(!item)continue;
+      const key = searchResultKey(item);
+      if(key && seen.has(key))continue;
+      if(key)seen.add(key);
+      out.push(item);
+    }
+    return out;
+  }
+
   async function runRefinedSearch(query, opts={}){
     const seq = opts.seq ?? searchSeq;
     const mobile = !!opts.mobile;
@@ -324,10 +344,19 @@
       const data = await fetchResults(query, page, limit, kind);
       if(seq !== searchSeq || query !== activeQuery)return;
       const rawItems = Array.isArray(data?.items) ? data.items : [];
-      const items = typeof filterPlayableMediaItems === 'function' ? filterPlayableMediaItems(rawItems) : rawItems;
-      const total = Number(data?.total || items.length || 0);
+      const refinedItems = typeof filterPlayableMediaItems === 'function' ? filterPlayableMediaItems(rawItems) : rawItems;
+      const bootFallback = append ? {items:[], total:0} : searchBootIndex(query, limit, kind);
+      const items = append
+        ? refinedItems
+        : mergeSearchItems(refinedItems, bootFallback.items).slice(0, limit);
+      const backendTotal = Number(data?.total || refinedItems.length || 0);
+      const total = append
+        ? backendTotal
+        : Math.max(backendTotal, Number(bootFallback.total || 0), items.length);
       activePage = Number(data?.page || page) || page;
-      activePages = Number(data?.pages || Math.ceil(total / limit) || 1) || 1;
+      activePages = append
+        ? (Number(data?.pages || Math.ceil(total / limit) || 1) || 1)
+        : Math.max(1, Number(data?.pages || 1) || 1, Math.ceil(total / limit));
       if(!grid)return;
       const hasRenderedCards = !!grid.querySelector('.card');
       if(label){

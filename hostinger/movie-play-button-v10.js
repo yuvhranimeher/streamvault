@@ -3,6 +3,9 @@
   if(window.__svMoviePlayButtonV10)return;
   window.__svMoviePlayButtonV10=true;
 
+  const MOBILE_SOURCE_INDEX_URL='/mobile-source-index.json?v=20260812-v1';
+  let mobileSourceIndexPromise=null;
+
   function clean(value){
     return String(value||"")
       .toLowerCase()
@@ -12,6 +15,75 @@
       .replace(/[^a-z0-9]+/g," ")
       .replace(/\s+/g," ")
       .trim();
+  }
+
+  function isAndroidClient(){
+    return /Android/i.test(navigator.userAgent||'');
+  }
+
+  function loadMobileSourceIndex(){
+    if(mobileSourceIndexPromise)return mobileSourceIndexPromise;
+    mobileSourceIndexPromise=fetch(MOBILE_SOURCE_INDEX_URL,{
+      cache:'no-cache',
+      headers:{Accept:'application/json'}
+    }).then(response=>{
+      if(!response.ok)throw new Error(`mobile source index HTTP ${response.status}`);
+      return response.json();
+    }).catch(error=>{
+      console.warn('[Mobile Source Selector] index unavailable:',error);
+      return {movies:{}};
+    });
+    return mobileSourceIndexPromise;
+  }
+
+  function sourceScore(source){
+    const url=String(source?.url||'');
+    const decoded=(()=>{try{return decodeURIComponent(url);}catch{return url;}})().toLowerCase();
+    let score=0;
+    if(/^https:\/\//i.test(url))score+=1000;
+    else score-=1000;
+    if(/\.(?:mp4|m4v)(?:$|[?#])/i.test(url))score+=900;
+    if(/\b(?:h264|x264|avc)\b/i.test(decoded)||String(source?.videoCodec||'').toLowerCase()==='h264')score+=250;
+    if(/\baac\b/i.test(decoded)||String(source?.audioCodec||'').toLowerCase()==='aac')score+=150;
+    if(source?.range206===true)score+=200;
+    if(source?.androidChromeVerified===true)score+=500;
+    if(/\.(?:mkv|webm|avi)(?:$|[?#])/i.test(url))score-=1200;
+    if(/\b(?:x265|h265|hevc|10bit|10-bit)\b/i.test(decoded))score-=900;
+    if(/\b(?:ac3|eac3|dts|truehd)\b/i.test(decoded))score-=300;
+    return score;
+  }
+
+  async function applyAndroidDirectSource(movie){
+    if(!isAndroidClient()||!movie)return movie;
+
+    const index=await loadMobileSourceIndex();
+    const key=clean(movie.name||movie.title||movie.file||'');
+    const variants=Array.isArray(index?.movies?.[key])?index.movies[key]:[];
+    if(!variants.length)return movie;
+
+    const best=variants
+      .filter(source=>source&&typeof source.url==='string')
+      .slice()
+      .sort((a,b)=>sourceScore(b)-sourceScore(a))[0];
+
+    if(!best?.url||sourceScore(best)<1000)return movie;
+
+    const previous=movie.streamUrl||'';
+    movie._svOriginalStreamUrl=previous;
+    movie.streamUrl=best.url;
+    movie.isFtp=true;
+    movie.hasStream=true;
+    movie.streamAvailable=true;
+    movie._svAndroidDirectSource=true;
+    movie._svAndroidDirectSourceScore=sourceScore(best);
+
+    console.info('[Mobile Source Selector] Android direct source selected',{
+      title:movie.name||movie.title||'',
+      previous,
+      selected:best.url,
+      score:movie._svAndroidDirectSourceScore
+    });
+    return movie;
   }
 
   function popupOpen(){
@@ -58,6 +130,7 @@
     button.innerHTML="Loading…";
 
     try{
+      await applyAndroidDirectSource(movie);
       currentDetailMovie=movie;
 
       if(typeof svLaunchMediaModalMovie==="function"){

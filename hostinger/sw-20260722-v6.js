@@ -1,6 +1,6 @@
 'use strict';
 
-const VERSION = '20260812-v10-search-merge';
+const VERSION = '20260812-v11-backend-pass-through';
 const CACHE_PREFIX = 'streamvault-';
 const SHELL_CACHE = `${CACHE_PREFIX}shell-${VERSION}`;
 const STATIC_CACHE = `${CACHE_PREFIX}static-${VERSION}`;
@@ -188,14 +188,13 @@ self.addEventListener('fetch', event => {
   const request = event.request;
   const url = new URL(request.url);
 
-  if (isMediaRequest(request, url)) {
+  // Media, backend API calls and writes must keep the browser's original
+  // request semantics. In particular, wrapping backend requests in a new
+  // fetch({cache:'no-store'}) can add Cache-Control and trigger a CORS preflight.
+  if (request.method !== 'GET' || isMediaRequest(request, url) || isBackendRequest(url)) {
     return;
   }
 
-  if (request.method !== 'GET' || isBackendRequest(url)) {
-    event.respondWith(networkOnly(request));
-    return;
-  }
   if (request.mode === 'navigate') {
     event.respondWith(navigationNetworkFirst(request));
     return;

@@ -1,6 +1,6 @@
 'use strict';
 
-const VERSION = '20260812-v11-backend-pass-through';
+const VERSION = '20260812-v12-mobile-source-selector';
 const CACHE_PREFIX = 'streamvault-';
 const SHELL_CACHE = `${CACHE_PREFIX}shell-${VERSION}`;
 const STATIC_CACHE = `${CACHE_PREFIX}static-${VERSION}`;
@@ -47,7 +47,12 @@ const BACKEND_PREFIXES = [
   '/api', '/playback', '/stream', '/proxy', '/hls', '/live',
   '/live-relay', '/audio', '/subtitle', '/subtitles', '/download'
 ];
-const NETWORK_FIRST_JSON = new Set(['/channels.json', '/boot-search-index.json', '/catalog.json']);
+const NETWORK_FIRST_JSON = new Set([
+  '/channels.json',
+  '/boot-search-index.json',
+  '/catalog.json',
+  '/mobile-source-index.json'
+]);
 const MEDIA_FILE_PATTERN = /\.(?:m3u8|ts|m4s|mp4|m4v|mkv|webm|mov|avi|mp3|m4a|aac|flac|wav|vtt)(?:$|\?)/i;
 const STATIC_FILE_PATTERN = /\.(?:css|js|json|webmanifest|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|otf)$/i;
 const HOMEPAGE_SCRIPT_PATTERN = /\/(?:runtime-config|home|app-v3|boot|home-snapshot-[^/]+)\.js$/i;

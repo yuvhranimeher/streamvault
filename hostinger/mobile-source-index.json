@@ -1,0 +1,16 @@
+{
+  "version": "20260812-v1",
+  "movies": {
+    "blade runner 2049": [
+      {
+        "url": "https://media.ctgfun.com/disk1/Recent%20English%20Movies/2017/Blade.Runner.2049.2017.1080p.BluRay.H264.AAC%20%5bDDN%5d/Blade.Runner.2049.2017.1080p.BluRay.H264.AAC%20%5bDDN%5d.mp4",
+        "container": "mp4",
+        "videoCodec": "h264",
+        "audioCodec": "aac",
+        "range206": true,
+        "androidChromeVerified": true,
+        "desktopChromeVerified": true
+      }
+    ]
+  }
+}

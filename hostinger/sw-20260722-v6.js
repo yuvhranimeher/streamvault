@@ -1,6 +1,6 @@
 'use strict';
 
-const VERSION = '20260812-v7-mobile-directplay';
+const VERSION = '20260812-v8-android-direct-rollout';
 const CACHE_PREFIX = 'streamvault-';
 const SHELL_CACHE = `${CACHE_PREFIX}shell-${VERSION}`;
 const STATIC_CACHE = `${CACHE_PREFIX}static-${VERSION}`;

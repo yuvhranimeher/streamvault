@@ -1,6 +1,6 @@
 'use strict';
 
-const VERSION = '20260812-v9-android-direct-early';
+const VERSION = '20260812-v10-search-merge';
 const CACHE_PREFIX = 'streamvault-';
 const SHELL_CACHE = `${CACHE_PREFIX}shell-${VERSION}`;
 const STATIC_CACHE = `${CACHE_PREFIX}static-${VERSION}`;

@@ -1,5 +1,5 @@
 (function(){
-  const BOOT_SEARCH_VERSION = '20260624-playable-only-search1';
+  const BOOT_SEARCH_VERSION = '20260717-current-home-snapshot-v1';
   const BOOT_INDEX_URL = `/boot-search-index.json?v=${BOOT_SEARCH_VERSION}`;
   const BOOT_INDEX_API_URL = `/api/boot-search-index?v=${BOOT_SEARCH_VERSION}`;
   const SEARCH_DELAY = 90;
@@ -109,12 +109,13 @@
   }
 
   function adoptBootIndex(data){
-    if(!data || data.version !== BOOT_SEARCH_VERSION || !Array.isArray(data.items))return null;
+    if(!data || !Array.isArray(data.items))return null;
     const items = Array.isArray(data.fields)
       ? data.items.map(row=>expandBootSearchItem(row, data.fields))
       : data.items;
     const playableItems=typeof filterPlayableMediaItems === 'function' ? filterPlayableMediaItems(items) : items;
     bootIndex = { ...data, items:playableItems, total:playableItems.length };
+    try{window.__svBootSearchIndex=data;}catch(_){ }
     return bootIndex;
   }
 
@@ -407,7 +408,10 @@
       ensureBootIndex().then(()=>{
         if(seq !== searchSeq || query !== activeQuery)return;
         const readyBoot = searchBootIndex(query, instantLimit, kind);
-        renderBootResults(grid, label, query, readyBoot.items, readyBoot.total, false);
+        const rendered = renderBootResults(grid, label, query, readyBoot.items, readyBoot.total, false);
+        if(!rendered && window.StreamVaultConfig?.backendStatus?.available !== true){
+          renderEmptyState(grid, label, query);
+        }
       });
       fetchBootQuery(query, instantLimit, kind).then(data=>{
         if(seq !== searchSeq || query !== activeQuery || !data?.items?.length)return;

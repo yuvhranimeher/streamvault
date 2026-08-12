@@ -1,5 +1,5 @@
 (function () {
-  const marker = 'SV_INSTANT_REMUX_V24_ANDROID_DIRECT';
+  const marker = 'SV_INSTANT_REMUX_V25_ANDROID_DIRECT_EARLY';
 
   if (window[marker]) return;
   window[marker] = true;
@@ -14,6 +14,9 @@
 
   const originalFetchPlan = fetchFtpPlaybackPlan;
   const originalFallbackOrder = fallbackOrderForRemote;
+  const originalPrepareFtpStartupAudio = typeof prepareFtpStartupAudio === 'function'
+    ? prepareFtpStartupAudio
+    : null;
 
   function desktopClient() {
     return typeof isMobilePlaybackClient !== 'function' ||
@@ -43,8 +46,6 @@
     let hint = `${parsed.pathname} ${parsed.search}`;
     try { hint = decodeURIComponent(hint); } catch (_) {}
 
-    // Do not native-direct files that explicitly advertise codecs/audio
-    // that are commonly incompatible with Android Chrome MP4 playback.
     if (/(?:x265|h\.?265|hevc|10bit|10-bit|av1|vp9|vp8|vc-?1|ac-?3|e-?ac-?3|ddp|dd\+|dts|truehd|flac)/i.test(hint)) {
       return false;
     }
@@ -81,13 +82,32 @@
   }
 
   /*
-   * Android: for an HTTPS MP4/M4V that survived the normal startup
-   * compatibility checks, let the browser request the source directly.
-   * If native playback later fails, the existing StreamVault fallback chain
-   * remains responsible for recovery.
-   *
-   * Desktop behaviour remains unchanged below.
+   * For Android HTTPS MP4/M4V candidates, do not block startup on the FTP
+   * media-info/audio probe. Native playback already proved that the browser can
+   * read these sources directly, and the metadata request is not needed before
+   * attaching the source. The normal player still handles UI, progress, errors,
+   * and recovery.
    */
+  if (originalPrepareFtpStartupAudio) {
+    prepareFtpStartupAudio = async function (streamUrl, scope = null) {
+      if (androidClient() && androidDirectCandidate(streamUrl)) {
+        try {
+          if (typeof mediaFixLog === 'function') {
+            mediaFixLog('Android direct startup metadata bypass', { url: streamUrl });
+          }
+        } catch (_) {}
+        return {
+          info: null,
+          options: {},
+          selected: null,
+          reason: 'Android native direct MP4'
+        };
+      }
+
+      return originalPrepareFtpStartupAudio(streamUrl, scope);
+    };
+  }
+
   fetchFtpPlaybackPlan = async function (streamUrl, start = 0, options = {}) {
     if (
       androidClient() &&
@@ -120,10 +140,6 @@
     return originalFetchPlan(streamUrl, start, options);
   };
 
-  /*
-   * Never fall into full HLS/video transcoding on desktop.
-   * Mobile keeps the existing recovery order.
-   */
   fallbackOrderForRemote = function (url, plan = {}) {
     if (desktopClient() && needsContainerRemux(url)) {
       return ['audio', 'remux', 'proxy'];
@@ -132,5 +148,5 @@
     return originalFallbackOrder(url, plan);
   };
 
-  console.log('[SV] Android native direct MP4 + instant video-copy remux active');
+  console.log('[SV] Android early native direct MP4 + instant video-copy remux active');
 })();

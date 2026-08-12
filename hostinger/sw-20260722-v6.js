@@ -1,6 +1,6 @@
 'use strict';
 
-const VERSION = '20260812-v8-android-direct-rollout';
+const VERSION = '20260812-v9-android-direct-early';
 const CACHE_PREFIX = 'streamvault-';
 const SHELL_CACHE = `${CACHE_PREFIX}shell-${VERSION}`;
 const STATIC_CACHE = `${CACHE_PREFIX}static-${VERSION}`;
@@ -188,8 +188,6 @@ self.addEventListener('fetch', event => {
   const request = event.request;
   const url = new URL(request.url);
 
-  // Let the browser's native media loader handle media and Range requests directly.
-  // This preserves source-server 206 Partial Content behavior and avoids full-file fetches.
   if (isMediaRequest(request, url)) {
     return;
   }

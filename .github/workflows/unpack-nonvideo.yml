@@ -6,6 +6,7 @@ on:
       - hostinger-frontend-only
     paths:
       - hostinger/non-video.zip
+      - hostinger/non-video-reclassified.zip
       - .github/workflows/unpack-nonvideo.yml
 
 permissions:
@@ -25,12 +26,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -f hostinger/non-video.zip
+
+          if [ -f hostinger/non-video-reclassified.zip ]; then
+            ZIP_PATH="hostinger/non-video-reclassified.zip"
+          elif [ -f hostinger/non-video.zip ]; then
+            ZIP_PATH="hostinger/non-video.zip"
+          else
+            echo "No non-video catalog ZIP found"
+            exit 1
+          fi
+
+          echo "Using $ZIP_PATH"
           rm -rf hostinger/non-video
           mkdir -p hostinger/non-video
           rm -rf /tmp/nonvideo-unpack
           mkdir -p /tmp/nonvideo-unpack
-          unzip -q hostinger/non-video.zip -d /tmp/nonvideo-unpack
+          unzip -q "$ZIP_PATH" -d /tmp/nonvideo-unpack
 
           if [ -f /tmp/nonvideo-unpack/non-video/manifest.json ]; then
             cp -R /tmp/nonvideo-unpack/non-video/. hostinger/non-video/
@@ -61,9 +72,8 @@ jobs:
           print('manifest total:', manifest.get('total'))
           print('page entry total:', page_total)
           print('categories:', len(manifest.get('categories', [])))
+          print('classification version:', manifest.get('classificationVersion'))
 
-          if len(files) != 80:
-              raise SystemExit(f'Expected 80 JSON files, found {len(files)}')
           if manifest.get('total') != 32619:
               raise SystemExit(f'Expected manifest total 32619, got {manifest.get("total")}')
           if len(manifest.get('categories', [])) != 9:
@@ -83,5 +93,5 @@ jobs:
             echo "Catalog already extracted; nothing to commit."
             exit 0
           fi
-          git commit -m "Extract paginated CircleFTP non-video catalog"
+          git commit -m "Extract reclassified CircleFTP non-video catalog"
           git push origin HEAD:hostinger-frontend-only

@@ -13,7 +13,9 @@ defmodule StreamVault.Playback.SessionStore do
   end
 
   @spec touch(String.t(), map()) :: {:ok, map()} | :error
-  def touch(session_id, attributes \\ %{}), do: GenServer.call(__MODULE__, {:touch, session_id, attributes})
+  def touch(session_id, attributes \\ %{}),
+    do: GenServer.call(__MODULE__, {:touch, session_id, attributes})
+
   @spec close(String.t()) :: :ok
   def close(session_id), do: GenServer.call(__MODULE__, {:close, session_id})
   @spec get(String.t()) :: {:ok, map()} | :error
@@ -30,8 +32,21 @@ defmodule StreamVault.Playback.SessionStore do
   @impl true
   def init(options) do
     :ets.new(@table, [:named_table, :set, :protected, read_concurrency: true])
-    ttl = Keyword.get(options, :ttl_ms, Application.get_env(:streamvault_playback, :session_ttl_ms, :timer.minutes(30)))
-    sweep = Keyword.get(options, :sweep_ms, Application.get_env(:streamvault_playback, :sweep_interval_ms, :timer.minutes(1)))
+
+    ttl =
+      Keyword.get(
+        options,
+        :ttl_ms,
+        Application.get_env(:streamvault_playback, :session_ttl_ms, :timer.minutes(30))
+      )
+
+    sweep =
+      Keyword.get(
+        options,
+        :sweep_ms,
+        Application.get_env(:streamvault_playback, :sweep_interval_ms, :timer.minutes(1))
+      )
+
     Process.send_after(self(), :sweep, sweep)
     {:ok, %{ttl_ms: ttl, sweep_ms: sweep}}
   end
@@ -40,7 +55,16 @@ defmodule StreamVault.Playback.SessionStore do
   def handle_call({:open, media_id, client_id, attributes}, _from, state) do
     now = System.monotonic_time(:millisecond)
     session_id = random_id()
-    session = Map.merge(attributes, %{id: session_id, media_id: media_id, client_id: client_id, opened_at: now, touched_at: now})
+
+    session =
+      Map.merge(attributes, %{
+        id: session_id,
+        media_id: media_id,
+        client_id: client_id,
+        opened_at: now,
+        touched_at: now
+      })
+
     true = :ets.insert(@table, {session_id, session})
     {:reply, session, state}
   end
@@ -49,7 +73,11 @@ defmodule StreamVault.Playback.SessionStore do
     response =
       case :ets.lookup(@table, session_id) do
         [{^session_id, session}] ->
-          updated = session |> Map.merge(attributes) |> Map.put(:touched_at, System.monotonic_time(:millisecond))
+          updated =
+            session
+            |> Map.merge(attributes)
+            |> Map.put(:touched_at, System.monotonic_time(:millisecond))
+
           true = :ets.insert(@table, {session_id, updated})
           {:ok, updated}
 

@@ -5,8 +5,12 @@ defmodule StreamVault.Edge.HistoryControllerTest do
     first = put_req_header(conn, "x-client-id", "first")
     second = put_req_header(recycle(conn), "x-client-id", "second")
 
-    assert %{"ok" => true} = first |> post("/api/history", %{id: "arrival", progress: 0.25}) |> json_response(200)
-    assert %{"arrival" => %{"progress" => 0.25}} = first |> get("/api/history") |> json_response(200)
+    assert %{"ok" => true} =
+             first |> post("/api/history", %{id: "arrival", progress: 0.25}) |> json_response(200)
+
+    assert %{"arrival" => %{"progress" => 0.25}} =
+             first |> get("/api/history") |> json_response(200)
+
     assert %{} = second |> get("/api/history") |> json_response(200)
   end
 

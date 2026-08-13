@@ -18,7 +18,9 @@ defmodule StreamVault.Core.Search do
       |> Stream.filter(&kind_match?(&1, kind))
       |> Stream.map(&{score(&1, query, terms), &1})
       |> Stream.filter(fn {score, _} -> score > 0 end)
-      |> Enum.sort_by(fn {score, item} -> {-score, -(item.rating || 0), -(item.year || 0), item.title} end)
+      |> Enum.sort_by(fn {score, item} ->
+        {-score, -(item.rating || 0), -(item.year || 0), item.title}
+      end)
       |> Enum.take(hard_limit)
       |> Enum.map(&elem(&1, 1))
     end

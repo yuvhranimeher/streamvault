@@ -50,7 +50,15 @@ defmodule StreamVault.Playback.LocalPlanner do
   end
 
   defp direct(media, reason, container, video, audio) do
-    %Plan{strategy: :direct, reason: reason, source_url: media.stream_url, container: container, video_codec: video, audio_codec: audio, planner: :elixir}
+    %Plan{
+      strategy: :direct,
+      reason: reason,
+      source_url: media.stream_url,
+      container: container,
+      video_codec: video,
+      audio_codec: audio,
+      planner: :elixir
+    }
   end
 
   defp direct_compatible?(container, video, audio, probe, capability) do
@@ -77,12 +85,47 @@ defmodule StreamVault.Playback.LocalPlanner do
   end
 
   defp transcode_args(height, hls?) do
-    base = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-vf", "scale=-2:min(ih\\,#{height})", "-c:a", "aac", "-b:a", "160k"]
-    if hls?, do: base ++ ["-f", "hls", "-hls_time", "4", "-hls_list_size", "8"], else: base ++ ["-movflags", "frag_keyframe+empty_moov"]
+    base = [
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-crf",
+      "23",
+      "-vf",
+      "scale=-2:min(ih\\,#{height})",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "160k"
+    ]
+
+    if hls?,
+      do: base ++ ["-f", "hls", "-hls_time", "4", "-hls_list_size", "8"],
+      else: base ++ ["-movflags", "frag_keyframe+empty_moov"]
   end
 
-  defp normalize_container(nil, url), do: url |> to_string() |> URI.parse() |> Map.get(:path) |> Path.extname() |> String.trim_leading(".") |> String.downcase()
-  defp normalize_container(value, _), do: value |> to_string() |> String.downcase() |> String.trim_leading(".")
+  defp normalize_container(nil, url),
+    do:
+      url
+      |> to_string()
+      |> URI.parse()
+      |> Map.get(:path)
+      |> Path.extname()
+      |> String.trim_leading(".")
+      |> String.downcase()
+
+  defp normalize_container(value, _),
+    do: value |> to_string() |> String.downcase() |> String.trim_leading(".")
+
   defp normalize_codec(nil), do: "unknown"
-  defp normalize_codec(value), do: value |> to_string() |> String.downcase() |> String.replace("avc1", "h264") |> String.replace("x264", "h264") |> String.replace("h265", "hevc")
+
+  defp normalize_codec(value),
+    do:
+      value
+      |> to_string()
+      |> String.downcase()
+      |> String.replace("avc1", "h264")
+      |> String.replace("x264", "h264")
+      |> String.replace("h265", "hevc")
 end

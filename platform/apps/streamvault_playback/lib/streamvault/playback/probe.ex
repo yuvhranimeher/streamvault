@@ -36,7 +36,9 @@ defmodule StreamVault.Playback.Probe do
     }
   end
 
-  defp value(map, key) when is_map(map), do: Map.get(map, key) || Map.get(map, String.to_atom(key))
+  defp value(map, key) when is_map(map),
+    do: Map.get(map, key) || Map.get(map, String.to_atom(key))
+
   defp integer(value) when is_integer(value), do: value
   defp integer(value) when is_float(value), do: trunc(value)
   defp integer(value) when is_binary(value), do: parse(value, &Integer.parse/1)
@@ -44,11 +46,13 @@ defmodule StreamVault.Playback.Probe do
   defp number(value) when is_number(value), do: value / 1
   defp number(value) when is_binary(value), do: parse(value, &Float.parse/1)
   defp number(_), do: nil
+
   defp parse(value, parser) do
     case parser.(value) do
       {number, _} -> number
       _ -> nil
     end
   end
+
   defp truthy?(value), do: value in [true, 1, "1", "true", "TRUE"]
 end

@@ -4,8 +4,22 @@ defmodule StreamVault.Core.SearchTest do
   alias StreamVault.Core.{Media, Search}
 
   test "exact titles outrank metadata-only matches" do
-    exact = %Media{id: "1", title: "Blade Runner", kind: :movie, search_text: "blade runner scifi", rating: 8.1}
-    metadata = %Media{id: "2", title: "Cyberpunk Collection", kind: :movie, search_text: "includes blade runner", rating: 9.0}
+    exact = %Media{
+      id: "1",
+      title: "Blade Runner",
+      kind: :movie,
+      search_text: "blade runner scifi",
+      rating: 8.1
+    }
+
+    metadata = %Media{
+      id: "2",
+      title: "Cyberpunk Collection",
+      kind: :movie,
+      search_text: "includes blade runner",
+      rating: 9.0
+    }
+
     assert [^exact, ^metadata] = Search.run([metadata, exact], "Blade Runner")
   end
 

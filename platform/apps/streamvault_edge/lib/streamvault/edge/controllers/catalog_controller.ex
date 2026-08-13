@@ -8,18 +8,22 @@ defmodule StreamVault.Edge.Controllers.CatalogController do
   def stats(conn, _params) do
     metadata = Catalog.stats()
 
-    Response.ok(conn, %{
-      ok: metadata[:status] == :ready,
-      homepageUntouched: true,
-      existingMovies: metadata[:movies] || 0,
-      existingSeries: metadata[:series] || 0,
-      massiveMovies: 0,
-      massiveSeries: 0,
-      massiveTotal: metadata[:total] || 0,
-      generation: metadata[:generation],
-      loadedAt: metadata[:loaded_at],
-      loadDurationMs: metadata[:duration_ms]
-    }, max_age: 30)
+    Response.ok(
+      conn,
+      %{
+        ok: metadata[:status] == :ready,
+        homepageUntouched: true,
+        existingMovies: metadata[:movies] || 0,
+        existingSeries: metadata[:series] || 0,
+        massiveMovies: 0,
+        massiveSeries: 0,
+        massiveTotal: metadata[:total] || 0,
+        generation: metadata[:generation],
+        loadedAt: metadata[:loaded_at],
+        loadDurationMs: metadata[:duration_ms]
+      },
+      max_age: 30
+    )
   end
 
   def movies(conn, params), do: paged_kind(conn, params, :movie, "movies")
@@ -34,7 +38,12 @@ defmodule StreamVault.Edge.Controllers.CatalogController do
 
   defp paged_kind(conn, params, kind, response_key) do
     query = params |> Map.get("q", "") |> String.trim()
-    items = if String.length(query) >= 2, do: Catalog.search(query, kind: kind), else: Catalog.list(kind)
+
+    items =
+      if String.length(query) >= 2,
+        do: Catalog.search(query, kind: kind),
+        else: Catalog.list(kind)
+
     page = Page.from_list(items, params, origin: 0, default_limit: 48)
 
     payload = %{

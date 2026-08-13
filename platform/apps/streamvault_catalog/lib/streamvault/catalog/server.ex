@@ -29,11 +29,15 @@ defmodule StreamVault.Catalog.Server do
 
   @impl true
   def init(options) do
-    path = Keyword.get(options, :path, Application.fetch_env!(:streamvault_catalog, :catalog_path))
+    path =
+      Keyword.get(options, :path, Application.fetch_env!(:streamvault_catalog, :catalog_path))
+
     state = %__MODULE__{path: path}
 
     case load_generation(state) do
-      {:ok, loaded} -> {:ok, schedule_reload(loaded)}
+      {:ok, loaded} ->
+        {:ok, schedule_reload(loaded)}
+
       {:error, reason, failed} ->
         Logger.error("catalog startup failed: #{inspect(reason)}")
         index = Index.build([], 0)
@@ -52,7 +56,13 @@ defmodule StreamVault.Catalog.Server do
   end
 
   def handle_call(:status, _from, state) do
-    response = Map.merge(state.metadata || %{}, %{status: state.status, generation: state.generation, last_error: inspect(state.last_error)})
+    response =
+      Map.merge(state.metadata || %{}, %{
+        status: state.status,
+        generation: state.generation,
+        last_error: inspect(state.last_error)
+      })
+
     {:reply, response, state}
   end
 
@@ -76,7 +86,14 @@ defmodule StreamVault.Catalog.Server do
     case Loader.load(state.path) do
       {:ok, items, metadata} ->
         next_index = Index.build(items, next_generation)
-        public_metadata = Map.merge(metadata, %{status: :ready, generation: next_generation, loaded_at: DateTime.utc_now()})
+
+        public_metadata =
+          Map.merge(metadata, %{
+            status: :ready,
+            generation: next_generation,
+            loaded_at: DateTime.utc_now()
+          })
+
         previous = state.index
         :persistent_term.put(@persistent_key, {next_index, public_metadata})
         Process.send_after(self(), {:retire, previous}, 5_000)
@@ -90,11 +107,20 @@ defmodule StreamVault.Catalog.Server do
         Logger.info("catalog generation #{next_generation} loaded with #{length(items)} records")
 
         {:ok,
-         %{state | index: next_index, metadata: public_metadata, generation: next_generation, status: :ready, last_error: nil}}
+         %{
+           state
+           | index: next_index,
+             metadata: public_metadata,
+             generation: next_generation,
+             status: :ready,
+             last_error: nil
+         }}
 
       {:error, reason} ->
         Logger.error("catalog reload failed: #{inspect(reason)}")
-        {:error, reason, %{state | status: if(state.index, do: :stale, else: :degraded), last_error: reason}}
+
+        {:error, reason,
+         %{state | status: if(state.index, do: :stale, else: :degraded), last_error: reason}}
     end
   end
 
@@ -109,5 +135,4 @@ defmodule StreamVault.Catalog.Server do
 
     %{state | timer: timer}
   end
-
 end

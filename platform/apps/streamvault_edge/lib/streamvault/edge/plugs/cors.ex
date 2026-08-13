@@ -28,7 +28,13 @@ defmodule StreamVault.Edge.Plugs.CORS do
   defp allowed_origin(nil), do: "*"
 
   defp allowed_origin(origin) do
-    configured = Application.get_env(:streamvault_edge, :allowed_origins, ["https://streamvault.fit", "http://localhost:3000", "http://localhost:4000"])
+    configured =
+      Application.get_env(:streamvault_edge, :allowed_origins, [
+        "https://streamvault.fit",
+        "http://localhost:3000",
+        "http://localhost:4000"
+      ])
+
     if origin in configured, do: origin, else: "null"
   end
 end

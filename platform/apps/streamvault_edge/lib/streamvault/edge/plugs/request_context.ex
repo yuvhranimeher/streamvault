@@ -10,7 +10,10 @@ defmodule StreamVault.Edge.Plugs.RequestContext do
   @impl true
   def call(conn, _options) do
     request_id = get_resp_header(conn, "x-request-id") |> List.first() || "unknown"
-    trace_id = get_req_header(conn, "traceparent") |> List.first() |> parse_trace_id() || request_id
+
+    trace_id =
+      get_req_header(conn, "traceparent") |> List.first() |> parse_trace_id() || request_id
+
     client_id = get_req_header(conn, "x-client-id") |> List.first() || anonymous_client(conn)
 
     Logger.metadata(request_id: request_id, trace_id: trace_id)
@@ -26,6 +29,7 @@ defmodule StreamVault.Edge.Plugs.RequestContext do
 
   defp anonymous_client(conn) do
     peer = conn.remote_ip |> :inet.ntoa() |> to_string()
+
     :crypto.hash(:sha256, peer <> (get_req_header(conn, "user-agent") |> List.first() || ""))
     |> Base.url_encode64(padding: false)
     |> binary_part(0, 18)

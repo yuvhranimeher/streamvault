@@ -21,5 +21,7 @@ defmodule StreamVault.Edge.Controllers.Response do
   end
 
   defp cache_control(0), do: "no-store"
-  defp cache_control(seconds), do: "public, max-age=#{seconds}, stale-while-revalidate=#{seconds * 2}"
+
+  defp cache_control(seconds),
+    do: "public, max-age=#{seconds}, stale-while-revalidate=#{seconds * 2}"
 end

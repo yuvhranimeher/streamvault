@@ -12,29 +12,38 @@ defmodule StreamVault.Edge.Controllers.DiscoveryController do
     if String.length(query) < 2 do
       Response.ok(conn, %{items: [], total: 0, page: 1, pages: 0, instant: true, indexed: true})
     else
-      page = Catalog.search(query, kind: kind) |> Page.from_list(params, origin: 1, default_limit: 72)
+      page =
+        Catalog.search(query, kind: kind) |> Page.from_list(params, origin: 1, default_limit: 72)
 
-      Response.ok(conn, %{
-        items: Enum.map(page.items, &Media.to_legacy_map/1),
-        total: page.total,
-        page: page.page,
-        pages: page.pages,
-        instant: true,
-        indexed: true
-      }, max_age: 10)
+      Response.ok(
+        conn,
+        %{
+          items: Enum.map(page.items, &Media.to_legacy_map/1),
+          total: page.total,
+          page: page.page,
+          pages: page.pages,
+          instant: true,
+          indexed: true
+        },
+        max_age: 10
+      )
     end
   end
 
   def section(conn, %{"key" => key} = params) do
     page = Catalog.section(key) |> Page.from_list(params, origin: 0, default_limit: 24)
 
-    Response.ok(conn, %{
-      key: key,
-      items: Enum.map(page.items, &Media.to_legacy_map/1),
-      total: page.total,
-      page: page.page,
-      pages: page.pages
-    }, max_age: 60)
+    Response.ok(
+      conn,
+      %{
+        key: key,
+        items: Enum.map(page.items, &Media.to_legacy_map/1),
+        total: page.total,
+        page: page.page,
+        pages: page.pages
+      },
+      max_age: 60
+    )
   end
 
   def home_feed(conn, params) do
@@ -46,7 +55,12 @@ defmodule StreamVault.Edge.Controllers.DiscoveryController do
       hero: Enum.map(feed.hero, &Media.to_legacy_map/1),
       rows:
         Enum.map(feed.rows, fn row ->
-          %{rowId: row.rowId, sectionKey: row.sectionKey, title: row.title, items: Enum.map(row.items, &Media.to_legacy_map/1)}
+          %{
+            rowId: row.rowId,
+            sectionKey: row.sectionKey,
+            title: row.title,
+            items: Enum.map(row.items, &Media.to_legacy_map/1)
+          }
         end)
     }
 
@@ -58,10 +72,11 @@ defmodule StreamVault.Edge.Controllers.DiscoveryController do
   defp parse_kind(_), do: :mixed
 
   defp bounded_integer(value, default, minimum, maximum) do
-    parsed = case Integer.parse(to_string(value)) do
-      {number, _} -> number
-      :error -> default
-    end
+    parsed =
+      case Integer.parse(to_string(value)) do
+        {number, _} -> number
+        :error -> default
+      end
 
     parsed |> max(minimum) |> min(maximum)
   end

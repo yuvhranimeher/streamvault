@@ -15,9 +15,15 @@ defmodule StreamVault.Edge.Plugs.Shadow do
     if enabled and conn.method == "GET" and conn.request_path in @routes do
       register_before_send(conn, fn response ->
         native_body = response.resp_body
-        path = response.request_path <> if(response.query_string == "", do: "", else: "?" <> response.query_string)
 
-        Task.Supervisor.start_child(StreamVault.Edge.TaskSupervisor, fn -> compare(path, native_body) end)
+        path =
+          response.request_path <>
+            if(response.query_string == "", do: "", else: "?" <> response.query_string)
+
+        Task.Supervisor.start_child(StreamVault.Edge.TaskSupervisor, fn ->
+          compare(path, native_body)
+        end)
+
         response
       end)
     else
@@ -52,7 +58,11 @@ defmodule StreamVault.Edge.Plugs.Shadow do
   end
 
   defp semantic_hash(value), do: value |> canonical() |> Jason.encode!() |> hash()
-  defp canonical(map) when is_map(map), do: map |> Enum.sort_by(&elem(&1, 0)) |> Map.new(fn {key, value} -> {key, canonical(value)} end)
+
+  defp canonical(map) when is_map(map),
+    do:
+      map |> Enum.sort_by(&elem(&1, 0)) |> Map.new(fn {key, value} -> {key, canonical(value)} end)
+
   defp canonical(list) when is_list(list), do: Enum.map(list, &canonical/1)
   defp canonical(value), do: value
   defp hash(value), do: :crypto.hash(:sha256, value) |> Base.encode16(case: :lower)

@@ -27,12 +27,16 @@ defmodule StreamVault.Edge.Controllers.HealthController do
   end
 
   def version(conn, _params) do
-    Response.ok(conn, %{
-      ok: true,
-      version: "phoenix-haskell-platform-v2",
-      compatibility: "node-api-v1",
-      time: DateTime.utc_now()
-    }, max_age: 10)
+    Response.ok(
+      conn,
+      %{
+        ok: true,
+        version: "phoenix-haskell-platform-v2",
+        compatibility: "node-api-v1",
+        time: DateTime.utc_now()
+      },
+      max_age: 10
+    )
   end
 
   def metrics(conn, _params) do

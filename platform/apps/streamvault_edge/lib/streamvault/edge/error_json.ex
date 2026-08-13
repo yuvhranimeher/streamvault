@@ -8,7 +8,8 @@ defmodule StreamVault.Edge.ErrorJSON do
       error: %{
         code: template |> String.replace(".json", "") |> String.replace(" ", "_"),
         message: status,
-        request_id: assigns[:conn] && List.first(Plug.Conn.get_resp_header(assigns.conn, "x-request-id"))
+        request_id:
+          assigns[:conn] && List.first(Plug.Conn.get_resp_header(assigns.conn, "x-request-id"))
       }
     }
   end

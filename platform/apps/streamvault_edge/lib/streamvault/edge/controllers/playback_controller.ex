@@ -6,11 +6,20 @@ defmodule StreamVault.Edge.Controllers.PlaybackController do
 
   def plan(conn, %{"id" => id} = params) do
     probe = params["probe"] || %{}
-    capability = Map.put_new(params["capability"] || %{}, "userAgent", get_req_header(conn, "user-agent") |> List.first() || "")
+
+    capability =
+      Map.put_new(
+        params["capability"] || %{},
+        "userAgent",
+        get_req_header(conn, "user-agent") |> List.first() || ""
+      )
 
     case Playback.plan(id, probe, capability, conn.assigns.client_id) do
-      {:ok, plan} -> Response.ok(conn, plan)
-      {:error, :not_found} -> Response.error(conn, 404, "media_not_found", "No catalog item matches that id")
+      {:ok, plan} ->
+        Response.ok(conn, plan)
+
+      {:error, :not_found} ->
+        Response.error(conn, 404, "media_not_found", "No catalog item matches that id")
     end
   end
 

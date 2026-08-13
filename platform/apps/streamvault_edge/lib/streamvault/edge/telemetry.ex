@@ -20,7 +20,10 @@ defmodule StreamVault.Edge.Telemetry do
       counter("phoenix.endpoint.stop.duration"),
       summary("streamvault.catalog.reload.duration", unit: {:native, :millisecond}),
       last_value("streamvault.catalog.reload.count"),
-      summary("streamvault.playback.plan.duration", unit: {:native, :millisecond}, tags: [:strategy, :planner]),
+      summary("streamvault.playback.plan.duration",
+        unit: {:native, :millisecond},
+        tags: [:strategy, :planner]
+      ),
       counter("streamvault.shadow.compare.match", tags: [:path]),
       counter("streamvault.shadow.error.count", tags: [:path]),
       last_value("vm.memory.total", unit: {:byte, :megabyte}),
@@ -32,8 +35,8 @@ defmodule StreamVault.Edge.Telemetry do
 
   def dispatch_vm_stats do
     memory = :erlang.memory(:total)
-    {total, cpu, io} = :erlang.statistics(:total_run_queue_lengths_all)
+    total = :erlang.statistics(:total_run_queue_lengths_all)
     :telemetry.execute([:vm, :memory], %{total: memory}, %{})
-    :telemetry.execute([:vm, :total_run_queue_lengths], %{total: total, cpu: cpu, io: io}, %{})
+    :telemetry.execute([:vm, :total_run_queue_lengths], %{total: total}, %{})
   end
 end

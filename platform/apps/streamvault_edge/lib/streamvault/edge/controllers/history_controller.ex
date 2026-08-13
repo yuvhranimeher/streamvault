@@ -39,11 +39,13 @@ defmodule StreamVault.Edge.Controllers.HistoryController do
   end
 
   defp number(value) when is_number(value), do: value
+
   defp number(value) when is_binary(value) do
     case Float.parse(value) do
       {number, _} -> number
       _ -> nil
     end
   end
+
   defp number(_), do: nil
 end

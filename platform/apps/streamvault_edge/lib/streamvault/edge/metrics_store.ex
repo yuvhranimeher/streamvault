@@ -17,7 +17,14 @@ defmodule StreamVault.Edge.MetricsStore do
 
   @impl true
   def init(_options) do
-    :ok = :telemetry.attach_many("streamvault-prometheus-store", @events, &__MODULE__.handle_event/4, self())
+    :ok =
+      :telemetry.attach_many(
+        "streamvault-prometheus-store",
+        @events,
+        &__MODULE__.handle_event/4,
+        self()
+      )
+
     {:ok, %{counters: %{}, duration_sum_ms: %{}, last: %{}}}
   end
 
@@ -73,7 +80,12 @@ defmodule StreamVault.Edge.MetricsStore do
   end
 
   defp event_key(event, metadata) do
-    %{event: Enum.join(event, "."), strategy: metadata[:strategy], planner: metadata[:planner], path: safe_path(metadata[:path])}
+    %{
+      event: Enum.join(event, "."),
+      strategy: metadata[:strategy],
+      planner: metadata[:planner],
+      path: safe_path(metadata[:path])
+    }
   end
 
   defp safe_path(nil), do: nil
@@ -86,7 +98,9 @@ defmodule StreamVault.Edge.MetricsStore do
     |> then(&"{#{&1}}")
   end
 
-  defp escape(value), do: value |> to_string() |> String.replace("\\", "\\\\") |> String.replace("\"", "\\\"")
+  defp escape(value),
+    do: value |> to_string() |> String.replace("\\", "\\\\") |> String.replace("\"", "\\\"")
+
   defp native_to_ms(nil), do: 0.0
   defp native_to_ms(value), do: System.convert_time_unit(value, :native, :microsecond) / 1_000
 end

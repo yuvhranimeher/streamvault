@@ -13,9 +13,14 @@ defmodule StreamVault.Edge.Plugs.RateLimit do
     key = conn.assigns[:client_id] || "unknown"
 
     case StreamVault.Edge.RateLimiter.allow?(key, limit, window_ms) do
-      {:allow, remaining} -> put_resp_header(conn, "x-ratelimit-remaining", Integer.to_string(remaining))
+      {:allow, remaining} ->
+        put_resp_header(conn, "x-ratelimit-remaining", Integer.to_string(remaining))
+
       {:deny, retry_ms} ->
-        body = Jason.encode!(%{error: %{code: "rate_limited", message: "Too many requests", retry_after_ms: retry_ms}})
+        body =
+          Jason.encode!(%{
+            error: %{code: "rate_limited", message: "Too many requests", retry_after_ms: retry_ms}
+          })
 
         conn
         |> put_resp_content_type("application/json")

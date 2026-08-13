@@ -30,8 +30,9 @@ defmodule StreamVault.Catalog.Loader do
     error -> {:error, {:invalid_catalog, error}}
   end
 
-  defp container(%{"movies" => movies, "series" => series}) when is_list(movies) and is_list(series),
-    do: {:ok, movies, series}
+  defp container(%{"movies" => movies, "series" => series})
+       when is_list(movies) and is_list(series),
+       do: {:ok, movies, series}
 
   defp container(items) when is_list(items), do: {:ok, items, []}
   defp container(_), do: {:error, :unsupported_catalog_shape}

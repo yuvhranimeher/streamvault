@@ -24,7 +24,9 @@ defmodule StreamVault.Core.Page do
   end
 
   defp get(params, key, default) when is_map(params), do: Map.get(params, key, default)
-  defp get(params, key, default) when is_list(params), do: Keyword.get(params, String.to_atom(key), default)
+
+  defp get(params, key, default) when is_list(params),
+    do: Keyword.get(params, String.to_atom(key), default)
 
   defp positive(value, default) do
     case parse(value) do
@@ -41,11 +43,13 @@ defmodule StreamVault.Core.Page do
   end
 
   defp parse(value) when is_integer(value), do: value
+
   defp parse(value) when is_binary(value) do
     case Integer.parse(value) do
       {number, _} -> number
       :error -> -1
     end
   end
+
   defp parse(_), do: -1
 end

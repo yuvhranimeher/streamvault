@@ -4,8 +4,12 @@ defmodule StreamVault.Edge.ConnCase do
   using do
     quote do
       @endpoint StreamVault.Edge.Endpoint
-      use Phoenix.ConnTest
       import Plug.Conn
+      import Phoenix.ConnTest
     end
+  end
+
+  setup _tags do
+    {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
 end

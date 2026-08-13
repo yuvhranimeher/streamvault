@@ -9,13 +9,19 @@ defmodule StreamVault.Playback.PlannerClient do
   @spec plan(Media.t(), Probe.t(), Capability.t()) :: Plan.t()
   def plan(media, probe, capability) do
     started = System.monotonic_time()
-    url = Application.get_env(:streamvault_playback, :planner_url, "http://127.0.0.1:4100") <> "/v1/plan"
+
+    url =
+      Application.get_env(:streamvault_playback, :planner_url, "http://127.0.0.1:4100") <>
+        "/v1/plan"
+
     timeout = Application.get_env(:streamvault_playback, :request_timeout_ms, 2_000)
     body = payload(media, probe, capability)
 
     result =
       case Req.post(url, json: body, receive_timeout: timeout, retry: false) do
-        {:ok, %{status: 200, body: response}} when is_map(response) -> decode_plan(response, media.stream_url)
+        {:ok, %{status: 200, body: response}} when is_map(response) ->
+          decode_plan(response, media.stream_url)
+
         {:ok, response} ->
           Logger.warning("planner returned status #{response.status}; using local policy")
           LocalPlanner.plan(media, probe, capability)

@@ -6,7 +6,12 @@ defmodule StreamVault.Core.NormalizerTest do
   test "normalizes crawler records without losing the playback URL" do
     media =
       Normalizer.media(
-        %{"title" => "Arrival.2016.1080p", "year" => "2016", "rating" => "8.0", "streamUrl" => "https://media.test/arrival.mp4"},
+        %{
+          "title" => "Arrival.2016.1080p",
+          "year" => "2016",
+          "rating" => "8.0",
+          "streamUrl" => "https://media.test/arrival.mp4"
+        },
         :movie,
         0
       )
@@ -19,7 +24,16 @@ defmodule StreamVault.Core.NormalizerTest do
   end
 
   test "converts list-shaped seasons to the legacy map shape" do
-    media = Normalizer.media(%{"title" => "Show", "seasons" => [%{"season" => "Season 2", "episodes" => [%{"filename" => "S02E01.mkv"}]}]}, :series, 0)
+    media =
+      Normalizer.media(
+        %{
+          "title" => "Show",
+          "seasons" => [%{"season" => "Season 2", "episodes" => [%{"filename" => "S02E01.mkv"}]}]
+        },
+        :series,
+        0
+      )
+
     assert [%{"episode" => 1, "filename" => "S02E01.mkv"}] = media.seasons["2"]
   end
 end

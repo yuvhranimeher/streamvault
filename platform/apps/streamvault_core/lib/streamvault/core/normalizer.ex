@@ -63,9 +63,15 @@ defmodule StreamVault.Core.Normalizer do
   end
 
   defp search_text(raw, title, year) do
-    [title, year, value(raw, ["filename", :filename]), value(raw, ["category", :category]),
-     value(raw, ["genre", :genre]), value(raw, ["language", :language]),
-     value(raw, ["overview", :overview])]
+    [
+      title,
+      year,
+      value(raw, ["filename", :filename]),
+      value(raw, ["category", :category]),
+      value(raw, ["genre", :genre]),
+      value(raw, ["language", :language]),
+      value(raw, ["overview", :overview])
+    ]
     |> Enum.reject(&is_nil/1)
     |> Enum.join(" ")
     |> search_normalize()

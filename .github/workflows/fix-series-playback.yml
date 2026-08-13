@@ -22,6 +22,8 @@ jobs:
           fetch-depth: 2
       - name: Apply global series episode fix
         run: python3 .github/scripts/patch-series-hydration.py
+      - name: Verify frontend JavaScript syntax
+        run: node --check hostinger/app-v3.js
       - name: Commit patch
         shell: bash
         run: |
@@ -30,7 +32,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add hostinger/app-v3.js
           if git diff --cached --quiet; then
-            echo "Global series episode fix already present"
+            echo "Global series episode fix already present and syntax-valid"
             exit 0
           fi
           git commit -m "Fix episode lists for all series details"

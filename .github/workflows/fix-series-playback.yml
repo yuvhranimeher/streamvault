@@ -1,4 +1,4 @@
-name: Fix series playback recovery
+name: Fix global series episode hydration
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - hostinger-frontend-only
     paths:
       - .github/workflows/fix-series-playback.yml
+      - .github/scripts/patch-series-hydration.py
 
 permissions:
   contents: write
@@ -19,7 +20,7 @@ jobs:
           ref: hostinger-frontend-only
           persist-credentials: true
           fetch-depth: 2
-      - name: Apply series detail fix
+      - name: Apply global series episode fix
         run: python3 .github/scripts/patch-series-hydration.py
       - name: Commit patch
         shell: bash
@@ -29,9 +30,9 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add hostinger/app-v3.js
           if git diff --cached --quiet; then
-            echo "Series recovery patch already present"
+            echo "Global series episode fix already present"
             exit 0
           fi
-          git commit -m "Hydrate series episodes in detail modal"
+          git commit -m "Fix episode lists for all series details"
           git pull --rebase origin hostinger-frontend-only
           git push origin HEAD:hostinger-frontend-only

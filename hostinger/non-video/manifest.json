@@ -10,11 +10,12 @@
     "ftp14.circleftp.net",
     "index2.circleftp.net"
   ],
+  "classificationVersion": "20260813-path-context-v1",
   "categories": [
     {
       "category": "books_documents",
       "slug": "books-documents",
-      "total": 10723,
+      "total": 10722,
       "pages": 22,
       "manifest": "books-documents/manifest.json",
       "firstPage": "books-documents/page-001.json"
@@ -30,16 +31,16 @@
     {
       "category": "software_games",
       "slug": "software-games",
-      "total": 736,
-      "pages": 2,
+      "total": 8424,
+      "pages": 17,
       "manifest": "software-games/manifest.json",
       "firstPage": "software-games/page-001.json"
     },
     {
       "category": "archives",
       "slug": "archives",
-      "total": 8283,
-      "pages": 17,
+      "total": 611,
+      "pages": 2,
       "manifest": "archives/manifest.json",
       "firstPage": "archives/page-001.json"
     },
@@ -62,7 +63,7 @@
     {
       "category": "images",
       "slug": "images",
-      "total": 196,
+      "total": 187,
       "pages": 1,
       "manifest": "images/manifest.json",
       "firstPage": "images/page-001.json"
@@ -70,7 +71,7 @@
     {
       "category": "metadata",
       "slug": "metadata",
-      "total": 322,
+      "total": 318,
       "pages": 1,
       "manifest": "metadata/manifest.json",
       "firstPage": "metadata/page-001.json"
@@ -78,7 +79,7 @@
     {
       "category": "other",
       "slug": "other",
-      "total": 5,
+      "total": 3,
       "pages": 1,
       "manifest": "other/manifest.json",
       "firstPage": "other/page-001.json"

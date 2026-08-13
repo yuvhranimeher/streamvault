@@ -1,17 +1,17 @@
 {
   "category": "other",
   "slug": "other",
-  "total": 5,
+  "total": 3,
   "pages": 1,
   "pageSize": 500,
   "firstPage": "other/page-001.json",
   "counts": {
     "byExtension": {
-      "(none)": 5
+      "(none)": 3
     },
     "byHost": {
-      "ftp14.circleftp.net": 3,
-      "index2.circleftp.net": 2
+      "index2.circleftp.net": 2,
+      "ftp14.circleftp.net": 1
     }
   }
 }

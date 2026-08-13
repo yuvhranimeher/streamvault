@@ -5452,7 +5452,7 @@ async function loadFtpDuration(streamUrl){
 }
 
 function fallbackOrderForRemote(url, plan={}){
-  const unsupported = plan?.unsupportedVideoHint || urlHasUnsupportedVideoHint(url);
+  const unsupported = plan?.unsupportedVideoCodec || urlHasUnsupportedVideoHint(url);
   const selected=selectedAudioTrack();
   const explicitAudio=availableAudio.length > 1 || currentAudioIdx > 0 || Number.isFinite(selected?.streamIndex ?? selected?.sourceIndex);
   if(unsupported)return ['transcode','audio','remux','proxy'];

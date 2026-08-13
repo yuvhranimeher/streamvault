@@ -8,6 +8,7 @@ module StreamVault.Planner.Server
   , server
   ) where
 
+import Control.Monad.IO.Class (liftIO)
 import Data.String (fromString)
 import Data.Time (getCurrentTime)
 import Network.Wai (Application)
@@ -23,7 +24,7 @@ server :: Server API
 server = healthHandler :<|> planHandler :<|> rangeHandler
   where
     healthHandler = do
-      timestamp <- getCurrentTime
+      timestamp <- liftIO getCurrentTime
       pure (Health True "streamvault-media-planner" "2.0.0" timestamp)
 
     planHandler request = pure (restoreSource request (planPlayback request))

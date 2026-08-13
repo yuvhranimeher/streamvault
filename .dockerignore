@@ -1,0 +1,15 @@
+.git
+.github
+node_modules
+platform/_build
+platform/deps
+dist-newstyle
+cache
+hls-cache
+logs
+public/posters
+public/poster-cache
+catalog.json
+section-catalog.json
+detail-cache.json
+*.log

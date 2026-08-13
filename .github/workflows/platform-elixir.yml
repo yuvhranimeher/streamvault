@@ -1,0 +1,34 @@
+name: Platform Elixir
+
+on:
+  push:
+    branches: [master, "agent/**"]
+    paths: ["platform/**", ".github/workflows/platform-elixir.yml"]
+  pull_request:
+    paths: ["platform/**", ".github/workflows/platform-elixir.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.3"
+          elixir-version: "1.18.4"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            platform/deps
+            platform/_build
+          key: elixir-${{ runner.os }}-${{ hashFiles('platform/mix.exs', 'platform/apps/*/mix.exs', 'platform/mix.lock') }}
+      - run: mix deps.get
+      - run: mix format --check-formatted
+      - run: mix compile --warnings-as-errors
+      - run: mix test --warnings-as-errors

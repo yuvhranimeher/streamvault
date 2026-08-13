@@ -1,0 +1,456 @@
+openapi: 3.1.0
+info:
+  title: StreamVault Platform API
+  version: 2.0.0
+  description: API-only Phoenix edge compatible with the existing StreamVault frontend.
+servers:
+  - url: http://localhost:4000
+    description: Local Phoenix edge
+tags:
+  - name: Operations
+  - name: Catalog
+  - name: Discovery
+  - name: History
+  - name: Playback
+paths:
+  /health:
+    get:
+      tags: [Operations]
+      operationId: health
+      responses:
+        '200':
+          description: Process is alive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /ready:
+    get:
+      tags: [Operations]
+      operationId: readiness
+      responses:
+        '200':
+          description: Catalog is active.
+        '503':
+          $ref: '#/components/responses/Error'
+  /metrics:
+    get:
+      tags: [Operations]
+      operationId: prometheusMetrics
+      responses:
+        '200':
+          description: Prometheus text exposition.
+          content:
+            text/plain:
+              schema:
+                type: string
+  /api/version:
+    get:
+      tags: [Operations]
+      operationId: version
+      responses:
+        '200':
+          description: Service and compatibility version.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, version, compatibility, time]
+                properties:
+                  ok: {type: boolean}
+                  version: {type: string}
+                  compatibility: {type: string}
+                  time: {type: string, format: date-time}
+  /api/catalog-stats:
+    get:
+      tags: [Catalog]
+      operationId: catalogStats
+      responses:
+        '200':
+          description: Active generation counts and load details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogStats'
+  /api/movies:
+    get:
+      tags: [Catalog]
+      operationId: listMovies
+      parameters:
+        - $ref: '#/components/parameters/ZeroPage'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Query'
+      responses:
+        '200':
+          description: Legacy-compatible movie page.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PageMetadata'
+                  - type: object
+                    required: [movies]
+                    properties:
+                      movies:
+                        type: array
+                        items: {$ref: '#/components/schemas/Media'}
+  /api/series:
+    get:
+      tags: [Catalog]
+      operationId: listSeries
+      parameters:
+        - $ref: '#/components/parameters/ZeroPage'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Query'
+      responses:
+        '200':
+          description: Legacy-compatible series page.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PageMetadata'
+                  - type: object
+                    required: [series]
+                    properties:
+                      series:
+                        type: array
+                        items: {$ref: '#/components/schemas/Media'}
+  /api/media/{id}:
+    get:
+      tags: [Catalog]
+      operationId: getMedia
+      parameters:
+        - $ref: '#/components/parameters/MediaId'
+      responses:
+        '200':
+          description: Canonical item rendered in the legacy shape.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Media'}
+        '404': {$ref: '#/components/responses/Error'}
+  /api/search:
+    get:
+      tags: [Discovery]
+      operationId: search
+      parameters:
+        - $ref: '#/components/parameters/Query'
+        - $ref: '#/components/parameters/OnePage'
+        - $ref: '#/components/parameters/Limit'
+        - name: kind
+          in: query
+          schema: {type: string, enum: [mixed, movie, series], default: mixed}
+      responses:
+        '200':
+          description: Indexed search page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SearchPage'}
+  /api/section/{key}:
+    get:
+      tags: [Discovery]
+      operationId: discoverySection
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: {type: string}
+        - $ref: '#/components/parameters/ZeroPage'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Rule-driven discovery section.
+  /api/home-feed:
+    get:
+      tags: [Discovery]
+      operationId: homeFeed
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Hero items and discovery rows.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HomeFeed'}
+  /api/history:
+    get:
+      tags: [History]
+      operationId: listHistory
+      parameters:
+        - $ref: '#/components/parameters/ClientId'
+      responses:
+        '200':
+          description: Map keyed by media id.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {$ref: '#/components/schemas/HistoryEntry'}
+    post:
+      tags: [History]
+      operationId: updateHistory
+      parameters:
+        - $ref: '#/components/parameters/ClientId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/HistoryUpdate'}
+      responses:
+        '200': {description: Progress accepted.}
+        '400': {$ref: '#/components/responses/Error'}
+  /api/history/{id}:
+    delete:
+      tags: [History]
+      operationId: deleteHistory
+      parameters:
+        - $ref: '#/components/parameters/ClientId'
+        - $ref: '#/components/parameters/MediaId'
+      responses:
+        '200': {description: Entry removed.}
+  /api/playback/plan/{id}:
+    post:
+      tags: [Playback]
+      operationId: planPlayback
+      parameters:
+        - $ref: '#/components/parameters/ClientId'
+        - $ref: '#/components/parameters/MediaId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PlaybackPlanRequest'}
+      responses:
+        '200':
+          description: Direct, remux, transcode, or reject decision.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlaybackPlan'}
+        '404': {$ref: '#/components/responses/Error'}
+  /api/playback/sessions/{id}:
+    patch:
+      tags: [Playback]
+      operationId: touchPlaybackSession
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200': {description: Session updated.}
+        '404': {$ref: '#/components/responses/Error'}
+    delete:
+      tags: [Playback]
+      operationId: closePlaybackSession
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200': {description: Session closed.}
+components:
+  parameters:
+    ClientId:
+      name: x-client-id
+      in: header
+      required: false
+      schema: {type: string, maxLength: 200}
+    MediaId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string}
+    Query:
+      name: q
+      in: query
+      schema: {type: string, maxLength: 300}
+    Limit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 120, default: 24}
+    ZeroPage:
+      name: page
+      in: query
+      schema: {type: integer, minimum: 0, default: 0}
+    OnePage:
+      name: page
+      in: query
+      schema: {type: integer, minimum: 1, default: 1}
+  responses:
+    Error:
+      description: Structured API error.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+  schemas:
+    Health:
+      type: object
+      required: [ok, service, version, time]
+      properties:
+        ok: {type: boolean}
+        service: {type: string}
+        version: {type: string}
+        node: {type: string}
+        uptime_seconds: {type: integer}
+        time: {type: string, format: date-time}
+    Media:
+      type: object
+      required: [id, name, title, type]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        title: {type: string}
+        type: {type: string, enum: [movie, series]}
+        filename: {type: [string, 'null']}
+        file: {type: [string, 'null']}
+        year: {oneOf: [{type: integer}, {type: string}]}
+        category: {type: string}
+        genre: {type: string}
+        language: {type: string}
+        rating: {type: [number, 'null']}
+        poster: {type: [string, 'null']}
+        backdrop: {type: [string, 'null']}
+        overview: {type: string}
+        streamUrl: {type: [string, 'null'], format: uri}
+        server: {type: [string, 'null']}
+        tmdbId: {}
+        isFtp: {type: boolean}
+        seasons: {type: object, additionalProperties: true}
+    PageMetadata:
+      type: object
+      required: [total, page, pages]
+      properties:
+        total: {type: integer, minimum: 0}
+        page: {type: integer, minimum: 0}
+        pages: {type: integer, minimum: 0}
+    SearchPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          required: [items, instant, indexed]
+          properties:
+            items:
+              type: array
+              items: {$ref: '#/components/schemas/Media'}
+            instant: {type: boolean}
+            indexed: {type: boolean}
+    CatalogStats:
+      type: object
+      required: [ok, existingMovies, existingSeries, massiveTotal]
+      properties:
+        ok: {type: boolean}
+        homepageUntouched: {type: boolean}
+        existingMovies: {type: integer}
+        existingSeries: {type: integer}
+        massiveTotal: {type: integer}
+        generation: {type: integer}
+        loadedAt: {type: [string, 'null'], format: date-time}
+        loadDurationMs: {type: [integer, 'null']}
+    HomeFeed:
+      type: object
+      required: [ok, hero, rows]
+      properties:
+        ok: {type: boolean}
+        hero:
+          type: array
+          items: {$ref: '#/components/schemas/Media'}
+        rows:
+          type: array
+          items:
+            type: object
+            required: [rowId, sectionKey, title, items]
+            properties:
+              rowId: {type: string}
+              sectionKey: {type: string}
+              title: {type: string}
+              items:
+                type: array
+                items: {$ref: '#/components/schemas/Media'}
+    HistoryEntry:
+      type: object
+      required: [progress, updatedAt]
+      properties:
+        progress: {type: number, minimum: 0, maximum: 1}
+        name: {type: string}
+        poster: {type: [string, 'null']}
+        duration: {type: number, minimum: 0}
+        updatedAt: {type: integer}
+    HistoryUpdate:
+      type: object
+      required: [id, progress]
+      properties:
+        id: {oneOf: [{type: string}, {type: integer}]}
+        progress: {type: number, minimum: 0, maximum: 1}
+        name: {type: string, maxLength: 200}
+        poster: {type: [string, 'null']}
+        duration: {type: number, minimum: 0}
+    PlaybackPlanRequest:
+      type: object
+      required: [probe]
+      properties:
+        probe: {$ref: '#/components/schemas/Probe'}
+        capability: {$ref: '#/components/schemas/Capability'}
+    Probe:
+      type: object
+      properties:
+        container: {type: [string, 'null']}
+        videoCodec: {type: [string, 'null']}
+        audioCodec: {type: [string, 'null']}
+        width: {type: [integer, 'null']}
+        height: {type: [integer, 'null']}
+        fps: {type: [number, 'null']}
+        bitrate: {type: [integer, 'null']}
+        duration: {type: [number, 'null']}
+        sizeBytes: {type: [integer, 'null']}
+        audioChannels: {type: integer, default: 2}
+        subtitleCodecs: {type: array, items: {type: string}}
+        hasRange: {type: boolean, default: false}
+        isHls: {type: boolean, default: false}
+    Capability:
+      type: object
+      properties:
+        device: {type: string}
+        userAgent: {type: string}
+        containers: {type: array, items: {type: string}}
+        videoCodecs: {type: array, items: {type: string}}
+        audioCodecs: {type: array, items: {type: string}}
+        maxHeight: {type: integer, default: 1080}
+        maxBitrate: {type: integer, default: 12000000}
+        supportsHls: {type: boolean}
+        supportsRange: {type: boolean}
+        prefersDirect: {type: boolean}
+    PlaybackPlan:
+      type: object
+      required: [strategy, reason, source_url, planner, session_id]
+      properties:
+        strategy: {type: string, enum: [direct, remux, transcode, reject]}
+        reason: {type: string}
+        source_url: {type: string}
+        manifest_url: {type: [string, 'null']}
+        container: {type: [string, 'null']}
+        video_codec: {type: [string, 'null']}
+        audio_codec: {type: [string, 'null']}
+        max_height: {type: [integer, 'null']}
+        session_id: {type: string}
+        planner: {type: string, enum: [haskell, elixir]}
+        warnings: {type: array, items: {type: string}}
+        ffmpeg_args: {type: array, items: {type: string}}
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: {type: string}
+            message: {type: string}
+            request_id: {type: [string, 'null']}
+            details: {type: object, additionalProperties: true}

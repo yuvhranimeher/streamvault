@@ -1,0 +1,45 @@
+name: streamvault-platform
+
+services:
+  edge:
+    build:
+      context: .
+      dockerfile: infra/containers/Dockerfile.edge
+    environment:
+      HOST: localhost
+      PORT: 4000
+      SECRET_KEY_BASE: local-development-secret-local-development-secret-local-development-secret
+      CATALOG_PATH: /data/catalog.json
+      HOME_FEED_PATH: /data/home-feed.json
+      PLANNER_URL: http://media-planner:4100
+      LEGACY_ORIGIN: http://host.docker.internal:3000
+      SHADOW_ENABLED: "false"
+      ADMIN_KEY: local-admin-key
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./catalog.json:/data/catalog.json:ro
+      - ./home-feed.json:/data/home-feed.json:ro
+    depends_on:
+      media-planner:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  media-planner:
+    build:
+      context: .
+      dockerfile: infra/containers/Dockerfile.planner
+    environment:
+      PORT: 4100
+      HOST: 0.0.0.0
+    ports:
+      - "4100:4100"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M

@@ -1,0 +1,28 @@
+name: Platform Haskell
+
+on:
+  push:
+    branches: [master, "agent/**"]
+    paths: ["services/media-planner/**", "cabal.project", ".github/workflows/platform-haskell.yml"]
+  pull_request:
+    paths: ["services/media-planner/**", "cabal.project", ".github/workflows/platform-haskell.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: haskell-actions/setup@v2
+        with:
+          ghc-version: "9.10.1"
+          cabal-version: "3.12.1.0"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cabal/store
+          key: haskell-${{ runner.os }}-${{ hashFiles('cabal.project', 'services/media-planner/*.cabal') }}
+      - run: cabal update
+      - run: cabal build all --enable-tests
+      - run: cabal test all --enable-tests --test-show-details=direct

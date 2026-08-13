@@ -1,0 +1,47 @@
+FROM hexpm/elixir:1.18.4-erlang-27.3.4-debian-bookworm-20250428-slim AS build
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+ENV MIX_ENV=prod
+
+RUN mix local.hex --force && mix local.rebar --force
+
+COPY platform/mix.exs platform/
+COPY platform/config platform/config
+COPY platform/apps/streamvault_core/mix.exs platform/apps/streamvault_core/mix.exs
+COPY platform/apps/streamvault_catalog/mix.exs platform/apps/streamvault_catalog/mix.exs
+COPY platform/apps/streamvault_playback/mix.exs platform/apps/streamvault_playback/mix.exs
+COPY platform/apps/streamvault_edge/mix.exs platform/apps/streamvault_edge/mix.exs
+
+WORKDIR /build/platform
+RUN mix deps.get --only prod && mix deps.compile
+
+COPY platform /build/platform
+RUN mix compile --warnings-as-errors && mix release streamvault
+
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libstdc++6 openssl libncurses6 locales ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen
+
+ENV LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8 \
+    HOME=/app \
+    PORT=4000
+
+WORKDIR /app
+RUN useradd --system --create-home --home-dir /app streamvault
+COPY --from=build --chown=streamvault:streamvault /build/platform/_build/prod/rel/streamvault ./
+
+USER streamvault
+EXPOSE 4000
+HEALTHCHECK --interval=15s --timeout=3s --retries=5 CMD ["curl", "--fail", "http://127.0.0.1:4000/ready"]
+ENTRYPOINT ["/app/bin/streamvault"]
+CMD ["start"]

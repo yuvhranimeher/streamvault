@@ -11,7 +11,6 @@ module StreamVault.Planner.Server
 import Control.Monad.IO.Class (liftIO)
 import Data.String (fromString)
 import Data.Time (getCurrentTime)
-import Network.Wai (Application)
 import Network.Wai.Handler.Warp (defaultSettings, runSettings, setHost, setPort)
 import Network.Wai.Middleware.RequestLogger (logStdoutDev)
 import Servant
@@ -27,13 +26,8 @@ server = healthHandler :<|> planHandler :<|> rangeHandler
       timestamp <- liftIO getCurrentTime
       pure (Health True "streamvault-media-planner" "2.0.0" timestamp)
 
-    planHandler request = pure (restoreSource request (planPlayback request))
+    planHandler request = pure (planPlayback request)
     rangeHandler request = pure (rangeResponse request.resourceSize request.header)
-
-restoreSource :: PlanRequest -> PlanResponse -> PlanResponse
-restoreSource request response
-  | response.sourceUrl == "" = response {sourceUrl = request.media.sourceUrl}
-  | otherwise = response
 
 application :: Application
 application = logStdoutDev (serve apiProxy server)

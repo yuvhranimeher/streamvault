@@ -25,4 +25,4 @@ jobs:
           key: haskell-${{ runner.os }}-${{ hashFiles('cabal.project', 'services/media-planner/*.cabal') }}
       - run: cabal update
       - run: cabal build all --enable-tests
-      - run: cabal test all --test-show-details=direct
+      - run: cabal test all --enable-tests --test-show-details=direct

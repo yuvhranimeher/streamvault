@@ -14,19 +14,20 @@ spec = describe "planPlayback" $ do
     (planPlayback (request compatibleProbe desktopCapability)).strategy `shouldBe` Direct
 
   it "remuxes compatible codecs in MKV" $ do
-    let result = planPlayback (request (compatibleProbe {container = Just "mkv"}) desktopCapability)
+    let mkvProbe = Probe (Just "mkv") (Just "h264") (Just "aac") (Just 1920) (Just 1080) (Just 24) (Just 5000000) (Just 7200) (Just 1000000) 2 [] True False
+        result = planPlayback (request mkvProbe desktopCapability)
     result.strategy `shouldBe` Remux
     result.videoCodec `shouldBe` Just "h264"
 
   it "transcodes HEVC and AC3 for a basic browser" $ do
-    let incompatible = compatibleProbe {container = Just "mkv", videoCodec = Just "hevc", audioCodec = Just "ac3", height = Just 2160}
+    let incompatible = Probe (Just "mkv") (Just "hevc") (Just "ac3") (Just 3840) (Just 2160) (Just 24) (Just 25000000) (Just 7200) (Just 1000000) 6 [] True False
         result = planPlayback (request incompatible desktopCapability)
     result.strategy `shouldBe` Transcode
     result.maxHeight `shouldBe` Just 1080
     result.videoCodec `shouldBe` Just "h264"
 
   it "rejects an empty source URL" $ do
-    let emptyMedia = defaultMedia {sourceUrl = ""}
+    let emptyMedia = MediaInput "movie" "Movie" ""
     (planPlayback (PlanRequest emptyMedia compatibleProbe desktopCapability)).strategy `shouldBe` Reject
 
 request :: Probe -> Capability -> PlanRequest

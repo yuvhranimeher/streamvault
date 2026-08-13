@@ -6,7 +6,6 @@ module StreamVault.Planner.API
   , apiProxy
   ) where
 
-import Data.Proxy (Proxy (..))
 import Servant
 import StreamVault.Planner.Types
 

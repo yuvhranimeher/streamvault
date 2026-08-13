@@ -28,17 +28,17 @@ data MediaInput = MediaInput
   deriving stock (Eq, Show, Generic)
 
 instance FromJSON MediaInput where
-  parseJSON = withObject "MediaInput" $ \object ->
+  parseJSON = withObject "MediaInput" $ \value ->
     MediaInput
-      <$> object .: "id"
-      <*> object .:? "title" .!= ""
-      <*> object .: "sourceUrl"
+      <$> value .: "id"
+      <*> value .:? "title" .!= ""
+      <*> value .: "sourceUrl"
 
 instance ToJSON MediaInput where
-  toJSON mediaInput = object
-    [ "id" .= mediaId mediaInput
-    , "title" .= title mediaInput
-    , "sourceUrl" .= sourceUrl mediaInput
+  toJSON MediaInput {mediaId = identifier, title = mediaTitle, sourceUrl = url} = object
+    [ "id" .= identifier
+    , "title" .= mediaTitle
+    , "sourceUrl" .= url
     ]
 
 data Probe = Probe
@@ -59,23 +59,23 @@ data Probe = Probe
   deriving stock (Eq, Show, Generic)
 
 instance FromJSON Probe where
-  parseJSON = withObject "Probe" $ \object ->
+  parseJSON = withObject "Probe" $ \value ->
     Probe
-      <$> object .:? "container"
-      <*> (object .:? "videoCodec" >>= fallback object "video_codec")
-      <*> (object .:? "audioCodec" >>= fallback object "audio_codec")
-      <*> object .:? "width"
-      <*> object .:? "height"
-      <*> object .:? "fps"
-      <*> object .:? "bitrate"
-      <*> object .:? "duration"
-      <*> (object .:? "sizeBytes" >>= fallback object "size_bytes")
-      <*> (object .:? "audioChannels" .!= 2)
-      <*> (object .:? "subtitleCodecs" .!= [])
-      <*> (object .:? "hasRange" .!= False)
-      <*> (object .:? "isHls" .!= False)
+      <$> value .:? "container"
+      <*> (value .:? "videoCodec" >>= fallback value "video_codec")
+      <*> (value .:? "audioCodec" >>= fallback value "audio_codec")
+      <*> value .:? "width"
+      <*> value .:? "height"
+      <*> value .:? "fps"
+      <*> value .:? "bitrate"
+      <*> value .:? "duration"
+      <*> (value .:? "sizeBytes" >>= fallback value "size_bytes")
+      <*> (value .:? "audioChannels" .!= 2)
+      <*> (value .:? "subtitleCodecs" .!= [])
+      <*> (value .:? "hasRange" .!= False)
+      <*> (value .:? "isHls" .!= False)
     where
-      fallback object key Nothing = object .:? key
+      fallback value key Nothing = value .:? key
       fallback _ _ value = pure value
 
 instance ToJSON Probe where
@@ -96,18 +96,18 @@ data Capability = Capability
   deriving stock (Eq, Show, Generic)
 
 instance FromJSON Capability where
-  parseJSON = withObject "Capability" $ \object ->
+  parseJSON = withObject "Capability" $ \value ->
     Capability
-      <$> object .:? "device"
-      <*> object .:? "userAgent"
-      <*> (object .:? "containers" .!= ["mp4", "webm", "hls"])
-      <*> (object .:? "videoCodecs" .!= ["h264", "vp9"])
-      <*> (object .:? "audioCodecs" .!= ["aac", "mp3", "opus"])
-      <*> (object .:? "maxHeight" .!= 1080)
-      <*> (object .:? "maxBitrate" .!= 12000000)
-      <*> (object .:? "supportsHls" .!= False)
-      <*> (object .:? "supportsRange" .!= True)
-      <*> (object .:? "prefersDirect" .!= True)
+      <$> value .:? "device"
+      <*> value .:? "userAgent"
+      <*> (value .:? "containers" .!= ["mp4", "webm", "hls"])
+      <*> (value .:? "videoCodecs" .!= ["h264", "vp9"])
+      <*> (value .:? "audioCodecs" .!= ["aac", "mp3", "opus"])
+      <*> (value .:? "maxHeight" .!= 1080)
+      <*> (value .:? "maxBitrate" .!= 12000000)
+      <*> (value .:? "supportsHls" .!= False)
+      <*> (value .:? "supportsRange" .!= True)
+      <*> (value .:? "prefersDirect" .!= True)
 
 instance ToJSON Capability where
   toJSON = genericToJSON defaultOptions

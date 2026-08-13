@@ -254,8 +254,8 @@
     if(cache.has(key))return cache.get(key);
     if(controller)controller.abort();
     controller = new AbortController();
-    const params = new URLSearchParams({ q, kind, page:String(page), limit:String(limit), massive:'0', background:'1' });
-    const res = await fetchWithTimeout(`/api/search?${params.toString()}`, { cache:'no-store', signal:controller.signal }, 3500);
+    const params = new URLSearchParams({ q, kind, page:String(page), limit:String(limit), massive:'1', background:'1' });
+    const res = await fetchWithTimeout(`/api/search?${params.toString()}`, { cache:'no-store', signal:controller.signal }, 9000);
     if(!res.ok)throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     cache.set(key, data);

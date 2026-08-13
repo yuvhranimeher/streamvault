@@ -1,0 +1,45 @@
+name: Fix series playback recovery
+
+on:
+  push:
+    branches:
+      - hostinger-frontend-only
+    paths:
+      - .github/workflows/fix-series-playback.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hostinger-frontend-only
+          persist-credentials: true
+      - name: Patch remote fallback ordering
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('hostinger/app-v3.js')
+          s=p.read_text(encoding='utf-8-sig')
+          old="const unsupported = plan?.unsupportedVideoHint || urlHasUnsupportedVideoHint(url);"
+          new="const unsupported = plan?.unsupportedVideoCodec || urlHasUnsupportedVideoHint(url);"
+          if new not in s:
+              if old not in s:
+                  raise SystemExit('fallback marker not found')
+              s=s.replace(old,new,1)
+              p.write_text(s,encoding='utf-8')
+          print('remote fallback codec/container distinction installed')
+          PY
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add hostinger/app-v3.js
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Fix remote series playback fallback ordering"
+          git push origin HEAD:hostinger-frontend-only

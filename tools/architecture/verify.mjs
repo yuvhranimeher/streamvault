@@ -3,6 +3,7 @@ import { extname, join, relative, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "../..");
 const failures = [];
+const generatedDirectories = new Set(["_build", "deps", "doc"]);
 
 const required = [
   "platform/mix.exs",
@@ -34,7 +35,9 @@ if (!schema.required.includes("strategy") || schema.properties.strategy.enum.len
 const openapi = readFileSync(join(root, "contracts/openapi.yaml"), "utf8");
 const router = readFileSync(join(root, "platform/apps/streamvault_edge/lib/streamvault/edge/router.ex"), "utf8");
 const documentedPaths = [...openapi.matchAll(/^  (\/[^:]+):$/gm)].map((match) => match[1]);
-const routedPaths = [...router.matchAll(/(?:get|post|patch|delete) "([^"]+)"/g)].map((match) => match[1]);
+const routedPaths = [...router.matchAll(/(?:get|post|patch|delete)\(\s*"([^"]+)"/g)].map((match) => match[1]);
+
+if (routedPaths.length === 0) failures.push("no Phoenix routes discovered");
 
 for (const path of routedPaths) {
   const normalized = path.replace(/:([a-zA-Z_]+)/g, "{$1}");
@@ -57,7 +60,10 @@ function* walk(directory) {
   for (const name of readdirSync(directory)) {
     const path = join(directory, name);
     const stats = statSync(path);
-    if (stats.isDirectory()) yield* walk(path);
-    else yield path;
+    if (stats.isDirectory()) {
+      if (!generatedDirectories.has(name)) yield* walk(path);
+      continue;
+    }
+    yield path;
   }
 }

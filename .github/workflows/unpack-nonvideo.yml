@@ -1,0 +1,87 @@
+name: Unpack non-video catalog
+
+on:
+  push:
+    branches:
+      - hostinger-frontend-only
+    paths:
+      - hostinger/non-video.zip
+      - .github/workflows/unpack-nonvideo.yml
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: hostinger-frontend-only
+          persist-credentials: true
+
+      - name: Unpack catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f hostinger/non-video.zip
+          rm -rf hostinger/non-video
+          mkdir -p hostinger/non-video
+          rm -rf /tmp/nonvideo-unpack
+          mkdir -p /tmp/nonvideo-unpack
+          unzip -q hostinger/non-video.zip -d /tmp/nonvideo-unpack
+
+          if [ -f /tmp/nonvideo-unpack/non-video/manifest.json ]; then
+            cp -R /tmp/nonvideo-unpack/non-video/. hostinger/non-video/
+          elif [ -f /tmp/nonvideo-unpack/manifest.json ]; then
+            cp -R /tmp/nonvideo-unpack/. hostinger/non-video/
+          else
+            echo "manifest.json not found in uploaded ZIP"
+            find /tmp/nonvideo-unpack -maxdepth 3 -type f | head -50
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+
+          root = Path('hostinger/non-video')
+          manifest = json.loads((root / 'manifest.json').read_text(encoding='utf-8'))
+          files = list(root.rglob('*.json'))
+          page_total = 0
+          page_files = []
+          for p in root.rglob('page-*.json'):
+              d = json.loads(p.read_text(encoding='utf-8'))
+              page_total += len(d.get('items', []))
+              page_files.append(p)
+
+          print('json files:', len(files))
+          print('page files:', len(page_files))
+          print('manifest total:', manifest.get('total'))
+          print('page entry total:', page_total)
+          print('categories:', len(manifest.get('categories', [])))
+
+          if len(files) != 80:
+              raise SystemExit(f'Expected 80 JSON files, found {len(files)}')
+          if manifest.get('total') != 32619:
+              raise SystemExit(f'Expected manifest total 32619, got {manifest.get("total")}')
+          if len(manifest.get('categories', [])) != 9:
+              raise SystemExit('Expected 9 categories')
+          if page_total != 32619:
+              raise SystemExit(f'Expected 32619 page entries, got {page_total}')
+          PY
+
+      - name: Commit extracted catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add hostinger/non-video
+          if git diff --cached --quiet; then
+            echo "Catalog already extracted; nothing to commit."
+            exit 0
+          fi
+          git commit -m "Extract paginated CircleFTP non-video catalog"
+          git push origin HEAD:hostinger-frontend-only

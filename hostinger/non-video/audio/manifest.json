@@ -1,0 +1,16 @@
+{
+  "category": "audio",
+  "slug": "audio",
+  "total": 74,
+  "pages": 1,
+  "pageSize": 500,
+  "firstPage": "audio/page-001.json",
+  "counts": {
+    "byExtension": {
+      ".mp3": 74
+    },
+    "byHost": {
+      "ftp14.circleftp.net": 74
+    }
+  }
+}

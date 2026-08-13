@@ -1,0 +1,28 @@
+{
+  "category": "archives",
+  "slug": "archives",
+  "total": 8283,
+  "pages": 17,
+  "pageSize": 500,
+  "firstPage": "archives/page-001.json",
+  "counts": {
+    "byExtension": {
+      ".rar": 7703,
+      ".zip": 399,
+      ".7z": 170,
+      ".001": 2,
+      ".002": 2,
+      ".003": 2,
+      ".004": 1,
+      ".005": 1,
+      ".006": 1,
+      ".007": 1,
+      ".008": 1
+    },
+    "byHost": {
+      "ftp14.circleftp.net": 8201,
+      "index2.circleftp.net": 81,
+      "ftp13.circleftp.net": 1
+    }
+  }
+}

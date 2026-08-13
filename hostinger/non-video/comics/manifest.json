@@ -1,0 +1,17 @@
+{
+  "category": "comics",
+  "slug": "comics",
+  "total": 7885,
+  "pages": 16,
+  "pageSize": 500,
+  "firstPage": "comics/page-001.json",
+  "counts": {
+    "byExtension": {
+      ".cbr": 7189,
+      ".cbz": 696
+    },
+    "byHost": {
+      "ftp14.circleftp.net": 7885
+    }
+  }
+}

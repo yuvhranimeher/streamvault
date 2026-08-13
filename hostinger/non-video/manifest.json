@@ -1,0 +1,87 @@
+{
+  "version": "20260813-165432",
+  "generatedAt": "2026-08-13T10:56:32Z",
+  "type": "circleftp-non-video-split-catalog",
+  "sourceType": "circleftp-non-video-catalog",
+  "total": 32619,
+  "pageSize": 500,
+  "hosts": [
+    "ftp13.circleftp.net",
+    "ftp14.circleftp.net",
+    "index2.circleftp.net"
+  ],
+  "categories": [
+    {
+      "category": "books_documents",
+      "slug": "books-documents",
+      "total": 10723,
+      "pages": 22,
+      "manifest": "books-documents/manifest.json",
+      "firstPage": "books-documents/page-001.json"
+    },
+    {
+      "category": "comics",
+      "slug": "comics",
+      "total": 7885,
+      "pages": 16,
+      "manifest": "comics/manifest.json",
+      "firstPage": "comics/page-001.json"
+    },
+    {
+      "category": "software_games",
+      "slug": "software-games",
+      "total": 736,
+      "pages": 2,
+      "manifest": "software-games/manifest.json",
+      "firstPage": "software-games/page-001.json"
+    },
+    {
+      "category": "archives",
+      "slug": "archives",
+      "total": 8283,
+      "pages": 17,
+      "manifest": "archives/manifest.json",
+      "firstPage": "archives/page-001.json"
+    },
+    {
+      "category": "subtitles",
+      "slug": "subtitles",
+      "total": 4395,
+      "pages": 9,
+      "manifest": "subtitles/manifest.json",
+      "firstPage": "subtitles/page-001.json"
+    },
+    {
+      "category": "audio",
+      "slug": "audio",
+      "total": 74,
+      "pages": 1,
+      "manifest": "audio/manifest.json",
+      "firstPage": "audio/page-001.json"
+    },
+    {
+      "category": "images",
+      "slug": "images",
+      "total": 196,
+      "pages": 1,
+      "manifest": "images/manifest.json",
+      "firstPage": "images/page-001.json"
+    },
+    {
+      "category": "metadata",
+      "slug": "metadata",
+      "total": 322,
+      "pages": 1,
+      "manifest": "metadata/manifest.json",
+      "firstPage": "metadata/page-001.json"
+    },
+    {
+      "category": "other",
+      "slug": "other",
+      "total": 5,
+      "pages": 1,
+      "manifest": "other/manifest.json",
+      "firstPage": "other/page-001.json"
+    }
+  ]
+}

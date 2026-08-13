@@ -1,0 +1,19 @@
+{
+  "category": "subtitles",
+  "slug": "subtitles",
+  "total": 4395,
+  "pages": 9,
+  "pageSize": 500,
+  "firstPage": "subtitles/page-001.json",
+  "counts": {
+    "byExtension": {
+      ".srt": 4179,
+      ".sub": 108,
+      ".idx": 107,
+      ".smi": 1
+    },
+    "byHost": {
+      "index2.circleftp.net": 4395
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "category": "books_documents",
+  "slug": "books-documents",
+  "total": 10723,
+  "pages": 22,
+  "pageSize": 500,
+  "firstPage": "books-documents/page-001.json",
+  "counts": {
+    "byExtension": {
+      ".epub": 5395,
+      ".pdf": 5050,
+      ".mobi": 95,
+      ".docx": 59,
+      ".opf": 51,
+      ".original_mobi": 30,
+      ".azw3": 16,
+      ".fb2": 15,
+      ".doc": 11,
+      ".chm": 1
+    },
+    "byHost": {
+      "ftp14.circleftp.net": 10723
+    }
+  }
+}

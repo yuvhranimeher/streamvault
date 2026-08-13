@@ -1,0 +1,18 @@
+{
+  "category": "images",
+  "slug": "images",
+  "total": 196,
+  "pages": 1,
+  "pageSize": 500,
+  "firstPage": "images/page-001.json",
+  "counts": {
+    "byExtension": {
+      ".jpg": 191,
+      ".png": 5
+    },
+    "byHost": {
+      "index2.circleftp.net": 105,
+      "ftp14.circleftp.net": 91
+    }
+  }
+}

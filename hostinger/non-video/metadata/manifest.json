@@ -1,0 +1,22 @@
+{
+  "category": "metadata",
+  "slug": "metadata",
+  "total": 322,
+  "pages": 1,
+  "pageSize": 500,
+  "firstPage": "metadata/page-001.json",
+  "counts": {
+    "byExtension": {
+      ".txt": 286,
+      ".nfo": 31,
+      ".pdb": 2,
+      ".doi": 1,
+      ".db": 1,
+      ".url": 1
+    },
+    "byHost": {
+      "index2.circleftp.net": 269,
+      "ftp14.circleftp.net": 53
+    }
+  }
+}

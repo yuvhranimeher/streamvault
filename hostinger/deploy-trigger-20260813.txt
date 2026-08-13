@@ -1,0 +1,5 @@
+Trigger Hostinger deployment for reclassified non-video catalog.
+Expected catalog classification: 20260813-path-context-v1
+Expected total: 32619
+Expected Software & Games: 8424
+Expected Archives: 611

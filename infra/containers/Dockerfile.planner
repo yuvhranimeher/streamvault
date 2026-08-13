@@ -1,0 +1,28 @@
+FROM haskell:9.10.1-slim AS build
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgmp-dev zlib1g-dev ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY cabal.project cabal.project
+COPY services/media-planner services/media-planner
+
+RUN cabal update \
+    && cabal build streamvault-media-planner:exe:streamvault-media-planner --only-dependencies \
+    && cabal build streamvault-media-planner:exe:streamvault-media-planner \
+    && cp "$(cabal list-bin streamvault-media-planner:exe:streamvault-media-planner)" /tmp/media-planner
+
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgmp10 zlib1g ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --create-home planner
+
+COPY --from=build /tmp/media-planner /usr/local/bin/media-planner
+USER planner
+ENV PORT=4100 HOST=0.0.0.0
+EXPOSE 4100
+HEALTHCHECK --interval=15s --timeout=3s --retries=5 CMD ["/usr/bin/curl", "--fail", "http://127.0.0.1:4100/health"]
+ENTRYPOINT ["/usr/local/bin/media-planner"]

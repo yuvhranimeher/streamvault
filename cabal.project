@@ -1,1 +1,4 @@
-packages: .
+packages: services/media-planner
+
+package streamvault-media-planner
+  ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns

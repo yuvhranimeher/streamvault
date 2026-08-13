@@ -1,0 +1,25 @@
+groups:
+  - name: streamvault-platform
+    rules:
+      - alert: StreamVaultEdgeDown
+        expr: up{job="streamvault-edge"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: StreamVault Phoenix edge is unreachable
+      - alert: StreamVaultNoCatalogItems
+        expr: streamvault_catalog_items == 0
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: Active StreamVault catalog is empty
+      - alert: StreamVaultPlaybackPlannerFallbackHigh
+        expr: >-
+          sum(rate(streamvault_events_total{event="streamvault.playback.plan",planner="elixir"}[10m]))
+          /
+          clamp_min(sum(rate(streamvault_events_total{event="streamvault.playback.plan"}[10m])), 0.001)
+          > 0.2
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: More than 20% of playback plans are using the fallback planner

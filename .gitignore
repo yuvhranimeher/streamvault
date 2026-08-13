@@ -12,6 +12,13 @@ data/catalogs/archive/
 catalog/*.ndjson
 dist-newstyle/
 *.bak-v*
+platform/_build/
+platform/deps/
+platform/doc/
+platform/erl_crash.dump
+services/media-planner/.stack-work/
+.cabal-sandbox/
+cabal.sandbox.config
 
 
 # Local junk / experiments

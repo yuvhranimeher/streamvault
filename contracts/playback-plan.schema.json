@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://streamvault.fit/contracts/playback-plan.schema.json",
+  "title": "StreamVault playback planner response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["strategy", "reason", "sourceUrl", "warnings", "ffmpegArgs"],
+  "properties": {
+    "strategy": {"enum": ["direct", "remux", "transcode", "reject"]},
+    "reason": {"type": "string", "minLength": 1},
+    "sourceUrl": {"type": "string"},
+    "manifestUrl": {"type": ["string", "null"]},
+    "container": {"type": ["string", "null"]},
+    "videoCodec": {"type": ["string", "null"]},
+    "audioCodec": {"type": ["string", "null"]},
+    "maxHeight": {"type": ["integer", "null"], "minimum": 144, "maximum": 4320},
+    "warnings": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "ffmpegArgs": {"type": "array", "items": {"type": "string"}}
+  }
+}

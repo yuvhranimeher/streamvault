@@ -2,6 +2,18 @@
 
 A self-hosted streaming and media-discovery platform for movies, series, live TV, and a redirect-based software/download catalog.
 
+## Platform v2 branch
+
+The repository now includes an API-only Phoenix/Elixir platform and a Haskell playback-policy service that can run beside the current Node production server. This is an incremental migration, not a risky one-shot replacement.
+
+- `platform/` contains four supervised OTP applications for domain logic, atomic ETS catalog generations, playback sessions, and the Phoenix edge.
+- `services/media-planner/` contains a Servant/Warp policy service for direct/remux/transcode decisions and byte-range validation.
+- `contracts/` defines the versioned HTTP and planner schemas.
+- `compose.platform.yaml` launches the new services on ports 4000 and 4100 while Node remains on 3000.
+- `docs/architecture/platform-v2.md` and `docs/architecture/migration-plan.md` explain design and rollout gates.
+
+No new frontend framework, HTML, CSS, or browser JavaScript was added for platform v2. The existing frontend remains intact.
+
 > **Production:** [streamvault.fit](https://streamvault.fit)  
 > **Backend:** [backend.streamvault.fit](https://backend.streamvault.fit)  
 > **Repository:** `yuvhranimeher/streamvault`

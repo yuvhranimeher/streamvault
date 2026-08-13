@@ -1,0 +1,10 @@
+{
+  "generatedAt": "2026-08-13T00:00:00Z",
+  "movies": [
+    {"title": "Arrival", "year": "2016", "rating": "7.9", "genre": "Science Fiction", "poster": "/arrival.jpg", "streamUrl": "https://media.test/arrival.mp4"},
+    {"title": "The Lunchbox", "year": "2013", "rating": "7.8", "language": "Hindi", "streamUrl": "https://media.test/lunchbox.mp4"}
+  ],
+  "series": [
+    {"title": "Dark", "year": "2017", "rating": "8.7", "genre": "Science Fiction", "seasons": [{"season": "Season 1", "episodes": [{"filename": "Dark.S01E01.mkv", "streamUrl": "https://media.test/dark-s01e01.mkv"}]}]}
+  ]
+}

@@ -1,4 +1,4 @@
-name: Fix global series episode hydration
+name: Fix StreamVault frontend patches
 
 on:
   push:
@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/fix-series-playback.yml
       - .github/scripts/patch-series-hydration.py
+      - .github/scripts/patch-search-full-catalog.py
 
 permissions:
   contents: write
@@ -20,70 +21,26 @@ jobs:
           ref: hostinger-frontend-only
           persist-credentials: true
           fetch-depth: 2
-      - name: Apply global series episode fix
+      - name: Apply series fix
         run: python3 .github/scripts/patch-series-hydration.py
-      - name: Apply full catalog search visibility fix
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path('hostinger/search.js')
-          s = p.read_text(encoding='utf-8')
-
-          helper = """  function searchDisplayableItem(item){
-            if(!item)return false;
-            if(item.isMassiveCatalog && item.streamUrl)return true;
-            if(item.isFtp && item.streamUrl)return true;
-            if(item.hasStream === true || item.streamAvailable === true)return true;
-            return typeof isPlayableMediaItem !== 'function' || isPlayableMediaItem(item);
-          }
-
-"""
-          anchor = "  function searchInputs(){"
-          if 'function searchDisplayableItem(item){' not in s:
-              if anchor not in s:
-                  raise SystemExit('searchInputs anchor not found')
-              s = s.replace(anchor, helper + anchor, 1)
-
-          replacements = {
-              "    if(typeof isPlayableMediaItem === 'function' && !isPlayableMediaItem(item))return '';":
-              "    if(!searchDisplayableItem(item))return '';",
-              "    const playableItems=typeof filterPlayableMediaItems === 'function' ? filterPlayableMediaItems(items) : items;":
-              "    const playableItems=(items || []).filter(searchDisplayableItem);",
-              "      .filter(item=>typeof isPlayableMediaItem !== 'function' || isPlayableMediaItem(item))":
-              "      .filter(searchDisplayableItem)",
-              "    const visibleItems=typeof filterPlayableMediaItems === 'function' ? filterPlayableMediaItems(items) : (items || []);":
-              "    const visibleItems=(items || []).filter(searchDisplayableItem);",
-              "      const refinedItems = typeof filterPlayableMediaItems === 'function' ? filterPlayableMediaItems(rawItems) : rawItems;":
-              "      const refinedItems = rawItems.filter(searchDisplayableItem);"
-          }
-
-          for old, new in replacements.items():
-              if old in s:
-                  s = s.replace(old, new)
-
-          if "massive:'0'" in s:
-              s = s.replace("massive:'0'", "massive:'1'")
-
-          p.write_text(s, encoding='utf-8')
-          print('full catalog search visibility fix installed')
-          PY
-      - name: Verify frontend JavaScript syntax
+      - name: Apply search fix
+        run: python3 .github/scripts/patch-search-full-catalog.py
+      - name: Verify JavaScript
         run: |
           node --check hostinger/app-v3.js
           node --check hostinger/search.js
-      - name: Commit patch
+          node --check hostinger/search-full-catalog-v2.js
+      - name: Commit frontend files
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add hostinger/app-v3.js hostinger/search.js
+          git add hostinger/app-v3.js hostinger/search.js hostinger/index.html
           if git diff --cached --quiet; then
-            echo "Global series and full catalog search fixes already present and syntax-valid"
+            echo "Frontend patches already applied"
             exit 0
           fi
-          git commit -m "Fix full CircleFTP search result visibility"
+          git commit -m "Fix complete CircleFTP catalog search"
           git pull --rebase origin hostinger-frontend-only
           git push origin HEAD:hostinger-frontend-only

@@ -22,19 +22,68 @@ jobs:
           fetch-depth: 2
       - name: Apply global series episode fix
         run: python3 .github/scripts/patch-series-hydration.py
+      - name: Apply full catalog search visibility fix
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('hostinger/search.js')
+          s = p.read_text(encoding='utf-8')
+
+          helper = """  function searchDisplayableItem(item){
+            if(!item)return false;
+            if(item.isMassiveCatalog && item.streamUrl)return true;
+            if(item.isFtp && item.streamUrl)return true;
+            if(item.hasStream === true || item.streamAvailable === true)return true;
+            return typeof isPlayableMediaItem !== 'function' || isPlayableMediaItem(item);
+          }
+
+"""
+          anchor = "  function searchInputs(){"
+          if 'function searchDisplayableItem(item){' not in s:
+              if anchor not in s:
+                  raise SystemExit('searchInputs anchor not found')
+              s = s.replace(anchor, helper + anchor, 1)
+
+          replacements = {
+              "    if(typeof isPlayableMediaItem === 'function' && !isPlayableMediaItem(item))return '';":
+              "    if(!searchDisplayableItem(item))return '';",
+              "    const playableItems=typeof filterPlayableMediaItems === 'function' ? filterPlayableMediaItems(items) : items;":
+              "    const playableItems=(items || []).filter(searchDisplayableItem);",
+              "      .filter(item=>typeof isPlayableMediaItem !== 'function' || isPlayableMediaItem(item))":
+              "      .filter(searchDisplayableItem)",
+              "    const visibleItems=typeof filterPlayableMediaItems === 'function' ? filterPlayableMediaItems(items) : (items || []);":
+              "    const visibleItems=(items || []).filter(searchDisplayableItem);",
+              "      const refinedItems = typeof filterPlayableMediaItems === 'function' ? filterPlayableMediaItems(rawItems) : rawItems;":
+              "      const refinedItems = rawItems.filter(searchDisplayableItem);"
+          }
+
+          for old, new in replacements.items():
+              if old in s:
+                  s = s.replace(old, new)
+
+          if "massive:'0'" in s:
+              s = s.replace("massive:'0'", "massive:'1'")
+
+          p.write_text(s, encoding='utf-8')
+          print('full catalog search visibility fix installed')
+          PY
       - name: Verify frontend JavaScript syntax
-        run: node --check hostinger/app-v3.js
+        run: |
+          node --check hostinger/app-v3.js
+          node --check hostinger/search.js
       - name: Commit patch
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add hostinger/app-v3.js
+          git add hostinger/app-v3.js hostinger/search.js
           if git diff --cached --quiet; then
-            echo "Global series episode fix already present and syntax-valid"
+            echo "Global series and full catalog search fixes already present and syntax-valid"
             exit 0
           fi
-          git commit -m "Fix episode lists for all series details"
+          git commit -m "Fix full CircleFTP search result visibility"
           git pull --rebase origin hostinger-frontend-only
           git push origin HEAD:hostinger-frontend-only

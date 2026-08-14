@@ -148,6 +148,17 @@ async function consumeJson(file, out, state) {
   return { file, records: records.length };
 }
 
+function previousBuildMatches(sourceFiles) {
+  try {
+    const status = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8'));
+    const previous = Array.isArray(status.sources) ? status.sources.map(v => path.resolve(String(v))).sort() : [];
+    const current = sourceFiles.map(v => path.resolve(String(v))).sort();
+    return previous.length > 0 && previous.length === current.length && previous.every((v, i) => v === current[i]);
+  } catch {
+    return false;
+  }
+}
+
 async function buildRuntimeSearchCatalog(options = {}) {
   const force = options.force === true || process.env.STREAMVAULT_REBUILD_SEARCH_CATALOG === '1';
   const sources = discoverSources();
@@ -161,7 +172,9 @@ async function buildRuntimeSearchCatalog(options = {}) {
   const newestSource = latestMtime(sourceFiles);
   try {
     const stat = fs.statSync(OUT_FILE);
-    if (!force && stat.size > 1024 && stat.mtimeMs >= newestSource) {
+    // Only trust freshness if this exact source set was built by this generator.
+    // A legacy clean-catalog.json must be replaced once, even if its mtime is newer.
+    if (!force && previousBuildMatches(sourceFiles) && stat.size > 1024 && stat.mtimeMs >= newestSource) {
       console.log(`[Search Catalog] Current catalog is fresh (${(stat.size / 1024 / 1024).toFixed(1)} MB).`);
       return { ok: true, skipped: true, reason: 'fresh', output: OUT_FILE, sources: sourceFiles.length };
     }

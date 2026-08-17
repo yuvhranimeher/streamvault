@@ -1,10 +1,61 @@
 (function(){
   'use strict';
 
-  const VERSION='20260814-full-catalog-v2';
+  const VERSION='20260817-full-catalog-v3-race-cors-fix1';
   let timer=0;
   let controller=null;
   let seq=0;
+
+  // Compatibility layer for the split Hostinger/frontend + backend origin setup.
+  // The backend currently does not allow Cache-Control/Pragma in CORS preflight.
+  // Some older frontend paths explicitly add those headers or use cache modes that
+  // cause the browser to add them. Strip them before runtime-config routes /api/*
+  // requests to backend.streamvault.fit.
+  if(!window.__svBackendCorsCompatFetchInstalled){
+    window.__svBackendCorsCompatFetchInstalled=true;
+    const previousFetch=window.fetch.bind(window);
+    const backendPrefixes=['/api','/download','/live','/live-relay','/proxy','/stream','/subtitles','/subtitle','/audio','/hls','/playback'];
+
+    function isBackendLike(input){
+      try{
+        const raw=input instanceof Request?input.url:String(input||'');
+        const url=new URL(raw,location.href);
+        if(url.hostname==='backend.streamvault.fit')return true;
+        if(url.origin!==location.origin)return false;
+        return backendPrefixes.some(prefix=>url.pathname===prefix||url.pathname.startsWith(prefix+'/'));
+      }catch{return false;}
+    }
+
+    function cleanInit(init){
+      if(!init)return init;
+      const next={...init};
+      const headers=new Headers(init.headers||{});
+      headers.delete('Cache-Control');
+      headers.delete('cache-control');
+      headers.delete('Pragma');
+      headers.delete('pragma');
+      next.headers=headers;
+      if(next.cache==='no-store'||next.cache==='no-cache'||next.cache==='reload')next.cache='default';
+      return next;
+    }
+
+    window.fetch=function(input,init){
+      if(!isBackendLike(input))return previousFetch(input,init);
+      if(input instanceof Request){
+        try{
+          const headers=new Headers(input.headers||{});
+          headers.delete('Cache-Control');
+          headers.delete('cache-control');
+          headers.delete('Pragma');
+          headers.delete('pragma');
+          const requestInit={headers,cache:'default'};
+          const cleanedRequest=new Request(input,requestInit);
+          return previousFetch(cleanedRequest,cleanInit(init));
+        }catch{}
+      }
+      return previousFetch(input,cleanInit(init));
+    };
+  }
 
   function norm(v){
     return String(v||'').toLowerCase().replace(/&/g,' and ').replace(/['’`]/g,'').replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
@@ -12,6 +63,8 @@
   function isSeries(item){return !!(item&&(item._isSeries||item.type==='series'||item.type==='tv'||item.seasons));}
   function displayable(item){
     if(!item)return false;
+    // Massive-catalog results are valid search results when the backend supplied
+    // a stream URL. Do not let the older playable-only filter discard them.
     if(item.isMassiveCatalog&&item.streamUrl)return true;
     if(item.isFtp&&item.streamUrl)return true;
     if(item.hasStream===true||item.streamAvailable===true)return true;
@@ -47,7 +100,10 @@
     return out.sort((a,b)=>priority(b,q)-priority(a,q)||String(a.name||a.title||'').localeCompare(String(b.name||b.title||'')));
   }
   async function json(url,signal){
-    const r=await fetchWithTimeout(url,{cache:'no-store',signal,headers:{Accept:'application/json'}},10000);
+    // Do not request no-store here. On the cross-origin backend that cache mode
+    // can generate Cache-Control/Pragma request headers and force a rejected CORS
+    // preflight. The query/version already identifies the requested result set.
+    const r=await fetchWithTimeout(url,{cache:'default',signal,headers:{Accept:'application/json'}},10000);
     if(!r.ok)throw new Error(`HTTP ${r.status}`);
     return r.json();
   }
@@ -114,21 +170,32 @@
 
   const previousHandle=window.handleSearch;
   window.handleSearch=function(q){
-    try{previousHandle?.(q);}catch{}
     clearTimeout(timer);
     const value=String(q||'');
     const desktop=document.getElementById('searchInputDesktop');
     const mobile=document.getElementById('searchInputMobile');
     if(desktop&&desktop.value!==value)desktop.value=value;
     if(mobile&&mobile.value!==value)mobile.value=value;
-    if(!value.trim())return;
-    timer=setTimeout(()=>run(value),260);
+
+    // The older search.js schedules another refinement about 700 ms later. Calling
+    // it for a non-empty query creates a race where its playable-only render can
+    // overwrite a correct massive-catalog result. Full-catalog search is now the
+    // single owner of non-empty result rendering.
+    if(!value.trim()){
+      if(controller)controller.abort();
+      try{previousHandle?.(value);}catch{}
+      return;
+    }
+    timer=setTimeout(()=>run(value),180);
   };
 
   window.renderSearchPage=function(q=''){
     const value=String(q||'');
     const desktop=document.getElementById('searchInputDesktop');if(desktop)desktop.value=value;
     if(value.trim())return run(value);
+    try{previousHandle?.('');}catch{}
     return undefined;
   };
+
+  window.__SV_FULL_CATALOG_SEARCH_VERSION=VERSION;
 })();

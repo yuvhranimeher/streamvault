@@ -20,6 +20,19 @@
       };
     }
 
+    if(typeof shouldUseSmoothPlaybackProfile === 'function'){
+      const originalShouldUseSmoothPlaybackProfile = shouldUseSmoothPlaybackProfile;
+      shouldUseSmoothPlaybackProfile = function(info={},sourceUrl=''){
+        const codec=String(info?.videoCodec || info?.codec || '').trim().toLowerCase();
+        const mpeg4Visual = codec === 'mpeg4' || codec.startsWith('msmpeg4') || codec.includes('divx') || codec.includes('xvid') || codec.includes('mpeg-4 visual');
+        const width=Number(info?.width || info?.videoWidth || 0);
+        const height=Number(info?.height || info?.videoHeight || 0);
+        const bitrate=Number(info?.bitrate || info?.bitRate || info?.videoBitrate || 0);
+        if(mpeg4Visual && (!width || width <= 1920) && (!height || height <= 1080) && (!bitrate || bitrate <= 12000000))return false;
+        return originalShouldUseSmoothPlaybackProfile(info,sourceUrl);
+      };
+    }
+
     if(typeof prepareFtpStartupAudio === 'function'){
       const originalPrepareFtpStartupAudio = prepareFtpStartupAudio;
       prepareFtpStartupAudio = async function(streamUrl, scope=null){

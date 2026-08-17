@@ -2,6 +2,8 @@
   window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE || '';
 
   const FALLBACK_POSTER = '/fallback.webp';
+  const searchPosterCache = new Map();
+  const searchPosterPending = new Map();
 
   function fixUrl(u){
     if(!u) return u;
@@ -38,12 +40,93 @@
     });
   }
 
-  if(document.readyState === 'loading')document.addEventListener('DOMContentLoaded', ()=>fixImgs(document), { once:true });
-  else fixImgs(document);
+  function searchCardIdentity(card){
+    const title=String(card?.querySelector?.('.card-title')?.textContent || '').trim();
+    if(!title)return null;
+    const meta=String(card?.querySelector?.('.card-meta')?.textContent || '');
+    const year=meta.match(/\b((?:19|20)\d{2})\b/)?.[1] || '';
+    return {title,year,key:`${title.toLowerCase()}|${year}`};
+  }
+
+  function cardNeedsPoster(card){
+    const img=card?.querySelector?.('img');
+    if(!img)return true;
+    const src=String(img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-sv-src') || '');
+    return !src || src.startsWith('data:') || /(?:^|\/)fallback\.webp(?:$|[?#])/i.test(src);
+  }
+
+  function setSearchCardPoster(card, poster){
+    const url=fixUrl(poster);
+    if(!card || !url || url===FALLBACK_POSTER)return;
+    let img=card.querySelector('img');
+    if(!img){
+      img=document.createElement('img');
+      img.alt=String(card.querySelector('.card-title')?.textContent || 'Poster');
+      const placeholder=card.querySelector('.card-placeholder');
+      if(placeholder)placeholder.replaceWith(img);
+      else card.prepend(img);
+    }
+    img.decoding='async';
+    img.loading='lazy';
+    img.setAttribute('data-sv-src',url);
+    img.src=url;
+  }
+
+  async function fetchSearchPoster(identity){
+    if(searchPosterCache.has(identity.key))return searchPosterCache.get(identity.key);
+    if(searchPosterPending.has(identity.key))return searchPosterPending.get(identity.key);
+    const params=new URLSearchParams({title:identity.title,type:'movie'});
+    if(identity.year)params.set('year',identity.year);
+    const request=(window.StreamVaultConfig?.fetchWithTimeout
+      ? window.StreamVaultConfig.fetchWithTimeout(`/api/title-details?${params.toString()}`,{cache:'no-store'},6500)
+      : fetch(`/api/title-details?${params.toString()}`,{cache:'no-store'}))
+      .then(async response=>{
+        if(!response?.ok)return '';
+        const data=await response.json();
+        const poster=String(data?.poster || data?.backdrop || '');
+        searchPosterCache.set(identity.key,poster);
+        return poster;
+      })
+      .catch(()=>{
+        searchPosterCache.set(identity.key,'');
+        return '';
+      })
+      .finally(()=>searchPosterPending.delete(identity.key));
+    searchPosterPending.set(identity.key,request);
+    return request;
+  }
+
+  function hydrateSearchCard(card){
+    if(!card || card.dataset.svPosterHydrating==='1' || !cardNeedsPoster(card))return;
+    const identity=searchCardIdentity(card);
+    if(!identity)return;
+    card.dataset.svPosterHydrating='1';
+    fetchSearchPoster(identity).then(poster=>{
+      if(poster)setSearchCardPoster(card,poster);
+    }).finally(()=>{
+      card.dataset.svPosterHydrating='0';
+    });
+  }
+
+  function hydrateSearchPosters(root){
+    const scope=root || document;
+    const cards=[];
+    if(scope.matches?.('#searchGrid .card,#mobileSearchGrid .card'))cards.push(scope);
+    scope.querySelectorAll?.('#searchGrid .card,#mobileSearchGrid .card').forEach(card=>cards.push(card));
+    cards.forEach(card=>hydrateSearchCard(card));
+  }
+
+  function process(root){
+    fixImgs(root);
+    hydrateSearchPosters(root);
+  }
+
+  if(document.readyState === 'loading')document.addEventListener('DOMContentLoaded', ()=>process(document), { once:true });
+  else process(document);
 
   new MutationObserver(ms=>{
     ms.forEach(m=>m.addedNodes.forEach(n=>{
-      if(n.nodeType===1) fixImgs(n);
+      if(n.nodeType===1) process(n);
     }));
   }).observe(document.documentElement,{childList:true,subtree:true});
 })();

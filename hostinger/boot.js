@@ -123,3 +123,15 @@
     if(heroTitle)heroTitle.textContent = 'Could not start StreamVault';
   }
 })();
+
+(function(){
+  'use strict';
+  if(window.__SV_UNIFIED_VOD_PLAYER_LOADER)return;
+  window.__SV_UNIFIED_VOD_PLAYER_LOADER=true;
+  const script=document.createElement('script');
+  script.src='/unified-vod-player-v1.js?v=20260818-unified-vod-v1-1';
+  script.async=false;
+  script.defer=false;
+  script.onerror=()=>console.error('[StreamVault] unified VOD player failed to load');
+  document.head.appendChild(script);
+})();

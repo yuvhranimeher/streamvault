@@ -8,6 +8,15 @@
   let controller=null;
   let seq=0;
 
+  // The FIFA hero was removed, so the homepage content now starts directly under
+  // the fixed navigation bar. Restore deliberate breathing room below the nav.
+  try{
+    const layoutStyle=document.createElement('style');
+    layoutStyle.id='sv-home-nav-spacing-fix';
+    layoutStyle.textContent='#mainSection{padding-top:calc(var(--nav-h) + 28px) !important;}';
+    document.head.appendChild(layoutStyle);
+  }catch(_){ }
+
   function isSeries(item){
     return !!(item && (item._isSeries || item.type==='series' || item.type==='tv' || item.seasons));
   }

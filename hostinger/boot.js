@@ -90,13 +90,17 @@
         try{
           const url = new URL(String(src || ''),window.location.href);
           const reason = String(options?.fallbackReason || options?.reason || '');
-          const isFtpCompatibility = options?.playbackType !== 'live' && url.pathname === '/api/ftp/stream';
-          if(isFtpCompatibility && svLatestFtpSeekTarget > 2 && /fallback/i.test(reason)){
+          const isFtpPlayback = options?.playbackType !== 'live' && (
+            url.pathname === '/api/ftp/stream' ||
+            url.pathname === '/api/ftp/proxy' ||
+            url.pathname === '/api/playback/ftp'
+          );
+          if(isFtpPlayback && svLatestFtpSeekTarget > 2){
             const requestedStart = Math.max(0,Number(url.searchParams.get('start') || 0));
             if(requestedStart + 2 < svLatestFtpSeekTarget){
-              try{mediaFixLog('blocked stale FTP fallback after seek',{requestedStart,latestSeekTarget:svLatestFtpSeekTarget,reason});}catch(_){}
-              if(typeof svStalePlaybackError === 'function')throw svStalePlaybackError('Stale FTP fallback after seek');
-              throw new DOMException('Stale FTP fallback after seek','AbortError');
+              try{mediaFixLog('blocked stale FTP source after seek',{requestedStart,latestSeekTarget:svLatestFtpSeekTarget,reason,src:String(src || '')});}catch(_){}
+              if(typeof svStalePlaybackError === 'function')throw svStalePlaybackError('Stale FTP source after seek');
+              throw new DOMException('Stale FTP source after seek','AbortError');
             }
           }
         }catch(error){

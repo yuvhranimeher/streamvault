@@ -1,12 +1,11 @@
 (function(){
   'use strict';
 
-  const BACKEND='https://backend.streamvault.fit';
-  const VERSION='20260817-direct-backend-search-v2';
+  const VERSION='20260817-search-readiness-bypass-v3';
   const previousHandle=window.handleSearch;
   const previousRenderSearchPage=window.renderSearchPage;
   let timer=0;
-  let xhr=null;
+  let controller=null;
   let seq=0;
 
   function isSeries(item){
@@ -41,23 +40,26 @@
 
   function displayable(item){
     if(!item)return false;
-    if(item.streamUrl || item.hasStream===true || item.streamAvailable===true || item.isMassiveCatalog)return true;
+    if(item.streamUrl || item.hasStream===true || item.streamAvailable===true || item.isMassiveCatalog || item.isFtp)return true;
     try{return typeof isPlayableMediaItem!=='function' || isPlayableMediaItem(item);}catch(_){return true;}
   }
 
+  function norm(value){
+    return String(value||'').toLowerCase().replace(/&/g,' and ').replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+  }
+
   function rank(item,q){
-    const norm=v=>String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
     const query=norm(q);
     const title=norm(item?.name||item?.title||item?.file||'');
+    const file=norm(item?.file||'');
     const year=norm(item?.year||'');
-    const full=norm(`${title} ${year}`);
-    if(full===query)return 100000;
+    const full=norm(`${title} ${file} ${year}`);
+    if(norm(`${title} ${year}`)===query)return 100000;
     if(title===query)return 95000;
-    if(full.startsWith(query))return 90000;
-    if(title.startsWith(query))return 85000;
-    if(title.includes(query))return 80000;
+    if(title.startsWith(query))return 90000;
+    if(file.includes(query))return 85000;
     const terms=query.split(' ').filter(Boolean);
-    return terms.length&&terms.every(t=>full.includes(t))?70000+terms.length*100:0;
+    return terms.length&&terms.every(t=>full.includes(t))?80000+terms.length*100:0;
   }
 
   function render(items,query){
@@ -73,16 +75,25 @@
       return;
     }
 
-    grid.innerHTML=visible.map(item=>{
-      try{return isSeries(item)?sCardHTML(item):cardHTML(item);}catch(err){console.warn('[Direct Search] card render failed',err);return '';}
+    const html=visible.map(item=>{
+      try{return isSeries(item)?sCardHTML(item):cardHTML(item);}catch(err){console.warn('[Search V3] card render failed',err);return '';}
     }).join('');
+
+    if(!html){
+      grid.innerHTML='<div class="empty"><h2>Result found but card rendering failed</h2></div>';
+      if(label)label.textContent=`${visible.length} raw result${visible.length===1?'':'s'} for "${query}"`;
+      return;
+    }
+
+    grid.innerHTML=html;
     if(label)label.textContent=`${visible.length.toLocaleString()} result${visible.length===1?'':'s'} for "${query}"`;
     try{if(typeof svQueuePosterImages==='function')svQueuePosterImages(grid);}catch(_){ }
   }
 
-  function request(query){
+  async function request(query){
     const my=++seq;
-    try{xhr?.abort();}catch(_){ }
+    try{controller?.abort();}catch(_){ }
+    controller=new AbortController();
     const {label}=targetNodes();
     if(label)label.textContent=`Searching for "${query}"`;
 
@@ -93,56 +104,67 @@
       limit:'100',
       massive:'1',
       background:'1',
-      direct:'1',
       v:VERSION,
       _:String(Date.now())
     });
 
-    xhr=new XMLHttpRequest();
-    xhr.open('GET',`${BACKEND}/api/search?${params.toString()}`,true);
-    xhr.timeout=12000;
-    xhr.onload=function(){
+    try{
+      // Intentionally bypass StreamVaultConfig.backendStatus.available. runtime-config
+      // still rewrites this /api request to backend.streamvault.fit.
+      const response=await fetch(`/api/search?${params.toString()}`,{
+        method:'GET',
+        cache:'default',
+        headers:{Accept:'application/json'},
+        signal:controller.signal
+      });
       if(my!==seq)return;
-      if(xhr.status<200 || xhr.status>=300){render([],query);return;}
-      try{
-        const data=JSON.parse(xhr.responseText||'{}');
-        render(Array.isArray(data.items)?data.items:[],query);
-      }catch(err){
-        console.error('[Direct Search] invalid response',err);
-        render([],query);
-      }
-    };
-    xhr.onerror=function(){if(my===seq)render([],query);};
-    xhr.ontimeout=function(){if(my===seq)render([],query);};
-    xhr.send();
+      if(!response.ok)throw new Error(`HTTP ${response.status}`);
+      const data=await response.json();
+      if(my!==seq)return;
+      render(Array.isArray(data?.items)?data.items:[],query);
+    }catch(error){
+      if(error?.name==='AbortError' || my!==seq)return;
+      console.error('[Search V3] request failed',error);
+      render([],query);
+    }
   }
 
-  window.handleSearch=function(q){
-    const value=String(q||'');
-    syncInputs(value);
+  function run(value){
+    const query=String(value||'');
+    syncInputs(query);
     clearTimeout(timer);
-    try{xhr?.abort();}catch(_){ }
+    try{controller?.abort();}catch(_){ }
     seq++;
 
-    if(!value.trim()){
+    if(!query.trim()){
       try{previousHandle?.('');}catch(_){ }
       return;
     }
 
     if(!document.getElementById('searchOverlay')?.classList.contains('open'))showDesktopSearch();
-    timer=setTimeout(()=>request(value.trim()),120);
-  };
+    timer=setTimeout(()=>request(query.trim()),80);
+  }
 
+  // Capture the search input before the old inline/search.js handlers can run.
+  document.addEventListener('input',event=>{
+    const id=event.target?.id;
+    if(id!=='searchInputDesktop' && id!=='searchInputMobile')return;
+    event.stopImmediatePropagation();
+    event.stopPropagation();
+    run(event.target.value);
+  },true);
+
+  window.handleSearch=run;
   window.renderSearchPage=function(q=''){
     const value=String(q||'');
-    syncInputs(value);
     if(!value.trim()){
       try{return previousRenderSearchPage?.('');}catch(_){return;}
     }
+    syncInputs(value);
     showDesktopSearch();
     request(value.trim());
   };
 
-  window.__SV_DIRECT_SEARCH_HOTFIX_20260817=true;
+  window.__SV_SEARCH_READINESS_BYPASS_V3=true;
   window.__SV_FULL_CATALOG_SEARCH_VERSION=VERSION;
 })();

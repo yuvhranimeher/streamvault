@@ -30,12 +30,10 @@
         const v=img.getAttribute(a);
         if(v) img.setAttribute(a, fixUrl(v));
       });
-
       const sv=img.getAttribute("data-sv-src");
       if(sv && (!img.getAttribute("src") || img.getAttribute("src").startsWith("data:"))){
         img.setAttribute("src", fixUrl(sv));
       }
-
       if(!img.getAttribute('decoding'))img.decoding='async';
     });
   }
@@ -103,9 +101,7 @@
     card.dataset.svPosterHydrating='1';
     fetchSearchPoster(identity).then(poster=>{
       if(poster)setSearchCardPoster(card,poster);
-    }).finally(()=>{
-      card.dataset.svPosterHydrating='0';
-    });
+    }).finally(()=>{card.dataset.svPosterHydrating='0';});
   }
 
   function hydrateSearchPosters(root){
@@ -116,27 +112,18 @@
     cards.forEach(card=>hydrateSearchCard(card));
   }
 
-  function process(root){
-    fixImgs(root);
-    hydrateSearchPosters(root);
-  }
-
+  function process(root){fixImgs(root);hydrateSearchPosters(root);}
   if(document.readyState === 'loading')document.addEventListener('DOMContentLoaded', ()=>process(document), { once:true });
   else process(document);
-
-  new MutationObserver(ms=>{
-    ms.forEach(m=>m.addedNodes.forEach(n=>{
-      if(n.nodeType===1) process(n);
-    }));
-  }).observe(document.documentElement,{childList:true,subtree:true});
+  new MutationObserver(ms=>{ms.forEach(m=>m.addedNodes.forEach(n=>{if(n.nodeType===1)process(n);}));}).observe(document.documentElement,{childList:true,subtree:true});
 })();
 
-/* SV_MOBILE_DIRECT_HOME_LOADER_V1 */
+/* SV_MOBILE_DIRECT_HOME_LOADER_V2 */
 (function(){
-  if(window.__SV_MOBILE_DIRECT_HOME_LOADER_V1)return;
-  window.__SV_MOBILE_DIRECT_HOME_LOADER_V1=true;
+  if(window.__SV_MOBILE_DIRECT_HOME_LOADER_V2)return;
+  window.__SV_MOBILE_DIRECT_HOME_LOADER_V2=true;
   const script=document.createElement('script');
-  script.src='/mobile-direct-home-v1.js?v=20260819-mobile-direct-home-v1';
+  script.src='/mobile-direct-home-v1.js?v=20260819-mobile-direct-home-v2';
   script.defer=true;
   script.onerror=()=>{window.__SV_MOBILE_DIRECT_HOME_LOAD_ERROR=true;};
   document.head.appendChild(script);

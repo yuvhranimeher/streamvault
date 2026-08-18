@@ -1,284 +1,262 @@
-/* SV_MEDIA_EPISODES_V7 */
+/* SV_MEDIA_EPISODES_V10 — stable identity hydration */
 (function(){
-  if(window.__svMediaEpisodesV7)return;
-  window.__svMediaEpisodesV7=true;
+  'use strict';
+  if(window.__svMediaEpisodesV10)return;
+  window.__svMediaEpisodesV10=true;
+  window.__SV_SERIES_EPISODES_VERSION='20260818-series-episodes-v10';
 
-  let activeKey="";
-  let loadedKey="";
-  let loadedShow=null;
-  let loading=false;
-  let controller=null;
+  let activeToken=0;
+  let activeKey='';
+  let activePromise=null;
 
-  function isOpen(){
-    const modal=document.getElementById("mediaModal");
-    return !!modal &&
-      !modal.classList.contains("hidden") &&
-      modal.getAttribute("aria-hidden")!=="true";
+  function modalOpen(){
+    const modal=document.getElementById('mediaModal');
+    return !!modal && !modal.classList.contains('hidden') && modal.getAttribute('aria-hidden')!=='true';
   }
 
-  function clean(value){
-    return String(value||"")
-      .toLowerCase()
-      .replace(/\[[^\]]*]/g," ")
-      .replace(/\b(tv series|web series|series|2160p|1080p|720p|480p|4k|dual audio|multi audio)\b/g," ")
-      .replace(/\b(?:19|20)\d{2}(?:\s*[-–]\s*(?:19|20)\d{2})?\b/g," ")
-      .replace(/[^a-z0-9]+/g," ")
-      .replace(/\s+/g," ")
+  function currentItem(){
+    try{
+      if(typeof currentMediaModalItem!=='undefined' && currentMediaModalItem)return currentMediaModalItem;
+      if(typeof currentShow!=='undefined' && currentShow)return currentShow;
+    }catch(_){ }
+    return null;
+  }
+
+  function currentType(){
+    try{return String(typeof currentMediaModalType!=='undefined' ? currentMediaModalType : '').toLowerCase();}catch(_){return '';}
+  }
+
+  function isSeries(item){
+    const type=String(item?.type||item?.mediaType||currentType()).toLowerCase();
+    if(type==='tv'||type==='series'||type==='show')return true;
+    if(item?.seasons)return true;
+    return /\b(?:tv\s+(?:mini\s+)?series|web\s+series|series)\b/i.test(String(item?.name||item?.title||''));
+  }
+
+  function cleanTitle(value){
+    return String(value||'')
+      .replace(/^\s*about\s+/i,'')
+      .replace(/\[[^\]]*]/g,' ')
+      .replace(/\([^)]*(?:tv|web|series|mini)[^)]*\)/gi,' ')
+      .replace(/\b(?:tv\s+mini\s+series|tv\s+series|web\s+series|mini\s+series|series)\b/gi,' ')
+      .replace(/\b(?:2160p|1080p|720p|480p|4k|uhd|hdr|dual\s+audio|multi\s+audio|multi-audio)\b/gi,' ')
+      .replace(/\b(?:19|20)\d{2}\s*[-–—]\s*(?:(?:19|20)\d{2})?\b/g,' ')
+      .replace(/\b(?:19|20)\d{2}\b/g,' ')
+      .replace(/[._]+/g,' ')
+      .replace(/\s+/g,' ')
       .trim();
   }
 
-  function episodeCount(show){
-    return Object.values(show?.seasons||{})
-      .reduce((total,episodes)=>
-        total+(Array.isArray(episodes)?episodes.length:0),0
-      );
+  function norm(value){
+    return cleanTitle(value).toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
   }
 
-  function episodeNumber(ep,index){
-    const value=Number(
-      ep?.episode ??
-      ep?.episodeNumber ??
-      ep?.episode_number ??
-      ep?.number
-    );
-
-    return Number.isFinite(value)&&value>0 ? value : index+1;
+  function yearOf(item){
+    const direct=String(item?.year||'').match(/(?:19|20)\d{2}/)?.[0];
+    if(direct)return direct;
+    return String(item?.name||item?.title||'').match(/(?:19|20)\d{2}/)?.[0]||'';
   }
 
-  function storeShow(show){
-    currentShow=show;
-
-    if(!Array.isArray(series))return;
-
-    const id=String(show?.id||"");
-    const title=clean(show?.name||show?.title);
-
-    const index=series.findIndex(item=>
-      (id&&String(item?.id||"")===id) ||
-      clean(item?.name||item?.title)===title
-    );
-
-    if(index>=0)series[index]=show;
-    else series.push(show);
-  }
-
-  function play(show,season,index){
-    storeShow(show);
-    currentSeason=season;
-
-    if(typeof svLaunchMediaModalEpisode==="function"){
-      svLaunchMediaModalEpisode(show,season,index);
-      return;
+  function seasonsObject(show){
+    const source=show?.seasons||{};
+    if(Array.isArray(source)){
+      const out={};
+      source.forEach((season,index)=>{
+        const num=Number(season?.season ?? season?.seasonNumber ?? season?.number ?? index+1)||index+1;
+        const eps=Array.isArray(season?.episodes)?season.episodes:(Array.isArray(season)?season:[]);
+        if(eps.length)out[num]=eps;
+      });
+      return out;
     }
-
-    console.error("[Episodes v7] Modern modal playback launcher unavailable");
-  }
-
-  function renderSeason(show,season){
-    const grid=document.getElementById("svEpisodeGridV7");
-    if(!grid)return;
-
-    const episodes=show.seasons?.[season]||[];
-
-    grid.innerHTML="";
-
-    episodes.forEach((ep,index)=>{
-      const number=episodeNumber(ep,index);
-      const title=
-        ep?.epTitle ||
-        ep?.title ||
-        ep?.name ||
-        `Episode ${number}`;
-
-      const overview=
-        ep?.overview ||
-        ep?.description ||
-        ep?.synopsis ||
-        "";
-
-      const thumb=
-        ep?.thumb ||
-        ep?.thumbnail ||
-        ep?.poster ||
-        show.backdrop ||
-        show.poster ||
-        "";
-
-      const card=document.createElement("div");
-      card.className="ep-card";
-      card.tabIndex=0;
-      card.setAttribute("role","button");
-
-      card.innerHTML=`
-        <div class="ep-thumb">
-          ${thumb?`<img class="ep-thumb-img" src="${thumb}" alt="" loading="lazy">`:""}
-          <div class="ep-thumb-play">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="white">
-              <path d="M8 5v14l11-7z"></path>
-            </svg>
-          </div>
-        </div>
-        <div class="ep-info">
-          <div class="ep-num-label">Episode ${number}</div>
-          <div class="ep-title">${title}</div>
-          ${overview?`<div class="ep-overview">${overview}</div>`:""}
-        </div>
-      `;
-
-      card.onclick=()=>play(show,season,index);
-      card.onkeydown=event=>{
-        if(event.key==="Enter"||event.key===" "){
-          event.preventDefault();
-          play(show,season,index);
-        }
-      };
-
-      grid.appendChild(card);
+    const out={};
+    Object.entries(source).forEach(([key,value])=>{
+      const eps=Array.isArray(value)?value:(Array.isArray(value?.episodes)?value.episodes:[]);
+      if(eps.length)out[Number(key)||key]=eps;
     });
+    return out;
   }
 
-  function render(show){
-    const root=document.getElementById("modalEpisodes");
-    if(!root)return;
+  function episodeCount(show){
+    return Object.values(seasonsObject(show)).reduce((n,eps)=>n+(Array.isArray(eps)?eps.length:0),0);
+  }
 
-    const seasons=Object.keys(show.seasons||{})
-      .map(Number)
-      .filter(Number.isFinite)
-      .sort((a,b)=>a-b);
+  function normalizePayload(payload){
+    return window.StreamVaultConfig?.normalizeBackendUrls?.(payload) ?? payload;
+  }
 
-    if(!seasons.length){
-      root.innerHTML=
-        '<h2 class="media-modal-heading">Episodes</h2>'+
-        '<div class="no-data">No episodes available</div>';
-      return;
+  function bestCandidate(rows,item,title){
+    const list=(Array.isArray(rows)?rows:[]).filter(row=>episodeCount(row)>0);
+    if(!list.length)return null;
+    const id=String(item?.id??'');
+    if(id){
+      const exactId=list.find(row=>String(row?.id??'')===id);
+      if(exactId)return exactId;
+    }
+    const target=norm(title||item?.name||item?.title);
+    if(target){
+      const exact=list.find(row=>norm(row?.name||row?.title)===target);
+      if(exact)return exact;
+      const prefix=list.find(row=>{
+        const value=norm(row?.name||row?.title);
+        return value && (value.startsWith(target+' ')||target.startsWith(value+' '));
+      });
+      if(prefix)return prefix;
+    }
+    return null;
+  }
+
+  async function fetchJson(url,signal){
+    const response=await fetch(url,{cache:'no-store',signal,headers:{Accept:'application/json'}});
+    if(!response.ok)throw new Error(`HTTP ${response.status}`);
+    return normalizePayload(await response.json());
+  }
+
+  async function resolveShow(item,signal){
+    const rawTitle=String(item?.name||item?.title||'').trim();
+    const title=cleanTitle(rawTitle)||rawTitle;
+    const year=yearOf(item);
+    const id=String(item?.id??'').trim();
+
+    const detailParams=new URLSearchParams();
+    if(id)detailParams.set('id',id);
+    if(title)detailParams.set('name',title);
+    if(year)detailParams.set('year',year);
+    detailParams.set('_',String(Date.now()));
+
+    try{
+      const detail=await fetchJson('/api/series/detail?'+detailParams.toString(),signal);
+      if(episodeCount(detail)>0)return detail;
+    }catch(_){ }
+
+    if(id){
+      try{
+        const byId=new URLSearchParams({id:id,_:String(Date.now())});
+        const detail=await fetchJson('/api/series/detail?'+byId.toString(),signal);
+        if(episodeCount(detail)>0)return detail;
+      }catch(_){ }
     }
 
-    root.innerHTML=`
-      <div data-sv-episodes-v7="1">
-        <h2 class="media-modal-heading">Episodes</h2>
-        <select id="svSeasonSelectV7"
-          style="margin-bottom:18px;background:#202124;color:#fff;border:1px solid #555;border-radius:7px;padding:12px 16px;font-weight:700">
-          ${seasons.map(season=>
-            `<option value="${season}">Season ${season}</option>`
-          ).join("")}
-        </select>
-        <div class="ep-grid" id="svEpisodeGridV7"></div>
-      </div>
-    `;
+    if(title){
+      try{
+        const query=new URLSearchParams({q:title,page:'1',limit:'200',_:String(Date.now())});
+        const payload=await fetchJson('/api/series?'+query.toString(),signal);
+        const rows=Array.isArray(payload)?payload:(Array.isArray(payload?.series)?payload.series:[]);
+        const best=bestCandidate(rows,item,title);
+        if(best)return best;
+      }catch(_){ }
+    }
 
-    const select=document.getElementById("svSeasonSelectV7");
+    return null;
+  }
 
-    select.onchange=()=>{
-      renderSeason(show,Number(select.value));
+  function showLoading(){
+    const root=document.getElementById('modalEpisodes');
+    if(!root)return;
+    root.className='media-modal-section';
+    root.style.display='';
+    root.innerHTML='<h2 class="media-modal-heading">Episodes</h2><div class="no-data">Loading episodes…</div>';
+  }
+
+  function showFailure(){
+    const root=document.getElementById('modalEpisodes');
+    if(!root)return;
+    root.className='media-modal-section';
+    root.style.display='';
+    root.innerHTML='<h2 class="media-modal-heading">Episodes</h2><div class="no-data">Could not load episodes</div>';
+  }
+
+  function applyShow(item,show){
+    const seasons=seasonsObject(show);
+    if(!Object.keys(seasons).length)return false;
+
+    const preserved={
+      poster:item?.poster,
+      backdrop:item?.backdrop,
+      overview:item?.overview,
+      rating:item?.rating,
+      genre:item?.genre,
+      year:item?.year
     };
 
-    renderSeason(show,seasons[0]);
-
-    const buttons=document.getElementById("modalButtons");
-
-    if(buttons){
-      buttons.innerHTML=
-        '<button id="svSeriesPlayV7" class="play-btn" type="button">Play</button>';
-
-      document.getElementById("svSeriesPlayV7").onclick=()=>{
-        play(show,seasons[0],0);
-      };
-    }
-  }
-
-  async function loadSeries(key,title,year){
-    loading=true;
-    activeKey=key;
-
-    if(controller)controller.abort();
-    controller=new AbortController();
-
-    const timeout=setTimeout(()=>controller.abort(),20000);
-
-    const root=document.getElementById("modalEpisodes");
-
-    if(root){
-      root.innerHTML=
-        '<h2 class="media-modal-heading">Episodes</h2>'+
-        '<div class="no-data">Loading episodes...</div>';
+    Object.assign(item,show,{seasons,isSummary:false});
+    for(const [key,value] of Object.entries(preserved)){
+      if(!item[key]&&value)item[key]=value;
     }
 
     try{
-      const params=new URLSearchParams({name:title});
+      currentShow=item;
+      const available=Object.keys(seasons).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
+      if(available.length && !available.includes(Number(currentSeason)))currentSeason=available[0];
+    }catch(_){ }
 
-      if(year)params.set("year",year);
-
-      const response=await fetch(
-        "/api/series/detail?"+params.toString(),
-        {
-          cache:"no-store",
-          signal:controller.signal
-        }
-      );
-
-      if(!response.ok)throw new Error("HTTP "+response.status);
-
-      const payload=await response.json();
-      const show=window.StreamVaultConfig?.normalizeBackendUrls?.(payload) ?? payload;
-
-      if(activeKey!==key||!isOpen())return;
-      if(!episodeCount(show))throw new Error("No episodes returned");
-
-      loadedKey=key;
-      loadedShow=show;
-      loading=false;
-
-      storeShow(show);
-      render(show);
-    }catch(error){
-      if(activeKey!==key)return;
-
-      loading=false;
-
-      if(root){
-        root.innerHTML=
-          '<h2 class="media-modal-heading">Episodes</h2>'+
-          '<div class="no-data">Could not load episodes</div>';
+    try{
+      if(Array.isArray(series)){
+        const id=String(item?.id??'');
+        const title=norm(item?.name||item?.title);
+        const index=series.findIndex(row=>(id&&String(row?.id??'')===id)||norm(row?.name||row?.title)===title);
+        if(index>=0)series[index]=item;
       }
+    }catch(_){ }
 
-      console.warn("[Episodes v7]",error);
-    }finally{
-      clearTimeout(timeout);
+    if(typeof renderMediaModalEpisodes==='function'){
+      renderMediaModalEpisodes(item);
     }
+
+    try{
+      if(typeof populateModal==='function')populateModal(item);
+    }catch(_){ }
+    return true;
+  }
+
+  async function hydrate(item){
+    if(!item||!isSeries(item)||!modalOpen())return;
+    if(episodeCount(item)>0){
+      applyShow(item,item);
+      return;
+    }
+
+    const key=[String(item?.id??''),norm(item?.name||item?.title),yearOf(item)].join('|');
+    if(activePromise&&activeKey===key)return activePromise;
+
+    activeKey=key;
+    const token=++activeToken;
+    showLoading();
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),18000);
+
+    activePromise=(async()=>{
+      try{
+        const show=await resolveShow(item,controller.signal);
+        if(token!==activeToken||!modalOpen()||currentItem()!==item)return;
+        if(!show||episodeCount(show)<1){showFailure();return;}
+        applyShow(item,show);
+      }catch(error){
+        if(token===activeToken&&modalOpen())showFailure();
+        console.warn('[Episodes v10]',error?.message||error);
+      }finally{
+        clearTimeout(timer);
+        if(token===activeToken)activePromise=null;
+      }
+    })();
+
+    return activePromise;
   }
 
   function check(){
-    if(!isOpen()){
-      activeKey="";
-      loading=false;
-      return;
-    }
-
-    const title=document.getElementById("modalTitle")
-      ?.textContent?.trim()||"";
-
-    const context=[
-      title,
-      document.getElementById("modalMeta")?.textContent||"",
-      document.getElementById("modalExtraInfo")?.textContent||""
-    ].join(" ");
-
-    if(!title||!/\b(series|season|tv series)\b/i.test(context))return;
-
-    const year=context.match(/\b(?:19|20)\d{2}\b/)?.[0]||"";
-    const key=title+"|"+year;
-
-    if(loadedKey===key&&loadedShow){
-      if(!document.querySelector("[data-sv-episodes-v7]")){
-        render(loadedShow);
-      }
-      return;
-    }
-
-    if(!loading||activeKey!==key){
-      loadSeries(key,title,year);
-    }
+    if(!modalOpen())return;
+    const item=currentItem();
+    if(item&&isSeries(item))hydrate(item);
   }
 
-  setInterval(check,350);
+  if(typeof openMediaModal==='function'){
+    const previousOpenMediaModal=openMediaModal;
+    openMediaModal=function(){
+      const result=previousOpenMediaModal.apply(this,arguments);
+      const item=arguments[0];
+      setTimeout(()=>hydrate(item),0);
+      return result;
+    };
+  }
+
+  setInterval(check,500);
 })();

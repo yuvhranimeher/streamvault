@@ -5539,7 +5539,7 @@ async function sourceSeekTo(seconds){
 function seekToTime(seconds){
   const duration = playerDuration();
   const target = duration ? Math.max(0, Math.min(duration, seconds)) : Math.max(0, seconds);
-  if(_ftpStreamUrl&&_ftpNeedsTranscode){
+  if(_ftpStreamUrl){
     ftpSeekTo(target);
   }else if(currentStreamId&&vid._sourceSeekRequired){
     sourceSeekTo(target);
@@ -6372,6 +6372,15 @@ function setAudio(idx){
     return;
   }
   if(idx===currentAudioIdx && idx===appliedAudioIndex()){closeAllDropdowns();return;}
+  const stableAudioMode=String((_ftpStreamUrl ? _currentFtpPlaybackPlan?.mode : _currentPlaybackPlan?.mode) || '').toLowerCase();
+  const hasStableMediaSource=!!_ftpStreamUrl || (currentStreamId !== null && currentStreamId !== undefined);
+  if(!isLiveMode && hasStableMediaSource && availableAudio.length > 1 && stableAudioMode !== 'hls'){
+    switchAudioWithServer(idx).catch(error=>{
+      console.warn('[Audio] Switch failed:',error?.message || error);
+      showToast('Could not switch audio for this file');
+    });
+    return;
+  }
   if(!isMobilePlaybackClient()){
     const sourceBefore=vid.currentSrc;
     refreshDesktopNativeAudioTracks();
@@ -7213,6 +7222,8 @@ async function ftpSeekTo(seconds){
       ? ftpHeavyCompatHlsPlaybackPlan(_ftpStreamUrl, target, 'heavy 4K compatibility seek')
       : currentMode === 'stream'
       ? { ok:true, mode:'stream', src:ftpTranscodeSrc(_ftpStreamUrl, target, fallbackReason), duration:_ftpDuration || 0 }
+      : ['direct','redirect','proxy'].includes(String(currentMode||'').toLowerCase())
+      ? ftpStreamPlaybackPlan(_ftpStreamUrl, target, 'FTP seek compatibility route')
       : await fetchFtpPlaybackPlan(_ftpStreamUrl, target, {...playbackOptionsForStep(currentMode, fallbackReason), signal:playbackRequestController?.signal});
     if(token !== vid._seekToken)return;
     validateMediaPlaybackSource(plan.src, fallbackReason, {ftpUrl:_ftpStreamUrl, mode:plan.mode, fallbackReason});

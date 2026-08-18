@@ -95,7 +95,7 @@
     if (/\btv[-_ ]?web[-_ ]?series\b/i.test(decodedProjectText)) {
       return { language: 'en', field: 'project-path', reason: 'project-rule:english-tv-web-catalog' };
     }
-    return { language: null, field: null, reason: 'conservative-fallback' };
+    return { language: 'en', field: 'global-default', reason: 'global-rule:non-hindi-default-english' };
   }
 
   function trackText(track = {}) {

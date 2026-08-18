@@ -1,0 +1,45 @@
+name: Emergency playback recovery deploy
+
+on:
+  push:
+    branches:
+      - hostinger-frontend-only
+    paths:
+      - .github/workflows/emergency-playback-recovery.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hostinger-frontend-only
+          persist-credentials: true
+      - name: Cache-bust emergency playback recovery
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('hostinger/index.html')
+          s=p.read_text(encoding='utf-8-sig')
+          old='/search-full-catalog-v2.js?v=20260814-full-catalog-v2'
+          new='/search-full-catalog-v2.js?v=20260818-emergency-playback-recovery-1'
+          if new not in s:
+              if old not in s:
+                  raise SystemExit('search-full-catalog-v2 asset reference not found')
+              s=s.replace(old,new,1)
+              p.write_text(s,encoding='utf-8')
+          print('emergency playback asset cache-busted')
+          PY
+      - name: Commit production HTML
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add hostinger/index.html
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Deploy emergency playback recovery asset"
+          git push origin HEAD:hostinger-frontend-only

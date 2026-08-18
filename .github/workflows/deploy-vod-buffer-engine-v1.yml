@@ -1,0 +1,63 @@
+name: Deploy unified VOD buffer engine
+
+on:
+  push:
+    branches:
+      - hostinger-frontend-only
+    paths:
+      - .github/workflows/deploy-vod-buffer-engine-v1.yml
+      - hostinger/vod-buffer-engine-v1.js
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hostinger-frontend-only
+          persist-credentials: true
+
+      - name: Enable VOD preloading and buffer runtime
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          index = Path('hostinger/index.html')
+          text = index.read_text(encoding='utf-8-sig')
+
+          text = text.replace(
+              '<video id="videoPlayer" playsinline webkit-playsinline preload="metadata"',
+              '<video id="videoPlayer" playsinline webkit-playsinline preload="auto"',
+              1,
+          )
+
+          tag = '<script defer src="/vod-buffer-engine-v1.js?v=20260818-vod-buffer-engine-v1"></script>'
+          if tag not in text:
+              anchor = '<script defer src="/detail-fast-path-v1.js?v=20260818-detail-fast-v1"></script>'
+              if anchor not in text:
+                  raise SystemExit('detail fast-path script anchor not found')
+              text = text.replace(anchor, anchor + '\n' + tag, 1)
+
+          index.write_text(text, encoding='utf-8')
+          print('Enabled preload=auto and VOD buffer engine')
+          PY
+
+      - name: Validate JavaScript
+        run: node --check hostinger/vod-buffer-engine-v1.js
+
+      - name: Commit production VOD buffering runtime
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add hostinger/index.html hostinger/vod-buffer-engine-v1.js
+          if git diff --cached --quiet; then
+            echo "No VOD buffer deployment changes needed"
+            exit 0
+          fi
+          git commit -m "Enable unified VOD preload and forward buffering"
+          git push origin HEAD:hostinger-frontend-only

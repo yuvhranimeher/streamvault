@@ -1,0 +1,49 @@
+name: Hostinger detail fast path v1
+
+on:
+  push:
+    branches:
+      - hostinger-frontend-only
+    paths:
+      - 'hostinger/detail-fast-path-v1.js'
+      - '.github/workflows/hostinger-detail-fast-v1.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-index:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hostinger-frontend-only
+          fetch-depth: 0
+
+      - name: Add cache-busted fast-path script
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = 'hostinger/index.html';
+          let html = fs.readFileSync(path, 'utf8');
+          const tag = '<script defer src="/detail-fast-path-v1.js?v=20260818-detail-fast-v1"></script>';
+          if (!html.includes('/detail-fast-path-v1.js')) {
+            const anchor = '<script src="/software-download-title-ui-v1.js?v=20260813-software-title-ui-v1"></script>';
+            if (html.includes(anchor)) html = html.replace(anchor, tag + '\n' + anchor);
+            else html = html.replace('</body>', tag + '\n</body>');
+          }
+          fs.writeFileSync(path, html);
+          NODE
+
+      - name: Commit production index update
+        run: |
+          if git diff --quiet -- hostinger/index.html; then
+            echo "Index already contains detail fast path"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add hostinger/index.html
+          git commit -m "Enable instant lightweight media details"
+          git push origin HEAD:hostinger-frontend-only

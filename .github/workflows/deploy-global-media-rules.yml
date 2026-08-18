@@ -1,4 +1,4 @@
-name: Deploy global media playback rules
+name: Deploy StreamVault detail fast path
 
 on:
   push:
@@ -18,120 +18,39 @@ jobs:
         with:
           ref: hostinger-frontend-only
           persist-credentials: true
+          fetch-depth: 0
 
-      - name: Apply one playback policy to all media
+      - name: Enable instant lightweight media details
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
-
-          def replace_once(text, old, new, label):
-              if old not in text:
-                  raise SystemExit(f'{label}: target not found')
-              return text.replace(old, new, 1)
-
-          # 1) AUDIO POLICY: Hindi-labelled content may prefer Hindi.
-          # Everything else defaults to English when an English track exists.
-          session = Path('hostinger/frontend-playback-session.js')
-          s = session.read_text(encoding='utf-8-sig')
-          s = replace_once(
-              s,
-              "    return { language: null, field: null, reason: 'conservative-fallback' };",
-              "    return { language: 'en', field: 'global-default', reason: 'global-rule:non-hindi-default-english' };",
-              'default-English audio policy'
-          )
-          session.write_text(s, encoding='utf-8')
-
-          app = Path('hostinger/app-v3.js')
-          s = app.read_text(encoding='utf-8-sig')
-
-          # 2) SEEK POLICY: every remote/FTP media item uses the same seek path.
-          # Direct/proxy sources are converted to the source-seek compatibility stream
-          # on the first seek so containers with broken/non-seekable browser timelines
-          # behave the same as files that were already transcoding.
-          old_seek_entry = """function seekToTime(seconds){
-            const duration = playerDuration();
-            const target = duration ? Math.max(0, Math.min(duration, seconds)) : Math.max(0, seconds);
-            if(_ftpStreamUrl&&_ftpNeedsTranscode){
-              ftpSeekTo(target);"""
-          new_seek_entry = """function seekToTime(seconds){
-            const duration = playerDuration();
-            const target = duration ? Math.max(0, Math.min(duration, seconds)) : Math.max(0, seconds);
-            if(_ftpStreamUrl){
-              ftpSeekTo(target);"""
-          s = replace_once(s, old_seek_entry, new_seek_entry, 'global FTP seek entry')
-
-          old_seek_plan = """      : currentMode === 'stream'
-                ? { ok:true, mode:'stream', src:ftpTranscodeSrc(_ftpStreamUrl, target, fallbackReason), duration:_ftpDuration || 0 }
-                : await fetchFtpPlaybackPlan(_ftpStreamUrl, target, {...playbackOptionsForStep(currentMode, fallbackReason), signal:playbackRequestController?.signal});"""
-          new_seek_plan = """      : currentMode === 'stream'
-                ? { ok:true, mode:'stream', src:ftpTranscodeSrc(_ftpStreamUrl, target, fallbackReason), duration:_ftpDuration || 0 }
-                : ['direct','redirect','proxy'].includes(String(currentMode||'').toLowerCase())
-                ? ftpStreamPlaybackPlan(_ftpStreamUrl, target, 'FTP seek compatibility route')
-                : await fetchFtpPlaybackPlan(_ftpStreamUrl, target, {...playbackOptionsForStep(currentMode, fallbackReason), signal:playbackRequestController?.signal});"""
-          s = replace_once(s, old_seek_plan, new_seek_plan, 'FTP seek compatibility plan')
-
-          # 3) MANUAL AUDIO POLICY: for ordinary movie/episode playback, manual
-          # audio choices are server-mapped by stream index instead of depending on
-          # browser-native multi-audio support. HLS keeps its native manifest switch.
-          old_audio = """  if(idx===currentAudioIdx && idx===appliedAudioIndex()){closeAllDropdowns();return;}
-            if(!isMobilePlaybackClient()){"""
-          new_audio = """  if(idx===currentAudioIdx && idx===appliedAudioIndex()){closeAllDropdowns();return;}
-            const stableAudioMode=String((_ftpStreamUrl ? _currentFtpPlaybackPlan?.mode : _currentPlaybackPlan?.mode) || '').toLowerCase();
-            const hasStableMediaSource=!!_ftpStreamUrl || (currentStreamId !== null && currentStreamId !== undefined);
-            if(!isLiveMode && hasStableMediaSource && availableAudio.length > 1 && stableAudioMode !== 'hls'){
-              switchAudioWithServer(idx).catch(error=>{
-                console.warn('[Audio] Switch failed:',error?.message || error);
-                showToast('Could not switch audio for this file');
-              });
-              return;
-            }
-            if(!isMobilePlaybackClient()){"""
-          s = replace_once(s, old_audio, new_audio, 'reliable manual audio switching')
-
-          app.write_text(s, encoding='utf-8')
-
-          # 4) Browser cache bust so Hostinger clients receive these rules immediately.
-          index = Path('hostinger/index.html')
-          h = index.read_text(encoding='utf-8-sig')
-          h, n1 = re.subn(
-              r'/frontend-playback-session\.js\?v=[^"\s<]+',
-              '/frontend-playback-session.js?v=20260818-global-media-rules-v1',
-              h,
-              count=1
-          )
-          h, n2 = re.subn(
-              r'/app-v3\.js\?v=[^"\s<]+',
-              '/app-v3.js?v=20260818-global-media-rules-v1',
-              h,
-              count=1
-          )
-          if n1 != 1 or n2 != 1:
-              raise SystemExit(f'cache-bust target mismatch: session={n1} app={n2}')
-          index.write_text(h, encoding='utf-8')
-
-          print('Applied global playback policy:')
-          print('- non-Hindi media defaults to English')
-          print('- all FTP media uses reliable source seek')
-          print('- manual audio selection uses server stream mapping')
+          p = Path('hostinger/index.html')
+          s = p.read_text(encoding='utf-8-sig')
+          tag = '<script defer src="/detail-fast-path-v1.js?v=20260818-detail-fast-v1"></script>'
+          if tag not in s:
+              anchor = '<script src="/software-download-title-ui-v1.js?v=20260813-software-title-ui-v1"></script>'
+              if anchor in s:
+                  s = s.replace(anchor, tag + '\n' + anchor, 1)
+              else:
+                  s = s.replace('</body>', tag + '\n</body>', 1)
+          p.write_text(s, encoding='utf-8')
           PY
 
-      - name: Validate JavaScript syntax
+      - name: Validate fast path
         shell: bash
         run: |
-          node --check hostinger/frontend-playback-session.js
-          node --check hostinger/app-v3.js
+          node --check hostinger/detail-fast-path-v1.js
 
-      - name: Commit production playback policy
+      - name: Commit production detail optimization
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add hostinger/frontend-playback-session.js hostinger/app-v3.js hostinger/index.html
+          git add hostinger/index.html
           if git diff --cached --quiet; then
-            echo "No playback changes needed"
+            echo "Fast path already enabled"
             exit 0
           fi
-          git commit -m "Apply global media seek and English audio policy"
+          git commit -m "Enable instant lightweight media details"
           git push origin HEAD:hostinger-frontend-only

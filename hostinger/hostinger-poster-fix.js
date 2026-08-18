@@ -130,3 +130,14 @@
     }));
   }).observe(document.documentElement,{childList:true,subtree:true});
 })();
+
+/* SV_MOBILE_DIRECT_HOME_LOADER_V1 */
+(function(){
+  if(window.__SV_MOBILE_DIRECT_HOME_LOADER_V1)return;
+  window.__SV_MOBILE_DIRECT_HOME_LOADER_V1=true;
+  const script=document.createElement('script');
+  script.src='/mobile-direct-home-v1.js?v=20260819-mobile-direct-home-v1';
+  script.defer=true;
+  script.onerror=()=>{window.__SV_MOBILE_DIRECT_HOME_LOAD_ERROR=true;};
+  document.head.appendChild(script);
+})();

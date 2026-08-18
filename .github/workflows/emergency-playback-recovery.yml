@@ -18,21 +18,21 @@ jobs:
         with:
           ref: hostinger-frontend-only
           persist-credentials: true
-      - name: Cache-bust emergency playback recovery
+      - name: Install playback stability hotfix
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
           p=Path('hostinger/index.html')
           s=p.read_text(encoding='utf-8-sig')
-          old='/search-full-catalog-v2.js?v=20260814-full-catalog-v2'
-          new='/search-full-catalog-v2.js?v=20260818-emergency-playback-recovery-1'
-          if new not in s:
-              if old not in s:
-                  raise SystemExit('search-full-catalog-v2 asset reference not found')
-              s=s.replace(old,new,1)
-              p.write_text(s,encoding='utf-8')
-          print('emergency playback asset cache-busted')
+          anchor='<script defer src="/search-full-catalog-v2.js?v=20260818-emergency-playback-recovery-1"></script>'
+          tag='<script defer src="/playback-stability-hotfix-v2.js?v=20260818-playback-stability-v2"></script>'
+          if tag not in s:
+              if anchor not in s:
+                  raise SystemExit('production search/recovery asset reference not found')
+              s=s.replace(anchor, anchor+'\n'+tag, 1)
+              p.write_text(s, encoding='utf-8')
+          print('playback stability hotfix installed')
           PY
       - name: Commit production HTML
         shell: bash
@@ -41,5 +41,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add hostinger/index.html
           if git diff --cached --quiet; then exit 0; fi
-          git commit -m "Deploy emergency playback recovery asset"
+          git commit -m "Deploy playback stability hotfix v2"
           git push origin HEAD:hostinger-frontend-only

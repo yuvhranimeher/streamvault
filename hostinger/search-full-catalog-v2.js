@@ -118,8 +118,6 @@
     });
 
     try{
-      // Intentionally bypass StreamVaultConfig.backendStatus.available. runtime-config
-      // still rewrites this /api request to backend.streamvault.fit.
       const response=await fetch(`/api/search?${params.toString()}`,{
         method:'GET',
         cache:'default',
@@ -154,7 +152,6 @@
     timer=setTimeout(()=>request(query.trim()),80);
   }
 
-  // Capture the search input before the old inline/search.js handlers can run.
   document.addEventListener('input',event=>{
     const id=event.target?.id;
     if(id!=='searchInputDesktop' && id!=='searchInputMobile')return;
@@ -176,4 +173,56 @@
 
   window.__SV_SEARCH_READINESS_BYPASS_V3=true;
   window.__SV_FULL_CATALOG_SEARCH_VERSION=VERSION;
+})();
+
+/* SV_EMERGENCY_PLAYBACK_RECOVERY_20260818 */
+(function(){
+  'use strict';
+  if(window.__SV_EMERGENCY_PLAYBACK_RECOVERY_20260818)return;
+  window.__SV_EMERGENCY_PLAYBACK_RECOVERY_20260818=true;
+
+  const previousHydrate=window.hydrateMoviePlayback;
+
+  window.hydrateMoviePlayback=async function emergencyHydrateMoviePlayback(movie){
+    if(!movie || movie.streamUrl)return movie;
+
+    const title=String(movie.name||movie.title||movie.file||'').trim();
+    const year=String(movie.year||'').match(/(?:19|20)\d{2}/)?.[0]||'';
+    const identity=String(movie.id??title).trim();
+
+    if(identity){
+      try{
+        const params=new URLSearchParams();
+        if(title)params.set('title',title);
+        if(year)params.set('year',year);
+        params.set('_',String(Date.now()));
+
+        const response=await fetch(`/api/playback/movie/${encodeURIComponent(identity)}?${params.toString()}`,{
+          method:'GET',
+          cache:'no-store',
+          headers:{Accept:'application/json'}
+        });
+
+        if(response.ok){
+          const raw=await response.json();
+          const data=window.StreamVaultConfig?.normalizeBackendUrls?.(raw)??raw;
+          if(data?.ok && data?.streamUrl){
+            movie.streamUrl=data.streamUrl;
+            movie.isFtp=data.isFtp!==false;
+            movie.streamAvailable=true;
+            movie.hasStream=true;
+            if(data.id!=null && !movie.id)movie.id=data.id;
+            return movie;
+          }
+        }
+      }catch(error){
+        console.warn('[Emergency Playback Recovery] resolver failed',error?.message||error);
+      }
+    }
+
+    if(typeof previousHydrate==='function'){
+      try{return await previousHydrate(movie);}catch(_){ }
+    }
+    return movie;
+  };
 })();

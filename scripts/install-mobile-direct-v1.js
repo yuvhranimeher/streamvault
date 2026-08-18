@@ -50,10 +50,22 @@ function find404Index(source) {
   if (!fs.existsSync(SERVER)) throw new Error(`server.js not found in ${ROOT}`);
   fs.mkdirSync(LIB_DIR, { recursive: true });
 
-  const moduleSource = await download(MODULE_URL);
+  let moduleSource = await download(MODULE_URL);
   if (!moduleSource.includes('installMobileDirect') || !moduleSource.includes('20260819-mobile-direct-v1')) {
     throw new Error('Downloaded mobile-direct module failed validation');
   }
+
+  // A response-close listener is the correct lifetime signal for a proxied media response.
+  moduleSource = moduleSource.replace(
+    "req.on('close', () => { try { upstream.destroy(); } catch {} });",
+    "res.on('close', () => { try { upstream.destroy(); } catch {} });"
+  );
+
+  // Verify the first candidates four-at-a-time so the homepage row becomes useful quickly.
+  const oldBurst = `  async function scanBurst() {\n    buildQueue();\n    const count = Math.min(initialBurst, state.queue.length);\n    for (let i = 0; i < count; i += 1) {\n      const url = state.queue.shift();\n      state.queued = state.queue.length;\n      if (!url) break;\n      await verifySource(url);\n      if ((i + 1) % 4 === 0) rebuildItems();\n    }\n    rebuildItems();\n  }`;
+  const newBurst = `  async function scanBurst() {\n    buildQueue();\n    const count = Math.min(initialBurst, state.queue.length);\n    const batch = state.queue.splice(0, count);\n    state.queued = state.queue.length;\n    const concurrency = Math.min(4, batch.length);\n    let cursor = 0;\n    const worker = async () => {\n      while (cursor < batch.length) {\n        const index = cursor++;\n        await verifySource(batch[index]);\n      }\n    };\n    await Promise.all(Array.from({ length: concurrency }, worker));\n    rebuildItems();\n  }`;
+  if (moduleSource.includes(oldBurst)) moduleSource = moduleSource.replace(oldBurst, newBurst);
+
   fs.writeFileSync(LIB_FILE, moduleSource, 'utf8');
 
   let source = fs.readFileSync(SERVER, 'utf8');

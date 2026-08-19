@@ -1,9 +1,9 @@
-/* SV_MEDIA_EPISODES_V11 — full-catalog episode authority */
+/* SV_MEDIA_EPISODES_V12 — parallel full-catalog episode authority */
 (function(){
   'use strict';
-  if(window.__svMediaEpisodesV11)return;
-  window.__svMediaEpisodesV11=true;
-  window.__SV_SERIES_EPISODES_VERSION='20260819-series-episodes-v11';
+  if(window.__svMediaEpisodesV12)return;
+  window.__svMediaEpisodesV12=true;
+  window.__SV_SERIES_EPISODES_VERSION='20260819-series-episodes-v12';
 
   let activeToken=0;
   let activeKey='';
@@ -12,28 +12,18 @@
 
   function modalOpen(){
     const modal=document.getElementById('mediaModal');
-    return !!modal && !modal.classList.contains('hidden') && modal.getAttribute('aria-hidden')!=='true';
+    return !!modal&&!modal.classList.contains('hidden')&&modal.getAttribute('aria-hidden')!=='true';
   }
-
   function currentItem(){
-    try{
-      if(typeof currentMediaModalItem!=='undefined' && currentMediaModalItem)return currentMediaModalItem;
-      if(typeof currentShow!=='undefined' && currentShow)return currentShow;
-    }catch(_){ }
+    try{if(typeof currentMediaModalItem!=='undefined'&&currentMediaModalItem)return currentMediaModalItem;}catch(_){}
+    try{if(typeof currentShow!=='undefined'&&currentShow)return currentShow;}catch(_){}
     return null;
   }
-
-  function currentType(){
-    try{return String(typeof currentMediaModalType!=='undefined' ? currentMediaModalType : '').toLowerCase();}catch(_){return '';}
-  }
-
+  function currentType(){try{return String(typeof currentMediaModalType!=='undefined'?currentMediaModalType:'').toLowerCase();}catch(_){return '';}}
   function isSeries(item){
     const type=String(item?.type||item?.mediaType||currentType()).toLowerCase();
-    if(type==='tv'||type==='series'||type==='show')return true;
-    if(item?.seasons)return true;
-    return /\b(?:tv\s+(?:mini\s+)?series|web\s+series|series)\b/i.test(String(item?.name||item?.title||''));
+    return type==='tv'||type==='series'||type==='show'||!!item?.seasons||/\b(?:tv\s+(?:mini\s+)?series|web\s+series|series)\b/i.test(String(item?.name||item?.title||''));
   }
-
   function cleanTitle(value){
     return String(value||'')
       .replace(/^\s*about\s+/i,'')
@@ -47,39 +37,28 @@
       .replace(/\s+/g,' ')
       .trim();
   }
-
-  function norm(value){
-    return cleanTitle(value).toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
-  }
-
+  function norm(value){return cleanTitle(value).toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();}
   function yearOf(item){
     const direct=String(item?.year||'').match(/(?:19|20)\d{2}/)?.[0];
     if(direct)return direct;
     return String(item?.name||item?.title||'').match(/(?:19|20)\d{2}/)?.[0]||'';
   }
-
-  function identityKey(item){
-    return [String(item?.id??''),norm(item?.name||item?.title),yearOf(item)].join('|');
-  }
-
+  function identityKey(item){return [String(item?.id??''),norm(item?.name||item?.title),yearOf(item)].join('|');}
   function sameIdentity(a,b){
     if(!a||!b)return false;
-    const aid=String(a?.id??'').trim();
-    const bid=String(b?.id??'').trim();
+    const aid=String(a?.id??'').trim(),bid=String(b?.id??'').trim();
     if(aid&&bid&&aid===bid)return true;
-    const at=norm(a?.name||a?.title);
-    const bt=norm(b?.name||b?.title);
+    const at=norm(a?.name||a?.title),bt=norm(b?.name||b?.title);
     if(!at||!bt||at!==bt)return false;
     const ay=yearOf(a),by=yearOf(b);
     return !ay||!by||ay===by;
   }
-
   function seasonsObject(show){
     const source=show?.seasons||{};
     if(Array.isArray(source)){
       const out={};
       source.forEach((season,index)=>{
-        const num=Number(season?.season ?? season?.seasonNumber ?? season?.number ?? index+1)||index+1;
+        const num=Number(season?.season??season?.seasonNumber??season?.number??index+1)||index+1;
         const eps=Array.isArray(season?.episodes)?season.episodes:(Array.isArray(season)?season:[]);
         if(eps.length)out[num]=eps;
       });
@@ -92,163 +71,118 @@
     });
     return out;
   }
-
-  function episodeCount(show){
-    return Object.values(seasonsObject(show)).reduce((n,eps)=>n+(Array.isArray(eps)?eps.length:0),0);
-  }
-
-  function normalizePayload(payload){
-    return window.StreamVaultConfig?.normalizeBackendUrls?.(payload) ?? payload;
-  }
-
+  function episodeCount(show){return Object.values(seasonsObject(show)).reduce((n,eps)=>n+(Array.isArray(eps)?eps.length:0),0);}
+  function normalizePayload(payload){try{return window.StreamVaultConfig?.normalizeBackendUrls?.(payload)??payload;}catch(_){return payload;}}
   function rowsFromPayload(payload){
     if(Array.isArray(payload))return payload;
-    for(const key of ['series','items','results']){
-      if(Array.isArray(payload?.[key]))return payload[key];
-    }
+    for(const key of ['series','items','results'])if(Array.isArray(payload?.[key]))return payload[key];
     return [];
   }
-
+  function candidateScore(row,item,title){
+    const episodes=episodeCount(row);if(!episodes)return -1;
+    const target=norm(title||item?.name||item?.title),name=norm(row?.name||row?.title);
+    if(!target||!name)return -1;
+    let score=0;
+    if(String(item?.id??'')&&String(row?.id??'')===String(item.id))score+=5000;
+    if(name===target)score+=4000;
+    else if(name.startsWith(target+' ')||target.startsWith(name+' '))score+=2500;
+    else{
+      const a=new Set(target.split(/\s+/)),b=new Set(name.split(/\s+/));let hit=0;a.forEach(x=>{if(b.has(x))hit++;});
+      score+=(hit/Math.max(1,a.size))*1200;
+    }
+    const iy=yearOf(item),ry=yearOf(row);if(iy&&ry)score+=iy===ry?800:-800;
+    score+=Math.min(episodes,999);
+    return score;
+  }
   function bestCandidate(rows,item,title){
-    const list=(Array.isArray(rows)?rows:[]).filter(row=>episodeCount(row)>0);
-    if(!list.length)return null;
-    const id=String(item?.id??'');
-    if(id){
-      const exactId=list.find(row=>String(row?.id??'')===id);
-      if(exactId)return exactId;
-    }
-    const target=norm(title||item?.name||item?.title);
-    const targetYear=yearOf(item);
-    if(target){
-      const exact=list.find(row=>norm(row?.name||row?.title)===target && (!targetYear||!yearOf(row)||yearOf(row)===targetYear));
-      if(exact)return exact;
-      const exactAnyYear=list.find(row=>norm(row?.name||row?.title)===target);
-      if(exactAnyYear)return exactAnyYear;
-      const prefix=list.find(row=>{
-        const value=norm(row?.name||row?.title);
-        return value && (value.startsWith(target+' ')||target.startsWith(value+' '));
-      });
-      if(prefix)return prefix;
-    }
-    return null;
+    return (Array.isArray(rows)?rows:[])
+      .map(row=>({row,score:candidateScore(row,item,title)}))
+      .filter(x=>x.score>=1200&&episodeCount(x.row)>0)
+      .sort((a,b)=>b.score-a.score||episodeCount(b.row)-episodeCount(a.row))[0]?.row||null;
   }
 
-  async function fetchJson(url,signal){
-    const response=await fetch(url,{cache:'no-store',signal,headers:{Accept:'application/json'}});
-    if(!response.ok)throw new Error(`HTTP ${response.status}`);
+  async function fetchJson(path,signal,timeout=10000){
+    const options={cache:'no-store',signal,headers:{Accept:'application/json'}};
+    const fn=window.StreamVaultConfig?.fetchWithTimeout;
+    const response=fn?await fn(path,options,timeout):await fetch(path,options);
+    if(!response?.ok)throw new Error(`HTTP ${response?.status||0}`);
     return normalizePayload(await response.json());
   }
 
-  async function searchSeriesCatalog(queryText,item,signal){
-    if(!queryText)return null;
-    const query=new URLSearchParams({
-      q:queryText,
-      page:'0',
-      limit:'120',
-      massive:'1',
-      _:String(Date.now())
-    });
-    const payload=await fetchJson('/api/series?'+query.toString(),signal);
-    return bestCandidate(rowsFromPayload(payload),item,queryText);
-  }
-
   async function resolveShow(item,signal){
-    const key=identityKey(item);
-    const cached=resolvedCache.get(key);
+    const cacheKey=identityKey(item);
+    const cached=resolvedCache.get(cacheKey);
     if(cached&&episodeCount(cached)>0)return cached;
 
     const rawTitle=String(item?.name||item?.title||'').trim();
     const title=cleanTitle(rawTitle)||rawTitle;
     const year=yearOf(item);
     const id=String(item?.id??'').trim();
+    const jobs=[];
 
-    const detailParams=new URLSearchParams();
-    if(id)detailParams.set('id',id);
-    if(title)detailParams.set('name',title);
-    if(year)detailParams.set('year',year);
-    detailParams.set('_',String(Date.now()));
+    const detail=new URLSearchParams();
+    if(id)detail.set('id',id);
+    if(title)detail.set('name',title);
+    if(year)detail.set('year',year);
+    detail.set('_',String(Date.now()));
+    jobs.push(fetchJson('/api/series/detail?'+detail.toString(),signal,9000));
 
-    try{
-      const detail=await fetchJson('/api/series/detail?'+detailParams.toString(),signal);
-      if(episodeCount(detail)>0){resolvedCache.set(key,detail);return detail;}
-    }catch(_){ }
-
-    if(id){
-      try{
-        const byId=new URLSearchParams({id:id,_:String(Date.now())});
-        const detail=await fetchJson('/api/series/detail?'+byId.toString(),signal);
-        if(episodeCount(detail)>0){resolvedCache.set(key,detail);return detail;}
-      }catch(_){ }
+    for(const q of [...new Set([title,rawTitle].filter(Boolean))]){
+      const search=new URLSearchParams({q,kind:'series',page:'0',limit:'48',massive:'1',authority:'episodes-v12',_:String(Date.now())});
+      jobs.push(fetchJson('/api/search?'+search.toString(),signal,9000));
+      const seriesParams=new URLSearchParams({q,page:'0',limit:'120',massive:'1',_:String(Date.now())});
+      jobs.push(fetchJson('/api/series?'+seriesParams.toString(),signal,9000));
     }
 
-    const searches=[];
-    if(title)searches.push(title);
-    if(rawTitle&&rawTitle!==title)searches.push(rawTitle);
-    for(const q of [...new Set(searches)]){
-      try{
-        const best=await searchSeriesCatalog(q,item,signal);
-        if(best){resolvedCache.set(key,best);return best;}
-      }catch(_){ }
+    const settled=await Promise.allSettled(jobs);
+    const rows=[];
+    for(const result of settled){
+      if(result.status!=='fulfilled')continue;
+      const value=result.value;
+      if(episodeCount(value)>0)rows.push(value);
+      rows.push(...rowsFromPayload(value));
     }
-
+    const best=bestCandidate(rows,item,title);
+    if(best){resolvedCache.set(cacheKey,best);return best;}
     return null;
   }
 
   function showLoading(){
-    const root=document.getElementById('modalEpisodes');
-    if(!root)return;
-    root.className='media-modal-section';
-    root.style.display='';
+    const root=document.getElementById('modalEpisodes');if(!root)return;
+    root.className='media-modal-section';root.style.display='';
     root.innerHTML='<h2 class="media-modal-heading">Episodes</h2><div class="no-data">Loading episodes…</div>';
   }
-
   function showFailure(){
-    const root=document.getElementById('modalEpisodes');
-    if(!root)return;
-    root.className='media-modal-section';
-    root.style.display='';
+    const root=document.getElementById('modalEpisodes');if(!root)return;
+    root.className='media-modal-section';root.style.display='';
     root.innerHTML='<h2 class="media-modal-heading">Episodes</h2><div class="no-data">Could not load episodes</div>';
   }
-
-  function applyShow(item,show){
-    const seasons=seasonsObject(show);
-    if(!Object.keys(seasons).length)return false;
-
-    const preserved={
-      poster:item?.poster,
-      backdrop:item?.backdrop,
-      overview:item?.overview,
-      rating:item?.rating,
-      genre:item?.genre,
-      year:item?.year
+  function copyIntoMatchingRuntimeObjects(source,target){
+    const seasons=seasonsObject(source);
+    if(!Object.keys(seasons).length)return;
+    const apply=obj=>{
+      if(!obj||!sameIdentity(obj,target))return;
+      const keep={poster:obj.poster,backdrop:obj.backdrop,overview:obj.overview,rating:obj.rating,genre:obj.genre,year:obj.year};
+      Object.assign(obj,source,{seasons,isSummary:false});
+      for(const [key,value] of Object.entries(keep))if(!obj[key]&&value)obj[key]=value;
     };
-
-    Object.assign(item,show,{seasons,isSummary:false});
-    for(const [key,value] of Object.entries(preserved)){
-      if(!item[key]&&value)item[key]=value;
-    }
-
+    apply(target);
+    try{apply(currentMediaModalItem);}catch(_){}
+    try{apply(currentShow);}catch(_){}
+    try{if(Array.isArray(series))series.forEach(apply);}catch(_){}
+  }
+  function applyShow(item,show){
+    const seasons=seasonsObject(show);if(!Object.keys(seasons).length)return false;
+    copyIntoMatchingRuntimeObjects({...show,seasons},item);
+    const live=currentItem();
+    const target=live&&sameIdentity(live,item)?live:item;
+    Object.assign(target,show,{seasons,isSummary:false});
+    try{currentShow=target;}catch(_){}
     try{
-      currentShow=item;
       const available=Object.keys(seasons).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
-      if(available.length && !available.includes(Number(currentSeason)))currentSeason=available[0];
-    }catch(_){ }
-
-    try{
-      if(Array.isArray(series)){
-        const id=String(item?.id??'');
-        const title=norm(item?.name||item?.title);
-        for(let i=0;i<series.length;i++){
-          const row=series[i];
-          if((id&&String(row?.id??'')===id)||norm(row?.name||row?.title)===title){
-            Object.assign(row,item);
-          }
-        }
-      }
-    }catch(_){ }
-
-    if(typeof renderMediaModalEpisodes==='function')renderMediaModalEpisodes(item);
-    try{if(typeof populateModal==='function')populateModal(item);}catch(_){ }
+      if(available.length&&(!available.includes(Number(currentSeason))))currentSeason=available[0];
+    }catch(_){}
+    if(typeof renderMediaModalEpisodes==='function')renderMediaModalEpisodes(target);
     return true;
   }
 
@@ -256,60 +190,46 @@
     if(!item||!isSeries(item)||!modalOpen())return;
     if(episodeCount(item)>0){applyShow(item,item);return;}
 
-    const cached=resolvedCache.get(identityKey(item));
-    if(cached&&episodeCount(cached)>0){
-      const live=currentItem();
-      const target=live&&sameIdentity(live,item)?live:item;
-      applyShow(target,cached);
-      if(target!==item)Object.assign(item,target);
-      return;
-    }
-
     const key=identityKey(item);
+    const cached=resolvedCache.get(key);
+    if(cached&&episodeCount(cached)>0){applyShow(item,cached);return;}
     if(activePromise&&activeKey===key)return activePromise;
 
     activeKey=key;
     const token=++activeToken;
     showLoading();
     const controller=new AbortController();
-    const timer=setTimeout(()=>controller.abort(),18000);
+    const timer=setTimeout(()=>controller.abort(),12500);
 
     activePromise=(async()=>{
       try{
         const show=await resolveShow(item,controller.signal);
+        if(token!==activeToken||!modalOpen())return;
         const live=currentItem();
-        if(token!==activeToken||!modalOpen()||!sameIdentity(live,item))return;
+        if(live&&!sameIdentity(live,item))return;
         if(!show||episodeCount(show)<1){showFailure();return;}
         applyShow(live||item,show);
-        if(live&&live!==item)Object.assign(item,live);
       }catch(error){
-        const live=currentItem();
-        if(token===activeToken&&modalOpen()&&sameIdentity(live,item))showFailure();
-        console.warn('[Episodes v11]',error?.message||error);
+        if(token===activeToken&&modalOpen())showFailure();
+        console.warn('[Episodes v12]',error?.message||error);
       }finally{
         clearTimeout(timer);
         if(token===activeToken)activePromise=null;
       }
     })();
-
     return activePromise;
   }
 
   function check(){
     if(!modalOpen())return;
-    const item=currentItem();
-    if(item&&isSeries(item))hydrate(item);
+    const item=currentItem();if(item&&isSeries(item))hydrate(item);
   }
-
   if(typeof openMediaModal==='function'){
     const previousOpenMediaModal=openMediaModal;
     openMediaModal=function(){
       const result=previousOpenMediaModal.apply(this,arguments);
-      const item=arguments[0];
-      setTimeout(()=>hydrate(item),0);
-      return result;
+      const item=arguments[0];setTimeout(()=>hydrate(item),0);return result;
     };
   }
-
-  setInterval(check,500);
+  setInterval(check,650);
 })();

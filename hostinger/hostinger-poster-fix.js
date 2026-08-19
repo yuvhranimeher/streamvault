@@ -125,6 +125,40 @@
   new MutationObserver(ms=>{ms.forEach(m=>m.addedNodes.forEach(n=>{if(n.nodeType===1)process(n);}));}).observe(document.documentElement,{childList:true,subtree:true});
 })();
 
+/* SV_SOFTWARE_ARTWORK_PROXY_V2 */
+(function(){
+  if(window.__SV_SOFTWARE_ARTWORK_PROXY_V2)return;
+  window.__SV_SOFTWARE_ARTWORK_PROXY_V2=true;
+
+  try{
+    const raw=JSON.parse(localStorage.getItem('sv_sw_art_v1')||'{}');
+    const clean={};
+    for(const [key,value] of Object.entries(raw||{})){
+      if(value && value.id)clean[key]=value;
+    }
+    localStorage.setItem('sv_sw_art_v1',JSON.stringify(clean));
+  }catch(_error){
+    try{localStorage.removeItem('sv_sw_art_v1');}catch(_ignore){}
+  }
+
+  const previousFetch=window.fetch.bind(window);
+  window.fetch=function(input,init){
+    try{
+      const rawUrl=typeof input==='string'||input instanceof URL?String(input):String(input?.url||'');
+      const url=new URL(rawUrl,location.href);
+      if(url.hostname==='store.steampowered.com' && url.pathname==='/api/storesearch/'){
+        const title=String(url.searchParams.get('term')||'').trim();
+        const localUrl=`/software-artwork.php?title=${encodeURIComponent(title)}`;
+        const nextInit={...(init||{})};
+        delete nextInit.mode;
+        delete nextInit.credentials;
+        return previousFetch(localUrl,nextInit);
+      }
+    }catch(_error){}
+    return previousFetch(input,init);
+  };
+})();
+
 /* SV_MOBILE_DIRECT_HOME_LOADER_V5 */
 (function(){
   if(window.__SV_MOBILE_DIRECT_HOME_LOADER_V5)return;

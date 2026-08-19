@@ -1,13 +1,13 @@
 'use strict';
 
 const { buildRuntimeSearchCatalog } = require('./build-runtime-search-catalog');
-const { installSeriesEpisodeAuthority } = require('./install-series-episode-authority-v1');
+const { installSeriesEpisodeAuthorityV2 } = require('./install-series-episode-authority-v2');
 
 (async () => {
   try {
-    installSeriesEpisodeAuthority();
+    installSeriesEpisodeAuthorityV2();
   } catch (error) {
-    console.error('[Startup] Series episode authority install failed; starting with existing server code.', error.message);
+    console.error('[Startup] Series episode authority V2 install failed; starting with existing server code.', error.message);
   }
 
   try {

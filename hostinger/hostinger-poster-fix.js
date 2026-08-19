@@ -159,6 +159,19 @@
   };
 })();
 
+/* SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V11 */
+(function(){
+  if(window.__SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V11)return;
+  window.__SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V11=true;
+  // Prevent a stale cached V10 asset from taking control while the V11 asset is fetched.
+  window.__svMediaEpisodesV10=true;
+  const script=document.createElement('script');
+  script.src='/series-modal-episodes-v7.js?v=20260819-series-episodes-v11';
+  script.async=false;
+  script.onerror=()=>{window.__SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V11_LOAD_ERROR=true;};
+  document.head.appendChild(script);
+})();
+
 /* SV_MOBILE_DIRECT_HOME_LOADER_V5 */
 (function(){
   if(window.__SV_MOBILE_DIRECT_HOME_LOADER_V5)return;

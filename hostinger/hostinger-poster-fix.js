@@ -128,3 +128,14 @@
   script.onerror=()=>{window.__SV_MOBILE_DIRECT_HOME_LOAD_ERROR=true;};
   document.head.appendChild(script);
 })();
+
+/* SV_SEARCH_RELIABILITY_LOADER_V2 */
+(function(){
+  if(window.__SV_SEARCH_RELIABILITY_LOADER_V2)return;
+  window.__SV_SEARCH_RELIABILITY_LOADER_V2=true;
+  const script=document.createElement('script');
+  script.src='/search-reliability-v2.js?v=20260819-search-reliability-v2';
+  script.defer=true;
+  script.onerror=()=>{window.__SV_SEARCH_RELIABILITY_LOAD_ERROR=true;};
+  document.head.appendChild(script);
+})();

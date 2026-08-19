@@ -21,6 +21,14 @@ DirectoryIndex index.html
     Header always set Cache-Control "no-cache, max-age=0, must-revalidate"
   </FilesMatch>
 
+  # Critical frontend authorities are hot-patched and must never be held behind
+  # the generic five-minute JavaScript cache.
+  <FilesMatch "^(?:hostinger-poster-fix|series-modal-episodes-v7|search-authority-v2)\.js$">
+    Header always set Cache-Control "no-cache, no-store, max-age=0, must-revalidate"
+    Header always set Pragma "no-cache"
+    Header always set Expires "0"
+  </FilesMatch>
+
   # Bootstrap, runtime state, service workers, and the bundled homepage snapshot
   # must always be revalidated. Keep this last so it wins over generic rules.
   <FilesMatch "^(?:index\.html|runtime-config\.js|sw(?:-[^/]+)?\.js|home-snapshot-[^/]+\.js|manifest\.webmanifest)$">

@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const MARKER = 'SV_SERIES_EPISODE_AUTHORITY_V2';
+const LEGACY_MARKER = 'SV_SERIES_EPISODE_AUTHORITY_V1';
 
 function installSeriesEpisodeAuthorityV2() {
   const serverPath = path.join(__dirname, '..', 'server.js');
@@ -22,6 +23,8 @@ function installSeriesEpisodeAuthorityV2() {
 
   const replacement = `function allApiSeriesForDetails() {
   // ${MARKER}
+  // ${LEGACY_MARKER} compatibility marker: prevents an older startup installer
+  // from replacing this V2 implementation on machines that still have V1.
   // Keep every local and FTP candidate. The detail route itself filters for
   // playable episodes before title/id matching. Dedupe here can hide the real
   // FTP series behind a zero-episode summary with the same title.

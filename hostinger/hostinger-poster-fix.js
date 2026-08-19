@@ -152,16 +152,17 @@
   };
 })();
 
-/* SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V12 */
+/* SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V13 */
 (function(){
-  if(window.__SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V12)return;
-  window.__SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V12=true;
+  if(window.__SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V13)return;
+  window.__SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V13=true;
   window.__svMediaEpisodesV10=true;
   window.__svMediaEpisodesV11=true;
+  window.__svMediaEpisodesV12=true;
   const script=document.createElement('script');
-  script.src='/series-modal-episodes-v7.js?v=20260819-series-episodes-v12';
+  script.src='/series-modal-episodes-v7.js?v=20260820-series-episodes-v13-direct';
   script.async=false;
-  script.onerror=()=>{window.__SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V12_LOAD_ERROR=true;};
+  script.onerror=()=>{window.__SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V13_LOAD_ERROR=true;};
   document.head.appendChild(script);
 })();
 

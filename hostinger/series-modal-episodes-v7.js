@@ -1,13 +1,14 @@
-/* SV_MEDIA_EPISODES_V10 — stable identity hydration */
+/* SV_MEDIA_EPISODES_V11 — full-catalog episode authority */
 (function(){
   'use strict';
-  if(window.__svMediaEpisodesV10)return;
-  window.__svMediaEpisodesV10=true;
-  window.__SV_SERIES_EPISODES_VERSION='20260818-series-episodes-v10';
+  if(window.__svMediaEpisodesV11)return;
+  window.__svMediaEpisodesV11=true;
+  window.__SV_SERIES_EPISODES_VERSION='20260819-series-episodes-v11';
 
   let activeToken=0;
   let activeKey='';
   let activePromise=null;
+  const resolvedCache=new Map();
 
   function modalOpen(){
     const modal=document.getElementById('mediaModal');
@@ -57,6 +58,22 @@
     return String(item?.name||item?.title||'').match(/(?:19|20)\d{2}/)?.[0]||'';
   }
 
+  function identityKey(item){
+    return [String(item?.id??''),norm(item?.name||item?.title),yearOf(item)].join('|');
+  }
+
+  function sameIdentity(a,b){
+    if(!a||!b)return false;
+    const aid=String(a?.id??'').trim();
+    const bid=String(b?.id??'').trim();
+    if(aid&&bid&&aid===bid)return true;
+    const at=norm(a?.name||a?.title);
+    const bt=norm(b?.name||b?.title);
+    if(!at||!bt||at!==bt)return false;
+    const ay=yearOf(a),by=yearOf(b);
+    return !ay||!by||ay===by;
+  }
+
   function seasonsObject(show){
     const source=show?.seasons||{};
     if(Array.isArray(source)){
@@ -84,6 +101,14 @@
     return window.StreamVaultConfig?.normalizeBackendUrls?.(payload) ?? payload;
   }
 
+  function rowsFromPayload(payload){
+    if(Array.isArray(payload))return payload;
+    for(const key of ['series','items','results']){
+      if(Array.isArray(payload?.[key]))return payload[key];
+    }
+    return [];
+  }
+
   function bestCandidate(rows,item,title){
     const list=(Array.isArray(rows)?rows:[]).filter(row=>episodeCount(row)>0);
     if(!list.length)return null;
@@ -93,9 +118,12 @@
       if(exactId)return exactId;
     }
     const target=norm(title||item?.name||item?.title);
+    const targetYear=yearOf(item);
     if(target){
-      const exact=list.find(row=>norm(row?.name||row?.title)===target);
+      const exact=list.find(row=>norm(row?.name||row?.title)===target && (!targetYear||!yearOf(row)||yearOf(row)===targetYear));
       if(exact)return exact;
+      const exactAnyYear=list.find(row=>norm(row?.name||row?.title)===target);
+      if(exactAnyYear)return exactAnyYear;
       const prefix=list.find(row=>{
         const value=norm(row?.name||row?.title);
         return value && (value.startsWith(target+' ')||target.startsWith(value+' '));
@@ -111,7 +139,24 @@
     return normalizePayload(await response.json());
   }
 
+  async function searchSeriesCatalog(queryText,item,signal){
+    if(!queryText)return null;
+    const query=new URLSearchParams({
+      q:queryText,
+      page:'0',
+      limit:'120',
+      massive:'1',
+      _:String(Date.now())
+    });
+    const payload=await fetchJson('/api/series?'+query.toString(),signal);
+    return bestCandidate(rowsFromPayload(payload),item,queryText);
+  }
+
   async function resolveShow(item,signal){
+    const key=identityKey(item);
+    const cached=resolvedCache.get(key);
+    if(cached&&episodeCount(cached)>0)return cached;
+
     const rawTitle=String(item?.name||item?.title||'').trim();
     const title=cleanTitle(rawTitle)||rawTitle;
     const year=yearOf(item);
@@ -125,24 +170,24 @@
 
     try{
       const detail=await fetchJson('/api/series/detail?'+detailParams.toString(),signal);
-      if(episodeCount(detail)>0)return detail;
+      if(episodeCount(detail)>0){resolvedCache.set(key,detail);return detail;}
     }catch(_){ }
 
     if(id){
       try{
         const byId=new URLSearchParams({id:id,_:String(Date.now())});
         const detail=await fetchJson('/api/series/detail?'+byId.toString(),signal);
-        if(episodeCount(detail)>0)return detail;
+        if(episodeCount(detail)>0){resolvedCache.set(key,detail);return detail;}
       }catch(_){ }
     }
 
-    if(title){
+    const searches=[];
+    if(title)searches.push(title);
+    if(rawTitle&&rawTitle!==title)searches.push(rawTitle);
+    for(const q of [...new Set(searches)]){
       try{
-        const query=new URLSearchParams({q:title,page:'1',limit:'200',_:String(Date.now())});
-        const payload=await fetchJson('/api/series?'+query.toString(),signal);
-        const rows=Array.isArray(payload)?payload:(Array.isArray(payload?.series)?payload.series:[]);
-        const best=bestCandidate(rows,item,title);
-        if(best)return best;
+        const best=await searchSeriesCatalog(q,item,signal);
+        if(best){resolvedCache.set(key,best);return best;}
       }catch(_){ }
     }
 
@@ -193,29 +238,34 @@
       if(Array.isArray(series)){
         const id=String(item?.id??'');
         const title=norm(item?.name||item?.title);
-        const index=series.findIndex(row=>(id&&String(row?.id??'')===id)||norm(row?.name||row?.title)===title);
-        if(index>=0)series[index]=item;
+        for(let i=0;i<series.length;i++){
+          const row=series[i];
+          if((id&&String(row?.id??'')===id)||norm(row?.name||row?.title)===title){
+            Object.assign(row,item);
+          }
+        }
       }
     }catch(_){ }
 
-    if(typeof renderMediaModalEpisodes==='function'){
-      renderMediaModalEpisodes(item);
-    }
-
-    try{
-      if(typeof populateModal==='function')populateModal(item);
-    }catch(_){ }
+    if(typeof renderMediaModalEpisodes==='function')renderMediaModalEpisodes(item);
+    try{if(typeof populateModal==='function')populateModal(item);}catch(_){ }
     return true;
   }
 
   async function hydrate(item){
     if(!item||!isSeries(item)||!modalOpen())return;
-    if(episodeCount(item)>0){
-      applyShow(item,item);
+    if(episodeCount(item)>0){applyShow(item,item);return;}
+
+    const cached=resolvedCache.get(identityKey(item));
+    if(cached&&episodeCount(cached)>0){
+      const live=currentItem();
+      const target=live&&sameIdentity(live,item)?live:item;
+      applyShow(target,cached);
+      if(target!==item)Object.assign(item,target);
       return;
     }
 
-    const key=[String(item?.id??''),norm(item?.name||item?.title),yearOf(item)].join('|');
+    const key=identityKey(item);
     if(activePromise&&activeKey===key)return activePromise;
 
     activeKey=key;
@@ -227,12 +277,15 @@
     activePromise=(async()=>{
       try{
         const show=await resolveShow(item,controller.signal);
-        if(token!==activeToken||!modalOpen()||currentItem()!==item)return;
+        const live=currentItem();
+        if(token!==activeToken||!modalOpen()||!sameIdentity(live,item))return;
         if(!show||episodeCount(show)<1){showFailure();return;}
-        applyShow(item,show);
+        applyShow(live||item,show);
+        if(live&&live!==item)Object.assign(item,live);
       }catch(error){
-        if(token===activeToken&&modalOpen())showFailure();
-        console.warn('[Episodes v10]',error?.message||error);
+        const live=currentItem();
+        if(token===activeToken&&modalOpen()&&sameIdentity(live,item))showFailure();
+        console.warn('[Episodes v11]',error?.message||error);
       }finally{
         clearTimeout(timer);
         if(token===activeToken)activePromise=null;

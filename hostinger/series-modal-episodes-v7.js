@@ -1,10 +1,11 @@
-/* SV_MEDIA_EPISODES_V13 — direct episode authority first, catalog fallbacks second */
+/* SV_MEDIA_EPISODES_V14 — same-origin episode proxy first, backend fallbacks second */
 (function(){
   'use strict';
-  if(window.__svMediaEpisodesV13)return;
+  if(window.__svMediaEpisodesV14)return;
+  window.__svMediaEpisodesV14=true;
   window.__svMediaEpisodesV13=true;
   window.__svMediaEpisodesV12=true;
-  window.__SV_SERIES_EPISODES_VERSION='20260820-series-episodes-v13-direct';
+  window.__SV_SERIES_EPISODES_VERSION='20260820-series-episodes-v14-proxy';
 
   let activeToken=0;
   let activeKey='';
@@ -110,11 +111,42 @@
     return normalizePayload(await response.json());
   }
 
+  async function fetchSameOriginProxy(title,year,signal){
+    const params=new URLSearchParams({title,_:String(Date.now())});
+    if(year)params.set('year',year);
+    const controller=new AbortController();
+    const relayAbort=()=>controller.abort(signal?.reason);
+    if(signal?.aborted)relayAbort();
+    else signal?.addEventListener?.('abort',relayAbort,{once:true});
+    const timer=setTimeout(()=>controller.abort(),10000);
+    try{
+      const response=await fetch('/series-episodes-direct.php?'+params.toString(),{
+        cache:'no-store',
+        signal:controller.signal,
+        headers:{Accept:'application/json'}
+      });
+      if(!response.ok)throw new Error(`Proxy HTTP ${response.status}`);
+      return normalizePayload(await response.json());
+    }finally{
+      clearTimeout(timer);
+      signal?.removeEventListener?.('abort',relayAbort);
+    }
+  }
+
   async function directResolve(item,signal){
     const rawTitle=String(item?.name||item?.title||'').trim();
     const clean=cleanTitle(rawTitle)||rawTitle;
     const year=yearOf(item);
-    for(const title of [...new Set([clean,rawTitle].filter(Boolean))]){
+    const titles=[...new Set([clean,rawTitle].filter(Boolean))];
+
+    for(const title of titles){
+      try{
+        const show=await fetchSameOriginProxy(title,year,signal);
+        if(episodeCount(show)>0)return show;
+      }catch(_error){}
+    }
+
+    for(const title of titles){
       try{
         const params=new URLSearchParams({title,_:String(Date.now())});
         if(year)params.set('year',year);
@@ -147,7 +179,7 @@
     jobs.push(fetchJson('/api/series/detail?'+detail.toString(),signal,9000));
 
     for(const q of [...new Set([title,rawTitle].filter(Boolean))]){
-      const search=new URLSearchParams({q,kind:'series',page:'0',limit:'48',massive:'1',authority:'episodes-v13',_:String(Date.now())});
+      const search=new URLSearchParams({q,kind:'series',page:'0',limit:'48',massive:'1',authority:'episodes-v14',_:String(Date.now())});
       jobs.push(fetchJson('/api/search?'+search.toString(),signal,9000));
       const seriesParams=new URLSearchParams({q,page:'0',limit:'120',massive:'1',_:String(Date.now())});
       jobs.push(fetchJson('/api/series?'+seriesParams.toString(),signal,9000));
@@ -218,7 +250,7 @@
     const token=++activeToken;
     showLoading();
     const controller=new AbortController();
-    const timer=setTimeout(()=>controller.abort(),12500);
+    const timer=setTimeout(()=>controller.abort(),15000);
 
     activePromise=(async()=>{
       try{
@@ -230,7 +262,7 @@
         applyShow(live||item,show);
       }catch(error){
         if(token===activeToken&&modalOpen())showFailure();
-        console.warn('[Episodes v13]',error?.message||error);
+        console.warn('[Episodes v14]',error?.message||error);
       }finally{
         clearTimeout(timer);
         if(token===activeToken)activePromise=null;

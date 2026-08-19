@@ -118,12 +118,12 @@
   new MutationObserver(ms=>{ms.forEach(m=>m.addedNodes.forEach(n=>{if(n.nodeType===1)process(n);}));}).observe(document.documentElement,{childList:true,subtree:true});
 })();
 
-/* SV_MOBILE_DIRECT_HOME_LOADER_V3 */
+/* SV_MOBILE_DIRECT_HOME_LOADER_V4 */
 (function(){
-  if(window.__SV_MOBILE_DIRECT_HOME_LOADER_V3)return;
-  window.__SV_MOBILE_DIRECT_HOME_LOADER_V3=true;
+  if(window.__SV_MOBILE_DIRECT_HOME_LOADER_V4)return;
+  window.__SV_MOBILE_DIRECT_HOME_LOADER_V4=true;
   const script=document.createElement('script');
-  script.src='/mobile-direct-home-v1.js?v=20260819-mobile-direct-home-v3';
+  script.src='/mobile-direct-home-v1.js?v=20260819-mobile-direct-home-v4';
   script.defer=true;
   script.onerror=()=>{window.__SV_MOBILE_DIRECT_HOME_LOAD_ERROR=true;};
   document.head.appendChild(script);

@@ -7,6 +7,7 @@ const ROOT = process.cwd();
 const SERVER = path.join(ROOT, 'server.js');
 const BACKUP = path.join(ROOT, 'server.js.before-search-authority-v1.bak');
 const MARKER = 'SV_SEARCH_AUTHORITY_BACKEND_V1';
+const COVERAGE_MARKER = 'SV_SEARCH_AUTHORITY_KEEP_CATALOG_ONLY_V1';
 
 function findSearchRoute(source) {
   const exact = "app.get('/api/search', (req, res) => {";
@@ -19,6 +20,16 @@ function findSearchRoute(source) {
 if (!fs.existsSync(SERVER)) throw new Error(`server.js not found in ${ROOT}`);
 let source = fs.readFileSync(SERVER, 'utf8');
 if (!fs.existsSync(BACKUP)) fs.copyFileSync(SERVER, BACKUP);
+
+// The old fast-search code intentionally hid no-poster massive records whenever
+// poster-rich matches existed. That is incompatible with an exhaustive search bar:
+// a valid catalog title must remain searchable even if artwork metadata is missing.
+if (!source.includes(COVERAGE_MARKER)) {
+  const oldLine = "const NO_POSTER_MASSIVE_CAP = hasPosterResults ? 0 : Number(process.env.SV_SEARCH_NO_POSTER_CAP || 18);";
+  const newLine = `/* ${COVERAGE_MARKER} */\n  const NO_POSTER_MASSIVE_CAP = Number(process.env.SV_SEARCH_NO_POSTER_CAP || RESULT_CAP);`;
+  if (source.includes(oldLine)) source = source.replace(oldLine, newLine);
+  else console.warn('[Search Authority] no-poster filter line not found; continuing without that compatibility patch');
+}
 
 if (!source.includes(MARKER)) {
   const index = findSearchRoute(source);
@@ -93,6 +104,7 @@ app.get('/api/search-authority/status', (req, res) => {
       fuzzy: true,
       prefix: true,
       typoTolerance: true,
+      catalogOnlyVisible: true,
       source: 'local+ftp+massive+boot'
     });
   } catch (error) {
@@ -125,15 +137,11 @@ app.get('/api/search', (req, res, next) => {
       }
     };
 
-    // The fast index already covers local media, catalog.json FTP media and the
-    // Circle/runtime massive catalog. It performs exact, prefix and fuzzy token matching.
     for (const variant of variants) {
       append(svFastSearch(svAuthoritySearchRequest(req, variant), kind) || []);
       if (merged.length >= Math.max(limit * 4, 240)) break;
     }
 
-    // Merge boot-index results only as supplemental coverage. They never replace
-    // authoritative full-catalog matches and cannot erase them.
     try {
       const boot = svQueryBootSearchPaged(q, kind, Math.min(240, Math.max(limit * 2, 120)), 1);
       append(boot?.items || []);
@@ -157,7 +165,6 @@ app.get('/api/search', (req, res, next) => {
     });
   } catch (error) {
     console.error('[Search Authority] request failed:', error.stack || error.message);
-    // The old handler remains physically below this route as an emergency escape hatch.
     return next();
   }
 });
@@ -176,8 +183,8 @@ svAuthorityWarmTimer.unref?.();
 `;
 
   source = source.slice(0, index) + hook + source.slice(index);
-  fs.writeFileSync(SERVER, source, 'utf8');
 }
 
+fs.writeFileSync(SERVER, source, 'utf8');
 console.log('[Search Authority] backend patch installed');
 console.log(`[Search Authority] backup: ${BACKUP}`);

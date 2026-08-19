@@ -2,6 +2,7 @@
   window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE || '';
 
   const FALLBACK_POSTER = '/fallback.webp';
+  const BACKEND_ORIGIN = 'https://backend.streamvault.fit';
   const searchPosterCache = new Map();
   const searchPosterPending = new Map();
 
@@ -9,6 +10,12 @@
     if(!u) return u;
     try{
       const parsed = new URL(u, location.href);
+      if(parsed.pathname.startsWith('/posters/')){
+        if(parsed.origin === location.origin || parsed.origin === 'https://streamvault.fit' || parsed.origin === 'https://www.streamvault.fit'){
+          return BACKEND_ORIGIN + parsed.pathname + parsed.search + parsed.hash;
+        }
+        return parsed.href;
+      }
       if(parsed.pathname === '/poster-cache' || parsed.pathname === '/image-proxy'){
         const source = parsed.searchParams.get('url');
         if(source && /^https:\/\/image\.tmdb\.org\/t\/p\//i.test(source))return source;

@@ -129,29 +129,22 @@
 (function(){
   if(window.__SV_SOFTWARE_ARTWORK_PROXY_V2)return;
   window.__SV_SOFTWARE_ARTWORK_PROXY_V2=true;
-
   try{
     const raw=JSON.parse(localStorage.getItem('sv_sw_art_v1')||'{}');
     const clean={};
-    for(const [key,value] of Object.entries(raw||{})){
-      if(value && value.id)clean[key]=value;
-    }
+    for(const [key,value] of Object.entries(raw||{}))if(value&&value.id)clean[key]=value;
     localStorage.setItem('sv_sw_art_v1',JSON.stringify(clean));
-  }catch(_error){
-    try{localStorage.removeItem('sv_sw_art_v1');}catch(_ignore){}
-  }
+  }catch(_error){try{localStorage.removeItem('sv_sw_art_v1');}catch(_ignore){}}
 
   const previousFetch=window.fetch.bind(window);
   window.fetch=function(input,init){
     try{
       const rawUrl=typeof input==='string'||input instanceof URL?String(input):String(input?.url||'');
       const url=new URL(rawUrl,location.href);
-      if(url.hostname==='store.steampowered.com' && url.pathname==='/api/storesearch/'){
+      if(url.hostname==='store.steampowered.com'&&url.pathname==='/api/storesearch/'){
         const title=String(url.searchParams.get('term')||'').trim();
         const localUrl=`/software-artwork.php?title=${encodeURIComponent(title)}`;
-        const nextInit={...(init||{})};
-        delete nextInit.mode;
-        delete nextInit.credentials;
+        const nextInit={...(init||{})};delete nextInit.mode;delete nextInit.credentials;
         return previousFetch(localUrl,nextInit);
       }
     }catch(_error){}
@@ -159,16 +152,16 @@
   };
 })();
 
-/* SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V11 */
+/* SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V12 */
 (function(){
-  if(window.__SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V11)return;
-  window.__SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V11=true;
-  // Prevent a stale cached V10 asset from taking control while the V11 asset is fetched.
+  if(window.__SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V12)return;
+  window.__SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V12=true;
   window.__svMediaEpisodesV10=true;
+  window.__svMediaEpisodesV11=true;
   const script=document.createElement('script');
-  script.src='/series-modal-episodes-v7.js?v=20260819-series-episodes-v11';
+  script.src='/series-modal-episodes-v7.js?v=20260819-series-episodes-v12';
   script.async=false;
-  script.onerror=()=>{window.__SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V11_LOAD_ERROR=true;};
+  script.onerror=()=>{window.__SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V12_LOAD_ERROR=true;};
   document.head.appendChild(script);
 })();
 
@@ -183,13 +176,13 @@
   document.head.appendChild(script);
 })();
 
-/* SV_SEARCH_AUTHORITY_LOADER_V2 */
+/* SV_SEARCH_AUTHORITY_LOADER_V3 */
 (function(){
-  if(window.__SV_SEARCH_AUTHORITY_LOADER_V2)return;
-  window.__SV_SEARCH_AUTHORITY_LOADER_V2=true;
+  if(window.__SV_SEARCH_AUTHORITY_LOADER_V3)return;
+  window.__SV_SEARCH_AUTHORITY_LOADER_V3=true;
   const script=document.createElement('script');
-  script.src='/search-authority-v2.js?v=20260819-search-authority-v2';
+  script.src='/search-authority-v2.js?v=20260819-search-authority-v3';
   script.defer=true;
-  script.onerror=()=>{window.__SV_SEARCH_AUTHORITY_LOAD_ERROR=true;};
+  script.onerror=()=>{window.__SV_SEARCH_AUTHORITY_V3_LOAD_ERROR=true;};
   document.head.appendChild(script);
 })();

@@ -1,9 +1,10 @@
-/* SV_MEDIA_EPISODES_V12 — parallel full-catalog episode authority */
+/* SV_MEDIA_EPISODES_V13 — direct episode authority first, catalog fallbacks second */
 (function(){
   'use strict';
-  if(window.__svMediaEpisodesV12)return;
+  if(window.__svMediaEpisodesV13)return;
+  window.__svMediaEpisodesV13=true;
   window.__svMediaEpisodesV12=true;
-  window.__SV_SERIES_EPISODES_VERSION='20260819-series-episodes-v12';
+  window.__SV_SERIES_EPISODES_VERSION='20260820-series-episodes-v13-direct';
 
   let activeToken=0;
   let activeKey='';
@@ -109,10 +110,28 @@
     return normalizePayload(await response.json());
   }
 
+  async function directResolve(item,signal){
+    const rawTitle=String(item?.name||item?.title||'').trim();
+    const clean=cleanTitle(rawTitle)||rawTitle;
+    const year=yearOf(item);
+    for(const title of [...new Set([clean,rawTitle].filter(Boolean))]){
+      try{
+        const params=new URLSearchParams({title,_:String(Date.now())});
+        if(year)params.set('year',year);
+        const show=await fetchJson('/api/series/episodes-direct?'+params.toString(),signal,9000);
+        if(episodeCount(show)>0)return show;
+      }catch(_error){}
+    }
+    return null;
+  }
+
   async function resolveShow(item,signal){
     const cacheKey=identityKey(item);
     const cached=resolvedCache.get(cacheKey);
     if(cached&&episodeCount(cached)>0)return cached;
+
+    const direct=await directResolve(item,signal);
+    if(direct&&episodeCount(direct)>0){resolvedCache.set(cacheKey,direct);return direct;}
 
     const rawTitle=String(item?.name||item?.title||'').trim();
     const title=cleanTitle(rawTitle)||rawTitle;
@@ -128,7 +147,7 @@
     jobs.push(fetchJson('/api/series/detail?'+detail.toString(),signal,9000));
 
     for(const q of [...new Set([title,rawTitle].filter(Boolean))]){
-      const search=new URLSearchParams({q,kind:'series',page:'0',limit:'48',massive:'1',authority:'episodes-v12',_:String(Date.now())});
+      const search=new URLSearchParams({q,kind:'series',page:'0',limit:'48',massive:'1',authority:'episodes-v13',_:String(Date.now())});
       jobs.push(fetchJson('/api/search?'+search.toString(),signal,9000));
       const seriesParams=new URLSearchParams({q,page:'0',limit:'120',massive:'1',_:String(Date.now())});
       jobs.push(fetchJson('/api/series?'+seriesParams.toString(),signal,9000));
@@ -211,7 +230,7 @@
         applyShow(live||item,show);
       }catch(error){
         if(token===activeToken&&modalOpen())showFailure();
-        console.warn('[Episodes v12]',error?.message||error);
+        console.warn('[Episodes v13]',error?.message||error);
       }finally{
         clearTimeout(timer);
         if(token===activeToken)activePromise=null;

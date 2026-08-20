@@ -1886,7 +1886,8 @@ function switchTab(tab){
   const isHome=tab==='discover';
   closeSearchOverlay(true);
   document.getElementById('mainSection').style.display=isHome?'block':'none';
-  document.getElementById('hero').style.display=isHome?'block':'none';
+  const hero=document.getElementById('hero');
+  if(hero)hero.style.display=isHome?'block':'none';
   document.getElementById('discoverIntro').style.display=isHome?'flex':'none';
   document.getElementById('seriesSection').style.display=tab==='series'?'block':'none';
   document.getElementById('liveSection').style.display=tab==='live'?'block':'none';
@@ -2253,8 +2254,8 @@ function buildHero(){
   setHero(0);startHeroTimer();
   let tx=0;
   const hEl=document.getElementById('hero');
-  hEl.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;},{passive:true});
-  hEl.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-tx;if(Math.abs(dx)>50){dx<0?setHero((heroIdx+1)%heroMovies.length):setHero((heroIdx-1+heroMovies.length)%heroMovies.length);resetHeroTimer();}},{passive:true});
+  hEl?.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;},{passive:true});
+  hEl?.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-tx;if(Math.abs(dx)>50){dx<0?setHero((heroIdx+1)%heroMovies.length):setHero((heroIdx-1+heroMovies.length)%heroMovies.length);resetHeroTimer();}},{passive:true});
 }
 function setHero(idx){
   heroIdx=idx;const m=heroMovies[idx];if(!m)return;
@@ -7296,8 +7297,8 @@ function svLegacyHandleSearchUnused(q){
     document.getElementById('mobileSearchGrid').innerHTML=total?cards:empty;
   }else{
     const main=document.getElementById('mainSection'),sec=document.getElementById('searchSection'),hero=document.getElementById('hero');
-    if(!q.trim()){sec.style.display='none';main.style.display='';hero.style.display='';return;}
-    main.style.display='none';hero.style.display='none';sec.style.display='block';
+    if(!q.trim()){sec.style.display='none';main.style.display='';if(hero)hero.style.display='';return;}
+    main.style.display='none';if(hero)hero.style.display='none';sec.style.display='block';
     document.getElementById('searchLabel').textContent=total?`Results for "${q}" — ${total} title${total>1?'s':''}`:`No results for "${q}"`;
     document.getElementById('searchGrid').innerHTML=total?cards:'<div class="empty"><h2>Nothing found</h2></div>';
   }
@@ -8783,7 +8784,8 @@ function svHandleSearchNow(q){
     try{if(location.hash==='#downloads')history.replaceState(null,'',location.pathname+location.search);}catch{}
     currentTab='search';
     document.getElementById('mainSection').style.display='none';
-    document.getElementById('hero').style.display='none';
+    const hero=document.getElementById('hero');
+    if(hero)hero.style.display='none';
     document.getElementById('discoverIntro').style.display='none';
     document.getElementById('seriesSection').style.display='none';
     document.getElementById('moviesSection').style.display='none';
@@ -8798,7 +8800,8 @@ function svHandleSearchNow(q){
   }else{
     document.getElementById('searchSection').style.display='none';
     document.getElementById('mainSection').style.display='';
-    document.getElementById('hero').style.display='';
+    const hero=document.getElementById('hero');
+    if(hero)hero.style.display='';
     document.getElementById('discoverIntro').style.display='flex';
   }
 }
@@ -9937,5 +9940,4 @@ function buildRows(){
 
   svApplyHomeOrder();
 }
-
 

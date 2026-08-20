@@ -169,6 +169,17 @@
   document.head.appendChild(script);
 })();
 
+/* SV_SERIES_EPISODE_METADATA_LOADER_V17 */
+(function(){
+  if(window.__SV_SERIES_EPISODE_METADATA_LOADER_V17)return;
+  window.__SV_SERIES_EPISODE_METADATA_LOADER_V17=true;
+  const script=document.createElement('script');
+  script.src='/series-episode-metadata-v17.js?v=20260820-series-episode-metadata-v17';
+  script.defer=true;
+  script.onerror=()=>{window.__SV_SERIES_EPISODE_METADATA_V17_LOAD_ERROR=true;};
+  document.head.appendChild(script);
+})();
+
 /* SV_MOBILE_DIRECT_HOME_LOADER_V5 */
 (function(){
   if(window.__SV_MOBILE_DIRECT_HOME_LOADER_V5)return;

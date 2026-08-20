@@ -401,7 +401,9 @@
       if(!root||root.style.display==='none'||!root.querySelector('.media-modal-episode'))apply(lastPayload,info.key);
       return;
     }
-    await hydrate(info);
+    try{await hydrate(info);}catch(_){
+      // hydrate() already renders the unavailable state; consume the failure at this polling boundary.
+    }
   }
 
   function scheduleTick(){
@@ -415,7 +417,7 @@
       const result=previousOpenMediaModal.apply(this,arguments);
       setTimeout(()=>{
         const info=infoFromItem(item||runtimeItem());
-        if(modalVisible()&&looksLikeSeries(info))void hydrate(info);
+        if(modalVisible()&&looksLikeSeries(info))void hydrate(info).catch(()=>{});
       },0);
       return result;
     };

@@ -3473,7 +3473,10 @@ function svInstallDesktopMediaModalOverride(){
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
-    openMediaModal(item,mediaModalTypeFor(item));
+    if(mediaModalTypeFor(item) === 'tv'){
+      const key=registerSeriesForDetail(item);
+      openSeriesDetail(key);
+    }else openMediaModal(item,'movie');
   };
   const preload=event=>{
     const card=event.target?.closest?.('.card');
@@ -3590,11 +3593,10 @@ function hydrateOpenSeriesDetail(show){
 
 function openSeriesModal(showName){
   const show=series.find(s=>s.name===showName||esc(s.name)===showName);
-  if(show && window.innerWidth > 768){
-    openMediaModal(show,'tv');
-    return;
+  if(show){
+    const key=registerSeriesForDetail(show);
+    openSeriesDetail(key);
   }
-  if(show)showSeriesDetail(show);
   return;
   if(!show)return;
   currentShow=show;

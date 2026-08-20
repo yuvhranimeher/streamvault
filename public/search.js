@@ -1,5 +1,5 @@
 (function(){
-  const BOOT_SEARCH_VERSION = '20260624-playable-only-search1';
+  const BOOT_SEARCH_VERSION = '20260821-canonical-series-prefetch1';
   const BOOT_INDEX_URL = `/boot-search-index.json?v=${BOOT_SEARCH_VERSION}`;
   const BOOT_INDEX_API_URL = `/api/boot-search-index?v=${BOOT_SEARCH_VERSION}`;
   const SEARCH_DELAY = 90;

@@ -23,7 +23,7 @@ DirectoryIndex index.html
 
   # Critical frontend authorities are hot-patched and must never be held behind
   # the generic five-minute JavaScript cache.
-  <FilesMatch "^(?:hostinger-poster-fix|series-modal-episodes-v7|search-authority-v2)\.js$">
+  <FilesMatch "^(?:hostinger-poster-fix|series-modal-episodes-v7|series-episode-metadata-v17|search-authority-v2)\.js$">
     Header always set Cache-Control "no-cache, no-store, max-age=0, must-revalidate"
     Header always set Pragma "no-cache"
     Header always set Expires "0"

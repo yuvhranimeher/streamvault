@@ -1,31 +1,31 @@
-/* SV_MEDIA_EPISODES_V14 — same-origin episode proxy first, backend fallbacks second */
+/* SV_MEDIA_EPISODES_V15 — DOM-level direct episode authority */
 (function(){
   'use strict';
-  if(window.__svMediaEpisodesV14)return;
+  if(window.__svMediaEpisodesV15)return;
+  window.__svMediaEpisodesV15=true;
   window.__svMediaEpisodesV14=true;
   window.__svMediaEpisodesV13=true;
   window.__svMediaEpisodesV12=true;
-  window.__SV_SERIES_EPISODES_VERSION='20260820-series-episodes-v14-proxy';
+  window.__SV_SERIES_EPISODES_VERSION='20260820-series-episodes-v15-dom-direct';
 
-  let activeToken=0;
-  let activeKey='';
-  let activePromise=null;
-  const resolvedCache=new Map();
+  const cache=new Map();
+  let requestKey='';
+  let requestPromise=null;
+  let lastPayload=null;
+  let lastPayloadKey='';
+  let observerTimer=0;
 
-  function modalOpen(){
-    const modal=document.getElementById('mediaModal');
-    return !!modal&&!modal.classList.contains('hidden')&&modal.getAttribute('aria-hidden')!=='true';
+  function modal(){return document.getElementById('mediaModal');}
+  function modalVisible(){
+    const el=modal();
+    if(!el||el.classList.contains('hidden'))return false;
+    try{
+      const style=getComputedStyle(el);
+      if(style.display==='none'||style.visibility==='hidden')return false;
+    }catch(_){}
+    return true;
   }
-  function currentItem(){
-    try{if(typeof currentMediaModalItem!=='undefined'&&currentMediaModalItem)return currentMediaModalItem;}catch(_){}
-    try{if(typeof currentShow!=='undefined'&&currentShow)return currentShow;}catch(_){}
-    return null;
-  }
-  function currentType(){try{return String(typeof currentMediaModalType!=='undefined'?currentMediaModalType:'').toLowerCase();}catch(_){return '';}}
-  function isSeries(item){
-    const type=String(item?.type||item?.mediaType||currentType()).toLowerCase();
-    return type==='tv'||type==='series'||type==='show'||!!item?.seasons||/\b(?:tv\s+(?:mini\s+)?series|web\s+series|series)\b/i.test(String(item?.name||item?.title||''));
-  }
+
   function cleanTitle(value){
     return String(value||'')
       .replace(/^\s*about\s+/i,'')
@@ -40,247 +40,243 @@
       .trim();
   }
   function norm(value){return cleanTitle(value).toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();}
-  function yearOf(item){
-    const direct=String(item?.year||'').match(/(?:19|20)\d{2}/)?.[0];
-    if(direct)return direct;
-    return String(item?.name||item?.title||'').match(/(?:19|20)\d{2}/)?.[0]||'';
+  function yearFrom(value){return String(value||'').match(/(?:19|20)\d{2}/)?.[0]||'';}
+
+  function runtimeItem(){
+    try{if(typeof currentMediaModalItem!=='undefined'&&currentMediaModalItem)return currentMediaModalItem;}catch(_){}
+    try{if(typeof currentShow!=='undefined'&&currentShow)return currentShow;}catch(_){}
+    return null;
   }
-  function identityKey(item){return [String(item?.id??''),norm(item?.name||item?.title),yearOf(item)].join('|');}
-  function sameIdentity(a,b){
-    if(!a||!b)return false;
-    const aid=String(a?.id??'').trim(),bid=String(b?.id??'').trim();
-    if(aid&&bid&&aid===bid)return true;
-    const at=norm(a?.name||a?.title),bt=norm(b?.name||b?.title);
-    if(!at||!bt||at!==bt)return false;
-    const ay=yearOf(a),by=yearOf(b);
-    return !ay||!by||ay===by;
+
+  function domTitle(){
+    const el=modal();if(!el)return '';
+    const nodes=[...el.querySelectorAll('h1,h2,h3,.media-modal-title,.modal-title,[class*="title"]')];
+    const texts=nodes.map(node=>String(node.textContent||'').replace(/\s+/g,' ').trim()).filter(Boolean);
+    const about=texts.find(text=>/^About\s+/i.test(text));
+    if(about)return about.replace(/^About\s+/i,'').trim();
+    const series=texts.find(text=>/\b(?:TV\s+(?:Mini\s+)?Series|Web\s+Series|Series)\b/i.test(text)&&!/^Episodes$/i.test(text));
+    if(series)return series;
+    return texts.find(text=>text.length>1&&!/^(?:Details|Episodes|About|More Like This)$/i.test(text))||'';
   }
+
+  function titleInfo(){
+    const item=runtimeItem();
+    let raw='';
+    try{raw=String(item?.name||item?.title||'').trim();}catch(_){}
+    if(!raw)raw=domTitle();
+    const clean=cleanTitle(raw)||raw;
+    const year=yearFrom(item?.year)||yearFrom(raw)||yearFrom(domTitle());
+    return {item,raw,clean,year,key:`${norm(clean)}|${year}`};
+  }
+
+  function looksLikeSeries(info){
+    try{
+      const type=String(info?.item?.type||info?.item?.mediaType||'').toLowerCase();
+      if(['tv','series','show'].includes(type))return true;
+      if(info?.item?.seasons)return true;
+      if(typeof currentMediaModalType!=='undefined'&&['tv','series','show'].includes(String(currentMediaModalType).toLowerCase()))return true;
+    }catch(_){}
+    const text=`${info?.raw||''} ${modal()?.textContent||''}`;
+    return /\b(?:TV\s+(?:Mini\s+)?Series|Web\s+Series|Type\s*Series)\b/i.test(text);
+  }
+
   function seasonsObject(show){
     const source=show?.seasons||{};
+    const out={};
     if(Array.isArray(source)){
-      const out={};
       source.forEach((season,index)=>{
-        const num=Number(season?.season??season?.seasonNumber??season?.number??index+1)||index+1;
+        const n=Number(season?.season??season?.seasonNumber??season?.number??index+1)||index+1;
         const eps=Array.isArray(season?.episodes)?season.episodes:(Array.isArray(season)?season:[]);
-        if(eps.length)out[num]=eps;
+        if(eps.length)out[n]=eps;
       });
       return out;
     }
-    const out={};
     Object.entries(source).forEach(([key,value])=>{
       const eps=Array.isArray(value)?value:(Array.isArray(value?.episodes)?value.episodes:[]);
       if(eps.length)out[Number(key)||key]=eps;
     });
     return out;
   }
-  function episodeCount(show){return Object.values(seasonsObject(show)).reduce((n,eps)=>n+(Array.isArray(eps)?eps.length:0),0);}
-  function normalizePayload(payload){try{return window.StreamVaultConfig?.normalizeBackendUrls?.(payload)??payload;}catch(_){return payload;}}
-  function rowsFromPayload(payload){
-    if(Array.isArray(payload))return payload;
-    for(const key of ['series','items','results'])if(Array.isArray(payload?.[key]))return payload[key];
-    return [];
-  }
-  function candidateScore(row,item,title){
-    const episodes=episodeCount(row);if(!episodes)return -1;
-    const target=norm(title||item?.name||item?.title),name=norm(row?.name||row?.title);
-    if(!target||!name)return -1;
-    let score=0;
-    if(String(item?.id??'')&&String(row?.id??'')===String(item.id))score+=5000;
-    if(name===target)score+=4000;
-    else if(name.startsWith(target+' ')||target.startsWith(name+' '))score+=2500;
-    else{
-      const a=new Set(target.split(/\s+/)),b=new Set(name.split(/\s+/));let hit=0;a.forEach(x=>{if(b.has(x))hit++;});
-      score+=(hit/Math.max(1,a.size))*1200;
-    }
-    const iy=yearOf(item),ry=yearOf(row);if(iy&&ry)score+=iy===ry?800:-800;
-    score+=Math.min(episodes,999);
-    return score;
-  }
-  function bestCandidate(rows,item,title){
-    return (Array.isArray(rows)?rows:[])
-      .map(row=>({row,score:candidateScore(row,item,title)}))
-      .filter(x=>x.score>=1200&&episodeCount(x.row)>0)
-      .sort((a,b)=>b.score-a.score||episodeCount(b.row)-episodeCount(a.row))[0]?.row||null;
-  }
+  function episodeCount(show){return Object.values(seasonsObject(show)).reduce((sum,eps)=>sum+(Array.isArray(eps)?eps.length:0),0);}
+  function esc(value){return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
 
-  async function fetchJson(path,signal,timeout=10000){
-    const options={cache:'no-store',signal,headers:{Accept:'application/json'}};
-    const fn=window.StreamVaultConfig?.fetchWithTimeout;
-    const response=fn?await fn(path,options,timeout):await fetch(path,options);
-    if(!response?.ok)throw new Error(`HTTP ${response?.status||0}`);
-    return normalizePayload(await response.json());
-  }
-
-  async function fetchSameOriginProxy(title,year,signal){
-    const params=new URLSearchParams({title,_:String(Date.now())});
-    if(year)params.set('year',year);
-    const controller=new AbortController();
-    const relayAbort=()=>controller.abort(signal?.reason);
-    if(signal?.aborted)relayAbort();
-    else signal?.addEventListener?.('abort',relayAbort,{once:true});
-    const timer=setTimeout(()=>controller.abort(),10000);
-    try{
-      const response=await fetch('/series-episodes-direct.php?'+params.toString(),{
-        cache:'no-store',
-        signal:controller.signal,
-        headers:{Accept:'application/json'}
-      });
-      if(!response.ok)throw new Error(`Proxy HTTP ${response.status}`);
-      return normalizePayload(await response.json());
-    }finally{
-      clearTimeout(timer);
-      signal?.removeEventListener?.('abort',relayAbort);
-    }
-  }
-
-  async function directResolve(item,signal){
-    const rawTitle=String(item?.name||item?.title||'').trim();
-    const clean=cleanTitle(rawTitle)||rawTitle;
-    const year=yearOf(item);
-    const titles=[...new Set([clean,rawTitle].filter(Boolean))];
-
+  async function fetchDirect(info){
+    const titles=[...new Set([info.clean,info.raw].filter(Boolean))];
     for(const title of titles){
+      const params=new URLSearchParams({title,_:String(Date.now())});
+      if(info.year)params.set('year',info.year);
       try{
-        const show=await fetchSameOriginProxy(title,year,signal);
-        if(episodeCount(show)>0)return show;
-      }catch(_error){}
+        const response=await fetch('/series-episodes-direct.php?'+params.toString(),{
+          cache:'no-store',headers:{Accept:'application/json'}
+        });
+        if(response.ok){
+          const show=await response.json();
+          if(episodeCount(show)>0)return show;
+        }
+      }catch(_){}
     }
-
     for(const title of titles){
+      const params=new URLSearchParams({title,_:String(Date.now())});
+      if(info.year)params.set('year',info.year);
       try{
-        const params=new URLSearchParams({title,_:String(Date.now())});
-        if(year)params.set('year',year);
-        const show=await fetchJson('/api/series/episodes-direct?'+params.toString(),signal,9000);
-        if(episodeCount(show)>0)return show;
-      }catch(_error){}
+        const path='/api/series/episodes-direct?'+params.toString();
+        const fn=window.StreamVaultConfig?.fetchWithTimeout;
+        const response=fn
+          ? await fn(path,{cache:'no-store',headers:{Accept:'application/json'}},10000)
+          : await fetch(path,{cache:'no-store',headers:{Accept:'application/json'}});
+        if(response?.ok){
+          const show=await response.json();
+          if(episodeCount(show)>0)return show;
+        }
+      }catch(_){}
     }
     return null;
   }
 
-  async function resolveShow(item,signal){
-    const cacheKey=identityKey(item);
-    const cached=resolvedCache.get(cacheKey);
-    if(cached&&episodeCount(cached)>0)return cached;
-
-    const direct=await directResolve(item,signal);
-    if(direct&&episodeCount(direct)>0){resolvedCache.set(cacheKey,direct);return direct;}
-
-    const rawTitle=String(item?.name||item?.title||'').trim();
-    const title=cleanTitle(rawTitle)||rawTitle;
-    const year=yearOf(item);
-    const id=String(item?.id??'').trim();
-    const jobs=[];
-
-    const detail=new URLSearchParams();
-    if(id)detail.set('id',id);
-    if(title)detail.set('name',title);
-    if(year)detail.set('year',year);
-    detail.set('_',String(Date.now()));
-    jobs.push(fetchJson('/api/series/detail?'+detail.toString(),signal,9000));
-
-    for(const q of [...new Set([title,rawTitle].filter(Boolean))]){
-      const search=new URLSearchParams({q,kind:'series',page:'0',limit:'48',massive:'1',authority:'episodes-v14',_:String(Date.now())});
-      jobs.push(fetchJson('/api/search?'+search.toString(),signal,9000));
-      const seriesParams=new URLSearchParams({q,page:'0',limit:'120',massive:'1',_:String(Date.now())});
-      jobs.push(fetchJson('/api/series?'+seriesParams.toString(),signal,9000));
-    }
-
-    const settled=await Promise.allSettled(jobs);
-    const rows=[];
-    for(const result of settled){
-      if(result.status!=='fulfilled')continue;
-      const value=result.value;
-      if(episodeCount(value)>0)rows.push(value);
-      rows.push(...rowsFromPayload(value));
-    }
-    const best=bestCandidate(rows,item,title);
-    if(best){resolvedCache.set(cacheKey,best);return best;}
-    return null;
+  function normalizedShow(show){
+    const seasons=seasonsObject(show);
+    return {...show,seasons,isSummary:false,streamAvailable:true,hasStream:true};
   }
 
-  function showLoading(){
-    const root=document.getElementById('modalEpisodes');if(!root)return;
-    root.className='media-modal-section';root.style.display='';
-    root.innerHTML='<h2 class="media-modal-heading">Episodes</h2><div class="no-data">Loading episodes…</div>';
-  }
-  function showFailure(){
-    const root=document.getElementById('modalEpisodes');if(!root)return;
-    root.className='media-modal-section';root.style.display='';
-    root.innerHTML='<h2 class="media-modal-heading">Episodes</h2><div class="no-data">Could not load episodes</div>';
-  }
-  function copyIntoMatchingRuntimeObjects(source,target){
-    const seasons=seasonsObject(source);
-    if(!Object.keys(seasons).length)return;
-    const apply=obj=>{
-      if(!obj||!sameIdentity(obj,target))return;
-      const keep={poster:obj.poster,backdrop:obj.backdrop,overview:obj.overview,rating:obj.rating,genre:obj.genre,year:obj.year};
-      Object.assign(obj,source,{seasons,isSummary:false});
-      for(const [key,value] of Object.entries(keep))if(!obj[key]&&value)obj[key]=value;
-    };
-    apply(target);
-    try{apply(currentMediaModalItem);}catch(_){}
-    try{apply(currentShow);}catch(_){}
-    try{if(Array.isArray(series))series.forEach(apply);}catch(_){}
-  }
-  function applyShow(item,show){
-    const seasons=seasonsObject(show);if(!Object.keys(seasons).length)return false;
-    copyIntoMatchingRuntimeObjects({...show,seasons},item);
-    const live=currentItem();
-    const target=live&&sameIdentity(live,item)?live:item;
-    Object.assign(target,show,{seasons,isSummary:false});
-    try{currentShow=target;}catch(_){}
+  function writeRuntime(show){
+    try{currentShow=show;}catch(_){}
     try{
-      const available=Object.keys(seasons).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
-      if(available.length&&(!available.includes(Number(currentSeason))))currentSeason=available[0];
+      if(typeof currentMediaModalItem!=='undefined'&&currentMediaModalItem&&typeof currentMediaModalItem==='object')Object.assign(currentMediaModalItem,show);
     }catch(_){}
-    if(typeof renderMediaModalEpisodes==='function')renderMediaModalEpisodes(target);
+    try{currentMediaModalType='tv';}catch(_){}
+    try{
+      if(typeof currentSeason!=='undefined'){
+        const available=Object.keys(show.seasons||{}).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
+        if(available.length&&!available.includes(Number(currentSeason)))currentSeason=available[0];
+      }
+    }catch(_){}
+  }
+
+  function repairDetails(show){
+    const count=Object.keys(show?.seasons||{}).length;
+    if(!count)return;
+    const el=modal();if(!el)return;
+    const candidates=[...el.querySelectorAll('*')];
+    for(const node of candidates){
+      if(String(node.textContent||'').trim().toUpperCase()!=='RUNTIME')continue;
+      const card=node.closest('[class*="detail"], [class*="meta"], div');
+      if(!card)continue;
+      const values=[...card.querySelectorAll('*')].filter(x=>x!==node&&/^(?:0|\d+)\s+seasons?$/i.test(String(x.textContent||'').trim()));
+      if(values[0])values[0].textContent=`${count} season${count===1?'':'s'}`;
+      break;
+    }
+  }
+
+  function renderDirect(show,selectedSeason){
+    const root=document.getElementById('modalEpisodes');if(!root)return false;
+    const seasons=Object.keys(show.seasons||{}).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
+    if(!seasons.length)return false;
+    const season=seasons.includes(Number(selectedSeason))?Number(selectedSeason):seasons[0];
+    const episodes=show.seasons[season]||[];
+    const options=seasons.map(n=>`<option value="${n}"${n===season?' selected':''}>Season ${n}</option>`).join('');
+    const fallback=String(show.backdrop||show.poster||'');
+    const cards=episodes.map((episode,index)=>{
+      const number=episode?.episode||episode?.number||index+1;
+      const title=episode?.epTitle||episode?.title||episode?.name||`Episode ${number}`;
+      const image=episode?.thumb||episode?.thumbnail||episode?.poster||fallback;
+      return `<button class="media-modal-episode" type="button" data-episode-index="${index}" onclick="window.__svEpisodesV15Play(${season},${index})">${image?`<img src="${esc(image)}" alt="" loading="lazy">`:''}<span class="media-modal-episode-copy"><span class="media-modal-episode-number">Episode ${esc(number)}</span><span class="media-modal-episode-title">${esc(title)}</span></span></button>`;
+    }).join('');
+    root.className='media-modal-section';
+    root.style.display='';
+    root.dataset.svEpisodeAuthority='v15';
+    root.innerHTML=`<h2 class="media-modal-heading">Episodes</h2><div class="media-modal-season-row"><select aria-label="Season" onchange="window.__svEpisodesV15Season(this.value)">${options}</select></div><div class="media-modal-episodes">${cards}</div>`;
     return true;
   }
 
-  async function hydrate(item){
-    if(!item||!isSeries(item)||!modalOpen())return;
-    if(episodeCount(item)>0){applyShow(item,item);return;}
-
-    const key=identityKey(item);
-    const cached=resolvedCache.get(key);
-    if(cached&&episodeCount(cached)>0){applyShow(item,cached);return;}
-    if(activePromise&&activeKey===key)return activePromise;
-
-    activeKey=key;
-    const token=++activeToken;
-    showLoading();
-    const controller=new AbortController();
-    const timer=setTimeout(()=>controller.abort(),15000);
-
-    activePromise=(async()=>{
-      try{
-        const show=await resolveShow(item,controller.signal);
-        if(token!==activeToken||!modalOpen())return;
-        const live=currentItem();
-        if(live&&!sameIdentity(live,item))return;
-        if(!show||episodeCount(show)<1){showFailure();return;}
-        applyShow(live||item,show);
-      }catch(error){
-        if(token===activeToken&&modalOpen())showFailure();
-        console.warn('[Episodes v14]',error?.message||error);
-      }finally{
-        clearTimeout(timer);
-        if(token===activeToken)activePromise=null;
+  function apply(show,key){
+    const normalized=normalizedShow(show);
+    if(!episodeCount(normalized))return false;
+    lastPayload=normalized;
+    lastPayloadKey=key||lastPayloadKey;
+    writeRuntime(normalized);
+    let rendered=false;
+    try{
+      if(typeof renderMediaModalEpisodes==='function'){
+        renderMediaModalEpisodes(normalized);
+        rendered=!!document.querySelector('#modalEpisodes .media-modal-episode');
       }
-    })();
-    return activePromise;
+    }catch(_){}
+    if(!rendered)renderDirect(normalized);
+    const root=document.getElementById('modalEpisodes');
+    if(root){root.style.display='';root.classList.add('media-modal-section');root.dataset.svEpisodeAuthority='v15';}
+    repairDetails(normalized);
+    return true;
   }
 
-  function check(){
-    if(!modalOpen())return;
-    const item=currentItem();if(item&&isSeries(item))hydrate(item);
+  window.__svEpisodesV15Season=function(value){
+    if(!lastPayload)return;
+    try{currentSeason=Number(value);}catch(_){}
+    try{
+      if(typeof renderMediaModalEpisodes==='function'){
+        renderMediaModalEpisodes(lastPayload,Number(value));
+        const root=document.getElementById('modalEpisodes');if(root){root.style.display='';root.dataset.svEpisodeAuthority='v15';}
+        return;
+      }
+    }catch(_){}
+    renderDirect(lastPayload,Number(value));
+  };
+
+  window.__svEpisodesV15Play=function(season,index){
+    if(!lastPayload)return;
+    writeRuntime(lastPayload);
+    try{currentSeason=Number(season);}catch(_){}
+    try{
+      if(typeof playMediaModalEpisode==='function')return playMediaModalEpisode(Number(season),Number(index));
+    }catch(_){}
+    const episode=lastPayload?.seasons?.[Number(season)]?.[Number(index)];
+    const url=episode?.streamUrl||episode?.url||'';
+    if(url)window.open(url,'_blank','noopener');
+  };
+
+  function showLoading(){
+    const root=document.getElementById('modalEpisodes');if(!root)return;
+    root.className='media-modal-section';root.style.display='';root.dataset.svEpisodeAuthority='v15-loading';
+    root.innerHTML='<h2 class="media-modal-heading">Episodes</h2><div class="no-data">Loading episodes…</div>';
   }
-  if(typeof openMediaModal==='function'){
-    const previousOpenMediaModal=openMediaModal;
-    openMediaModal=function(){
-      const result=previousOpenMediaModal.apply(this,arguments);
-      const item=arguments[0];setTimeout(()=>hydrate(item),0);return result;
-    };
+
+  async function tick(){
+    if(!modalVisible())return;
+    const info=titleInfo();
+    if(!info.clean||!looksLikeSeries(info))return;
+    const root=document.getElementById('modalEpisodes');
+    if(lastPayload&&lastPayloadKey===info.key){
+      if(!root||root.style.display==='none'||!root.querySelector('.media-modal-episode'))apply(lastPayload,info.key);
+      return;
+    }
+    if(cache.has(info.key)){
+      apply(cache.get(info.key),info.key);
+      return;
+    }
+    if(requestPromise&&requestKey===info.key)return;
+    requestKey=info.key;
+    showLoading();
+    requestPromise=(async()=>{
+      try{
+        const show=await fetchDirect(info);
+        if(!show||!episodeCount(show))return;
+        cache.set(info.key,show);
+        if(modalVisible()&&titleInfo().key===info.key)apply(show,info.key);
+      }catch(_){}
+      finally{requestPromise=null;}
+    })();
+    return requestPromise;
   }
-  setInterval(check,650);
+
+  function scheduleTick(){
+    clearTimeout(observerTimer);
+    observerTimer=setTimeout(()=>{void tick();},40);
+  }
+
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',scheduleTick,{once:true});
+  else scheduleTick();
+  setInterval(()=>{void tick();},400);
+  try{
+    new MutationObserver(scheduleTick).observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['class','style','aria-hidden']});
+  }catch(_){}
+  window.addEventListener('streamvault:backend-online',scheduleTick);
 })();

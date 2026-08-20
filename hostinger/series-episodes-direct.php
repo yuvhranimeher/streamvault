@@ -2,8 +2,7 @@
 declare(strict_types=1);
 
 header('Content-Type: application/json; charset=utf-8');
-header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-header('Pragma: no-cache');
+header('Cache-Control: public, max-age=300, stale-while-revalidate=86400');
 
 $title = trim((string)($_GET['title'] ?? ''));
 $year = trim((string)($_GET['year'] ?? ''));
@@ -14,11 +13,27 @@ if ($title === '') {
     exit;
 }
 
-$params = ['title' => $title, '_' => (string)time()];
-if ($year !== '' && preg_match('/^(19|20)\d{2}$/', $year)) {
-    $params['year'] = $year;
+if ($year !== '' && !preg_match('/^(19|20)\d{2}$/', $year)) $year = '';
+
+$cacheDir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'streamvault-series-episodes-v2';
+$cacheKey = hash('sha256', strtolower($title) . '|' . $year);
+$cacheFile = $cacheDir . DIRECTORY_SEPARATOR . $cacheKey . '.json';
+$cacheTtl = 21600; // six hours: catalog episode lists are effectively static
+$cachedBody = '';
+$cachedMtime = 0;
+
+if (is_file($cacheFile)) {
+    $cachedMtime = (int)@filemtime($cacheFile);
+    $cachedBody = (string)@file_get_contents($cacheFile);
+    if ($cachedBody !== '' && $cachedMtime > 0 && (time() - $cachedMtime) <= $cacheTtl) {
+        header('X-StreamVault-Episode-Cache: HIT');
+        echo $cachedBody;
+        exit;
+    }
 }
 
+$params = ['title' => $title];
+if ($year !== '') $params['year'] = $year;
 $url = 'https://backend.streamvault.fit/api/series/episodes-direct?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
 $body = false;
 $status = 0;
@@ -29,10 +44,11 @@ if (function_exists('curl_init')) {
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_CONNECTTIMEOUT => 5,
-        CURLOPT_TIMEOUT => 15,
+        CURLOPT_CONNECTTIMEOUT => 2,
+        CURLOPT_TIMEOUT => 8,
         CURLOPT_HTTPHEADER => ['Accept: application/json'],
-        CURLOPT_USERAGENT => 'StreamVault-Hostinger-SeriesProxy/1.0',
+        CURLOPT_USERAGENT => 'StreamVault-Hostinger-SeriesProxy/2.0',
+        CURLOPT_ENCODING => '',
     ]);
     $body = curl_exec($ch);
     $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
@@ -42,9 +58,9 @@ if (function_exists('curl_init')) {
     $context = stream_context_create([
         'http' => [
             'method' => 'GET',
-            'timeout' => 15,
+            'timeout' => 8,
             'ignore_errors' => true,
-            'header' => "Accept: application/json\r\nUser-Agent: StreamVault-Hostinger-SeriesProxy/1.0\r\n",
+            'header' => "Accept: application/json\r\nUser-Agent: StreamVault-Hostinger-SeriesProxy/2.0\r\n",
         ],
     ]);
     $body = @file_get_contents($url, false, $context);
@@ -53,14 +69,28 @@ if (function_exists('curl_init')) {
     }
 }
 
-if ($body === false || $body === '') {
-    http_response_code(502);
-    echo json_encode(['ok' => false, 'error' => 'Episode backend unavailable', 'detail' => $error]);
+if ($body !== false && $body !== '' && $status >= 200 && $status < 300) {
+    $decoded = json_decode($body, true);
+    if (is_array($decoded) && !empty($decoded['seasons'])) {
+        if (!is_dir($cacheDir)) @mkdir($cacheDir, 0775, true);
+        if (is_dir($cacheDir)) @file_put_contents($cacheFile, $body, LOCK_EX);
+        header('X-StreamVault-Episode-Cache: MISS');
+        echo $body;
+        exit;
+    }
+}
+
+// During a backend/tunnel hiccup, an older episode list is much better than a spinner.
+if ($cachedBody !== '') {
+    header('X-StreamVault-Episode-Cache: STALE');
+    header('Warning: 110 - "Response is stale"');
+    echo $cachedBody;
     exit;
 }
 
-if ($status < 200 || $status >= 300) {
-    http_response_code($status >= 400 && $status <= 599 ? $status : 502);
-}
-
-echo $body;
+http_response_code($status >= 400 && $status <= 599 ? $status : 502);
+echo json_encode([
+    'ok' => false,
+    'error' => 'Episode backend unavailable',
+    'detail' => $error,
+]);

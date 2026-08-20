@@ -189,3 +189,14 @@
   script.onerror=()=>{window.__SV_SEARCH_AUTHORITY_V3_LOAD_ERROR=true;};
   document.head.appendChild(script);
 })();
+
+/* SV_MODAL_SCROLL_PRESERVE_LOADER_V1 */
+(function(){
+  if(window.__SV_MODAL_SCROLL_PRESERVE_LOADER_V1)return;
+  window.__SV_MODAL_SCROLL_PRESERVE_LOADER_V1=true;
+  const script=document.createElement('script');
+  script.src='/modal-scroll-preserve-v1.js?v=20260820-modal-scroll-preserve-v1';
+  script.defer=true;
+  script.onerror=()=>{window.__SV_MODAL_SCROLL_PRESERVE_V1_LOAD_ERROR=true;};
+  document.head.appendChild(script);
+})();

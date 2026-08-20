@@ -3,7 +3,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const MARKER = 'SV_SERIES_EPISODE_AUTHORITY_V3';
+// New marker forces replacement of older V3 installs already stamped into
+// server.js on long-running production machines.
+const MARKER = 'SV_SERIES_EPISODE_AUTHORITY_V4_GLOBAL';
 
 function installSeriesEpisodeAuthorityV3() {
   const serverPath = path.join(__dirname, '..', 'server.js');

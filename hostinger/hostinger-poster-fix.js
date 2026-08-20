@@ -152,30 +152,20 @@
   };
 })();
 
-/* SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V15 */
+/* SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V16 */
 (function(){
-  if(window.__SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V15)return;
-  window.__SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V15=true;
+  if(window.__SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V16)return;
+  window.__SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V16=true;
   window.__svMediaEpisodesV10=true;
   window.__svMediaEpisodesV11=true;
   window.__svMediaEpisodesV12=true;
   window.__svMediaEpisodesV13=true;
   window.__svMediaEpisodesV14=true;
+  window.__svMediaEpisodesV15=true;
   const script=document.createElement('script');
-  script.src='/series-modal-episodes-v7.js?v=20260820-series-episodes-v15-dom-direct';
+  script.src='/series-modal-episodes-v7.js?v=20260820-series-episodes-v16-fast-stable-titles';
   script.async=false;
-  script.onerror=()=>{window.__SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V15_LOAD_ERROR=true;};
-  document.head.appendChild(script);
-})();
-
-/* SV_SERIES_EPISODE_TITLE_REPAIR_LOADER_V1 */
-(function(){
-  if(window.__SV_SERIES_EPISODE_TITLE_REPAIR_LOADER_V1)return;
-  window.__SV_SERIES_EPISODE_TITLE_REPAIR_LOADER_V1=true;
-  const script=document.createElement('script');
-  script.src='/series-episode-title-repair-v1.js?v=20260820-episode-title-repair-v1';
-  script.defer=true;
-  script.onerror=()=>{window.__SV_SERIES_EPISODE_TITLE_REPAIR_V1_LOAD_ERROR=true;};
+  script.onerror=()=>{window.__SV_GLOBAL_SERIES_EPISODE_AUTHORITY_V16_LOAD_ERROR=true;};
   document.head.appendChild(script);
 })();
 

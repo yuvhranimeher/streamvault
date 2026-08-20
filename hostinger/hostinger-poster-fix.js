@@ -162,6 +162,8 @@
   window.__svMediaEpisodesV13=true;
   window.__svMediaEpisodesV14=true;
   window.__svMediaEpisodesV15=true;
+  const declaredScript=document.querySelector('script[src*="/series-modal-episodes-v7.js"]');
+  if(declaredScript)return;
   const script=document.createElement('script');
   script.src='/series-modal-episodes-v7.js?v=20260820-series-episodes-v16-fast-stable-titles';
   script.async=false;

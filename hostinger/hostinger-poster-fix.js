@@ -168,6 +168,17 @@
   document.head.appendChild(script);
 })();
 
+/* SV_SERIES_EPISODE_TITLE_REPAIR_LOADER_V1 */
+(function(){
+  if(window.__SV_SERIES_EPISODE_TITLE_REPAIR_LOADER_V1)return;
+  window.__SV_SERIES_EPISODE_TITLE_REPAIR_LOADER_V1=true;
+  const script=document.createElement('script');
+  script.src='/series-episode-title-repair-v1.js?v=20260820-episode-title-repair-v1';
+  script.defer=true;
+  script.onerror=()=>{window.__SV_SERIES_EPISODE_TITLE_REPAIR_V1_LOAD_ERROR=true;};
+  document.head.appendChild(script);
+})();
+
 /* SV_MOBILE_DIRECT_HOME_LOADER_V5 */
 (function(){
   if(window.__SV_MOBILE_DIRECT_HOME_LOADER_V5)return;

@@ -304,7 +304,7 @@
       const number=episode?.episode||episode?.number||index+1;
       const title=episodeDisplayTitle(episode,index,show?.name||show?.title||'');
       const image=episode?.thumb||episode?.thumbnail||episode?.poster||fallback;
-      return `<button class="media-modal-episode" type="button" data-episode-index="${index}" onclick="window.__svEpisodesV16Play(${season},${index})">${image?`<img src="${esc(image)}" alt="" loading="lazy">`:''}<span class="media-modal-episode-copy"><span class="media-modal-episode-number">Episode ${esc(number)}</span><span class="media-modal-episode-title">${esc(title)}</span></span></button>`;
+      return `<div class="media-modal-episode" data-episode-index="${index}"><button class="media-modal-episode-play" type="button" onclick="window.__svEpisodesV16Play(${season},${index})" aria-label="Play Episode ${esc(number)}">${image?`<img src="${esc(image)}" alt="" loading="lazy">`:''}<span class="media-modal-episode-copy"><span class="media-modal-episode-number">Episode ${esc(number)}</span><span class="media-modal-episode-title">${esc(title)}</span></span></button><button class="media-modal-episode-download" type="button" onclick="window.__svEpisodesV16Download(event,${season},${index})" title="Download Episode ${esc(number)}" aria-label="Download Episode ${esc(number)}">${typeof mediaDownloadIconSvg==='function'?mediaDownloadIconSvg():''}</button></div>`;
     }).join('');
     root.className='media-modal-section';
     root.style.display='';
@@ -314,7 +314,8 @@
   }
 
   function apply(rawShow,key){
-    const show=normalizeShow(rawShow);
+    const identity=runtimeItem();
+    const show=normalizeShow(rawShow?.id ? rawShow : {...rawShow,id:identity?.id || ''});
     if(!episodeCount(show))return false;
     lastPayload=show;
     lastPayloadKey=key||lastPayloadKey;
@@ -344,6 +345,14 @@
     const episode=lastPayload?.seasons?.[Number(season)]?.[Number(index)]||lastPayload?.seasons?.[String(season)]?.[Number(index)];
     const url=episode?.streamUrl||episode?.url||'';
     if(url)window.open(url,'_blank','noopener');
+  };
+
+  window.__svEpisodesV16Download=function(event,season,index){
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    if(typeof downloadSeriesEpisode==='function')return downloadSeriesEpisode(event,Number(season),Number(index),lastPayload);
+    if(typeof showToast==='function')showToast('Download unavailable');
+    return false;
   };
   window.__svEpisodesV15Play=window.__svEpisodesV16Play;
 

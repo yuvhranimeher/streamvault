@@ -386,7 +386,7 @@
 
     buttons.style.display="flex";
 
-    if(!document.getElementById("svMoviePlayV10")){
+    if(!document.getElementById("svMoviePlayV10") || !document.getElementById("svMovieDownloadV10")){
       buttons.innerHTML=`
         <button id="svMoviePlayV10"
           class="sv-movie-play-v10"
@@ -396,11 +396,24 @@
           </svg>
           Play
         </button>
+        <button id="svMovieDownloadV10"
+          class="sv-movie-download-v10"
+          type="button"
+          title="Download original media file"
+          aria-label="Download ${String(movie?.name || movie?.title || 'movie').replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]))}">
+          ${typeof mediaDownloadIconSvg==='function'?mediaDownloadIconSvg():''}
+          Download
+        </button>
       `;
     }
 
     document.getElementById("svMoviePlayV10").onclick=function(){
       startMovie(movie,this);
+    };
+    document.getElementById("svMovieDownloadV10").onclick=function(event){
+      if(typeof downloadMovieFromDetail==='function')return downloadMovieFromDetail(event,movie);
+      if(typeof showToast==='function')showToast('Download unavailable');
+      return false;
     };
   }
 
@@ -418,6 +431,20 @@
       font:800 15px/1 system-ui,sans-serif;
       cursor:pointer;
     }
+    .sv-movie-download-v10{
+      display:inline-flex;
+      align-items:center;
+      gap:9px;
+      padding:13px 24px;
+      border:0;
+      border-radius:7px;
+      background:rgba(109,109,110,.75);
+      color:#fff;
+      font:800 15px/1 system-ui,sans-serif;
+      cursor:pointer;
+    }
+    .sv-movie-download-v10:hover{background:rgba(109,109,110,.92)}
+    .sv-movie-download-v10 .media-download-icon{width:19px;height:19px}
     .sv-movie-play-v10 svg{
       width:20px;
       height:20px;

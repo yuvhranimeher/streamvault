@@ -315,7 +315,10 @@
 
   function apply(rawShow,key){
     const identity=runtimeItem();
-    const show=normalizeShow(rawShow?.id ? rawShow : {...rawShow,id:identity?.id || ''});
+    const canonicalId=/^series_[a-f0-9]+$/i.test(String(identity?.id || ''))
+      ? identity.id
+      : rawShow?.id || identity?.id || '';
+    const show=normalizeShow({...rawShow,id:canonicalId});
     if(!episodeCount(show))return false;
     lastPayload=show;
     lastPayloadKey=key||lastPayloadKey;

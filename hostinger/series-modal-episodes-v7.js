@@ -1,11 +1,12 @@
-/* SV_MEDIA_EPISODES_V16 — fast direct episode authority + stable titles */
+/* SV_MEDIA_EPISODES_V17 — synchronous canonical render + eager visible artwork */
 (function(){
   'use strict';
-  if(window.__svMediaEpisodesV16)return;
+  if(window.__svMediaEpisodesV17)return;
+  window.__svMediaEpisodesV17=true;
   window.__svMediaEpisodesV16=true;
   window.__svMediaEpisodesV15=true;
   window.__svMediaEpisodesV14=true;
-  window.__SV_SERIES_EPISODES_VERSION='20260820-series-episodes-v16-fast-stable-titles';
+  window.__SV_SERIES_EPISODES_VERSION='20260823-series-episodes-v17-instant-canonical-artwork';
 
   const memoryCache=new Map();
   const pending=new Map();
@@ -312,12 +313,17 @@
       const number=episode?.episode||episode?.number||index+1;
       const title=episodeDisplayTitle(episode,index,show?.name||show?.title||'');
       const image=episode?.thumb||episode?.thumbnail||episode?.poster||fallback;
-      return `<div class="media-modal-episode" data-episode-index="${index}"><button class="media-modal-episode-play" type="button" onclick="window.__svEpisodesV16Play(${season},${index})" aria-label="Play Episode ${esc(number)}">${image?`<img src="${esc(image)}" alt="" loading="lazy">`:''}<span class="media-modal-episode-copy"><span class="media-modal-episode-number">Episode ${esc(number)}</span><span class="media-modal-episode-title">${esc(title)}</span></span></button><button class="media-modal-episode-download" type="button" onclick="window.__svEpisodesV16Download(event,${season},${index})" title="Download Episode ${esc(number)}" aria-label="Download Episode ${esc(number)}">${typeof mediaDownloadIconSvg==='function'?mediaDownloadIconSvg():''}</button></div>`;
+      const eager=index<10;
+      const imageMarkup=image
+        ? `<img src="${esc(image)}" alt="" loading="${eager?'eager':'lazy'}" decoding="async"${index<6?' fetchpriority="high"':''}>`
+        : '';
+      return `<div class="media-modal-episode" data-episode-index="${index}"><button class="media-modal-episode-play" type="button" onclick="window.__svEpisodesV16Play(${season},${index})" aria-label="Play Episode ${esc(number)}">${imageMarkup}<span class="media-modal-episode-copy"><span class="media-modal-episode-number">Episode ${esc(number)}</span><span class="media-modal-episode-title">${esc(title)}</span></span></button><button class="media-modal-episode-download" type="button" onclick="window.__svEpisodesV16Download(event,${season},${index})" title="Download Episode ${esc(number)}" aria-label="Download Episode ${esc(number)}">${typeof mediaDownloadIconSvg==='function'?mediaDownloadIconSvg():''}</button></div>`;
     }).join('');
     root.className='media-modal-section';
     root.style.display='';
-    root.dataset.svEpisodeAuthority='v16';
+    root.dataset.svEpisodeAuthority='v17';
     root.innerHTML=`<h2 class="media-modal-heading">Episodes</h2><div class="media-modal-season-row"><select aria-label="Season" onchange="window.__svEpisodesV16Season(this.value)">${options}</select></div><div class="media-modal-episodes">${cards}</div>`;
+    try{window.svPromoteRenderedEpisodeImages?.(root);}catch(_){}
     return true;
   }
 
@@ -333,6 +339,7 @@
     writeRuntime(show);
     let selected=1;
     try{selected=Number(currentSeason)||1;}catch(_){}
+    try{window.svWarmEpisodeImages?.(show,{priority:true,limit:12});}catch(_){}
     renderDirect(show,selected);
     repairDetails(show);
     return true;
@@ -369,18 +376,29 @@
 
   function showLoading(){
     const root=document.getElementById('modalEpisodes');if(!root)return;
-    root.className='media-modal-section';root.style.display='';root.dataset.svEpisodeAuthority='v16-loading';
+    root.className='media-modal-section';root.style.display='';root.dataset.svEpisodeAuthority='v17-loading';
     root.innerHTML='<h2 class="media-modal-heading">Episodes</h2><div class="no-data">Loading episodes…</div>';
   }
   function showFailure(){
     const root=document.getElementById('modalEpisodes');if(!root)return;
-    root.className='media-modal-section';root.style.display='';root.dataset.svEpisodeAuthority='v16-failed';
+    root.className='media-modal-section';root.style.display='';root.dataset.svEpisodeAuthority='v17-failed';
     root.innerHTML='<h2 class="media-modal-heading">Episodes</h2><div class="no-data">Episodes temporarily unavailable</div>';
   }
 
   async function hydrate(info){
     if(!info?.clean||!looksLikeSeries(info)||!modalVisible())return;
     const key=info.key;
+
+    /* The canonical prefetcher may already have attached complete seasons to the
+       clicked card. Render that data synchronously instead of flashing a loading
+       state and awaiting an already-resolved Promise. */
+    if(info.item&&episodeCount(info.item)>0){
+      const embedded=normalizeShow(info.item);
+      memoryCache.set(key,embedded);
+      savePersistent(key,embedded);
+      apply(embedded,key);
+      return embedded;
+    }
 
     const mem=memoryCache.get(key);
     if(mem){apply(mem,key);return mem;}
@@ -428,17 +446,15 @@
 
   function scheduleTick(){
     clearTimeout(observerTimer);
-    observerTimer=setTimeout(()=>{void tick();},20);
+    observerTimer=setTimeout(()=>{void tick();},0);
   }
 
   if(typeof openMediaModal==='function'){
     const previousOpenMediaModal=openMediaModal;
     openMediaModal=function(item){
       const result=previousOpenMediaModal.apply(this,arguments);
-      setTimeout(()=>{
-        const info=infoFromItem(item||runtimeItem());
-        if(modalVisible()&&looksLikeSeries(info))void hydrate(info).catch(()=>{});
-      },0);
+      const info=infoFromItem(item||runtimeItem());
+      if(modalVisible()&&looksLikeSeries(info))void hydrate(info).catch(()=>{});
       return result;
     };
   }

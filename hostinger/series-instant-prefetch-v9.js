@@ -1,11 +1,14 @@
-/* SV_CANONICAL_SERIES_PREFETCH_V10 */
+/* SV_CANONICAL_SERIES_PREFETCH_V11 — earlier detail prefetch + episode artwork warming */
 (function(){
-  if(window.__svCanonicalSeriesPrefetchV10)return;
+  if(window.__svCanonicalSeriesPrefetchV11)return;
+  window.__svCanonicalSeriesPrefetchV11=true;
   window.__svCanonicalSeriesPrefetchV10=true;
 
   const detailCache=window.__svCanonicalSeriesDetailCache || new Map();
   window.__svCanonicalSeriesDetailCache=detailCache;
-  const maxConcurrentRequests=8;
+  const imageCache=window.__svCanonicalEpisodeImageCache || new Map();
+  window.__svCanonicalEpisodeImageCache=imageCache;
+  const maxConcurrentRequests=12;
   const requestQueue=[];
   const debug=window.__svSeriesPrefetchDebug || {
     networkRequests:0,
@@ -13,7 +16,8 @@
     inFlightHits:0,
     observedCards:0,
     activeRequests:0,
-    queuedRequests:0
+    queuedRequests:0,
+    warmedImages:0
   };
   window.__svSeriesPrefetchDebug=debug;
   let activeRequests=0;
@@ -35,6 +39,56 @@
     if(!key)return null;
     const cached=detailCache.get(key);
     return cached && typeof cached.then!=='function' ? cached : null;
+  }
+  function seasonEpisodes(show){
+    const seasons=show?.seasons || {};
+    const keys=Object.keys(seasons).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
+    if(!keys.length)return [];
+    const first=seasons[keys[0]] || seasons[String(keys[0])] || [];
+    return Array.isArray(first) ? first : (Array.isArray(first?.episodes) ? first.episodes : []);
+  }
+  function episodeImageUrl(ep,show){
+    return String(ep?.thumb || ep?.thumbnail || ep?.poster || show?.backdrop || show?.poster || '').trim();
+  }
+  function warmImage(url,priority=false){
+    if(!url)return Promise.resolve(false);
+    const existing=imageCache.get(url);
+    if(existing)return existing;
+    const task=new Promise(resolve=>{
+      const img=new Image();
+      try{img.decoding='async';}catch(_){}
+      try{img.fetchPriority=priority?'high':'low';}catch(_){}
+      img.onload=()=>resolve(true);
+      img.onerror=()=>resolve(false);
+      img.src=url;
+      if(img.complete)resolve(true);
+    });
+    imageCache.set(url,task);
+    debug.warmedImages=(debug.warmedImages||0)+1;
+    return task;
+  }
+  function warmEpisodeImages(show,{priority=false,limit}={}){
+    const max=Number(limit)||(priority?12:6);
+    const seen=new Set();
+    seasonEpisodes(show).forEach(ep=>{
+      if(seen.size>=max)return;
+      const url=episodeImageUrl(ep,show);
+      if(!url||seen.has(url))return;
+      seen.add(url);
+      warmImage(url,priority);
+    });
+  }
+  function promoteRenderedEpisodeImages(root=document){
+    const images=Array.from(root?.querySelectorAll?.('.media-modal-episode img') || []);
+    images.forEach((img,index)=>{
+      if(index<10){
+        img.loading='eager';
+        try{img.fetchPriority=index<6?'high':'auto';}catch(_){}
+      }
+      try{img.decoding='async';}catch(_){}
+      const src=String(img.currentSrc || img.src || '').trim();
+      if(src)warmImage(src,index<6);
+    });
   }
   function runRequestQueue(){
     while(activeRequests<maxConcurrentRequests && requestQueue.length){
@@ -67,7 +121,7 @@
     if(show?.year)params.set('year',show.year);
     if(show?.tmdbId)params.set('tmdbId',show.tmdbId);
     debug.networkRequests++;
-    const response=await fetchWithTimeout(`/api/series/${encodeURIComponent(key)}?${params.toString()}`,{cache:'no-store'},15000);
+    const response=await fetchWithTimeout(`/api/series/${encodeURIComponent(key)}?${params.toString()}`,{cache:'default'},15000);
     if(!response?.ok)return null;
     let full=await response.json();
     full=window.StreamVaultConfig?.normalizeBackendUrls?.(full) ?? full;
@@ -79,13 +133,19 @@
     if(!key)return Promise.resolve(null);
     if(episodeCount(show)>0){
       detailCache.set(key,show);
+      warmEpisodeImages(show,{priority});
       return Promise.resolve(show);
     }
     if(detailCache.has(key)){
       const cached=detailCache.get(key);
       if(cached && typeof cached.then==='function')debug.inFlightHits++;
-      else debug.cacheHits++;
-      return cached && typeof cached.then==='function' ? cached : Promise.resolve(cached);
+      else{
+        debug.cacheHits++;
+        warmEpisodeImages(cached,{priority});
+      }
+      return cached && typeof cached.then==='function'
+        ? cached.then(full=>{warmEpisodeImages(full,{priority});return full;})
+        : Promise.resolve(cached);
     }
     const pending=enqueueRequest(()=>requestCanonicalSeries(show,key),priority)
       .then(full=>{
@@ -95,6 +155,7 @@
         }
         detailCache.set(key,full);
         detailCache.set(String(full.id),full);
+        warmEpisodeImages(full,{priority});
         return full;
       })
       .catch(error=>{
@@ -113,6 +174,7 @@
       if(index>=0)series[index]=show;
     }
     detailCache.set(String(full.id),show);
+    warmEpisodeImages(show,{priority:true});
     return show;
   }
   function seriesShowFromCard(card){
@@ -138,9 +200,9 @@
         entries.forEach(entry=>{
           if(!entry.isIntersecting)return;
           cardObserver.unobserve(entry.target);
-          prefetchCard(entry.target);
+          prefetchCard(entry.target,false);
         });
-      },{rootMargin:'700px 0px',threshold:0.01})
+      },{rootMargin:'2200px 0px',threshold:0.001})
     : null;
   function observeSeriesCards(root=document){
     const cards=[];
@@ -162,21 +224,32 @@
   });
   const mutationObserver=new MutationObserver(records=>{
     records.forEach(record=>record.addedNodes.forEach(node=>{
-      if(node.nodeType===1)observeSeriesCards(node);
+      if(node.nodeType===1){
+        observeSeriesCards(node);
+        if(node.matches?.('.media-modal-episode') || node.querySelector?.('.media-modal-episode'))promoteRenderedEpisodeImages(node);
+      }
     }));
   });
   mutationObserver.observe(document.body,{childList:true,subtree:true});
   observeSeriesCards(document);
   const warmFirstCards=()=>{
-    Array.from(document.querySelectorAll('.card')).filter(card=>seriesShowFromCard(card)).slice(0,12).forEach(card=>prefetchCard(card));
+    Array.from(document.querySelectorAll('.card'))
+      .filter(card=>seriesShowFromCard(card))
+      .slice(0,24)
+      .forEach(card=>prefetchCard(card,false));
   };
-  if('requestIdleCallback' in window)requestIdleCallback(warmFirstCards,{timeout:1800});
-  else setTimeout(warmFirstCards,250);
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',()=>requestAnimationFrame(warmFirstCards),{once:true});
+  }else{
+    requestAnimationFrame(warmFirstCards);
+  }
 
   window.getSeriesDetailKey=getSeriesDetailKey;
   window.getCachedSeriesDetail=getCachedSeriesDetail;
   window.prefetchSeriesDetail=prefetchSeriesDetail;
   window.svObserveSeriesCards=observeSeriesCards;
+  window.svWarmEpisodeImages=warmEpisodeImages;
+  window.svPromoteRenderedEpisodeImages=promoteRenderedEpisodeImages;
 
   openSeriesDetail=async function(detailKey){
     const show=_seriesDetailRegistry.get(detailKey);
@@ -186,6 +259,7 @@
     if(immediate){
       applyCanonicalDetail(detailKey,show,immediate);
       showSeriesDetail(show);
+      queueMicrotask(()=>promoteRenderedEpisodeImages(document));
       return;
     }
     showSeriesDetail(show);
@@ -197,6 +271,7 @@
       if(!mobileOpen && !desktopOpen)return;
       applyCanonicalDetail(detailKey,show,full);
       showSeriesDetail(show);
+      queueMicrotask(()=>promoteRenderedEpisodeImages(document));
     }catch(error){
       console.warn('[Series detail] Canonical hydration failed:',error?.message || error);
       if(!episodeCount(show))showToast('Episodes unavailable');

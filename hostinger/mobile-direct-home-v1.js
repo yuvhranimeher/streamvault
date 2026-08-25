@@ -1,9 +1,9 @@
-/* StreamVault mobile direct-play v5 — normal cards + homepage-style popularity ranking */
+/* StreamVault mobile direct-play v6 — preserve poster nodes while catalog pages merge */
 (function(){
   'use strict';
   if(window.__SV_MOBILE_DIRECT_HOME_V5)return;
   window.__SV_MOBILE_DIRECT_HOME_V5=true;
-  window.__SV_MOBILE_DIRECT_HOME_VERSION='20260819-mobile-direct-home-v5';
+  window.__SV_MOBILE_DIRECT_HOME_VERSION='20260825-poster-node-reuse-v6';
 
   const certified=new Map();
   const probe=document.createElement('video');
@@ -129,12 +129,20 @@
   }
 
   function rankItems(list){
-    return [...list].sort((a,b)=>
-      popularityScore(b)-popularityScore(a)
-      || Number(b?.rating||0)-Number(a?.rating||0)
-      || Number(String(b?.year||'').match(/(?:19|20)\d{2}/)?.[0]||0)-Number(String(a?.year||'').match(/(?:19|20)\d{2}/)?.[0]||0)
-      || String(a?.name||a?.title||'').localeCompare(String(b?.name||b?.title||''))
-    );
+    // popularityScore performs title normalization and trending-list lookups.
+    // Compute it once per item instead of on every sort comparison.
+    return list.map(item=>({
+      item,
+      score:popularityScore(item),
+      rating:Number(item?.rating||0),
+      year:Number(String(item?.year||'').match(/(?:19|20)\d{2}/)?.[0]||0),
+      title:String(item?.name||item?.title||'')
+    })).sort((a,b)=>
+      b.score-a.score
+      || b.rating-a.rating
+      || b.year-a.year
+      || a.title.localeCompare(b.title)
+    ).map(entry=>entry.item);
   }
 
   function dedupe(list){
@@ -202,6 +210,32 @@
     document.head.appendChild(style);
   }
 
+  function itemKey(item){
+    return String(item?.id || item?.streamUrl || (titleKey(item)+'|'+String(item?.year || '')));
+  }
+
+  function renderTrack(track){
+    const next=items.slice(0,60);
+    const existing=new Map(
+      Array.from(track.children).map(card=>[String(card.dataset.svMobileDirectKey || ''),card])
+    );
+    const fragment=document.createDocumentFragment();
+    next.forEach((item,index)=>{
+      const key=itemKey(item);
+      let card=existing.get(key);
+      if(!card){
+        const template=document.createElement('template');
+        template.innerHTML=nativeCard(item).trim();
+        card=template.content.firstElementChild;
+      }
+      if(!card)return;
+      card.dataset.svMobileDirectKey=key;
+      card.dataset.svMobileDirectIndex=String(index);
+      fragment.appendChild(card);
+    });
+    track.replaceChildren(fragment);
+  }
+
   function mount(){
     if(!items.length)return;
     const main=document.getElementById('mainSection');if(!main)return;
@@ -214,7 +248,7 @@
     }
     row.style.display='';
     const track=row.querySelector('#mobileDirectTrack');
-    track.innerHTML=items.slice(0,60).map(nativeCard).filter(Boolean).join('');
+    renderTrack(track);
     bindTrack(track);
   }
 

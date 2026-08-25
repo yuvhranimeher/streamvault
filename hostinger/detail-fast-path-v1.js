@@ -1,9 +1,9 @@
-/* STREAMVAULT_DETAIL_FAST_PATH_V1 */
+/* STREAMVAULT_DETAIL_FAST_PATH_V2 */
 (function(){
   'use strict';
   if(window.__SV_DETAIL_FAST_PATH_V1)return;
   window.__SV_DETAIL_FAST_PATH_V1=true;
-  window.__SV_DETAIL_FAST_PATH_VERSION='20260818-detail-fast-v1';
+  window.__SV_DETAIL_FAST_PATH_VERSION='20260825-poster-modal-perf-v2';
 
   const seriesCache=new Map();
   const seriesInflight=new Map();
@@ -12,7 +12,7 @@
   const warmedImages=new Set();
   const queuedItems=new Set();
   let backgroundPrefetchCount=0;
-  const MAX_BACKGROUND_PREFETCH=16;
+  const MAX_BACKGROUND_PREFETCH=0;
   const SESSION_PREFIX='sv:series-fast:v1:';
 
   function text(value){return String(value??'').trim();}
@@ -296,52 +296,36 @@
     else setTimeout(run,80);
   }
 
-  document.addEventListener('pointerover',event=>{const item=candidateFromElement(event.target);if(item)schedulePrime(item,true);},{capture:true,passive:true});
-  document.addEventListener('focusin',event=>{const item=candidateFromElement(event.target);if(item)schedulePrime(item,true);},true);
-  document.addEventListener('pointerdown',event=>{const item=candidateFromElement(event.target);if(item)schedulePrime(item,true);},{capture:true,passive:true});
+  // Card-detail prefetch is deliberately interaction-free. The previous
+  // observer enriched 16 cards and decoded large artwork during startup.
 
-  const observed=new WeakSet();
-  const observer='IntersectionObserver'in window?new IntersectionObserver(entries=>{
-    for(const entry of entries){
-      if(!entry.isIntersecting)continue;
-      const item=candidateFromElement(entry.target);
-      if(item)schedulePrime(item,false);
-      observer.unobserve(entry.target);
-    }
-  },{rootMargin:'700px 0px'}):null;
-  function scanCards(){
-    if(!observer)return;
-    document.querySelectorAll('.card,.movie-card,.series-card,.media-card,.search-card,.row-card,[onclick*="openSeriesDetail"],[onclick*="openMediaModal"]').forEach(card=>{
-      if(observed.has(card))return;
-      if(!card.querySelector('img')&&!/series|movie/i.test(text(card.className)))return;
-      observed.add(card);observer.observe(card);
+  let posterPriorityFrame=0;
+  function prioritizeVisiblePosters(){
+    posterPriorityFrame=0;
+    const viewportBottom=window.innerHeight+240;
+    const visible=Array.from(document.querySelectorAll('#mainSection .card img, #moviesSection .card img, #seriesSection .card img'))
+      .filter(image=>{
+        const rect=image.getBoundingClientRect();
+        return rect.bottom>0 && rect.top<viewportBottom
+          && rect.right>-240 && rect.left<window.innerWidth+480;
+      });
+    visible.forEach((image,index)=>{
+      image.loading='eager';
+      image.decoding='async';
+      try{image.fetchPriority=index<8?'high':'auto';}catch(_){}
+      const source=image.getAttribute('data-sv-src') || image.getAttribute('data-src');
+      if(source && !image.getAttribute('src'))image.src=source;
     });
   }
-  let scanTimer=0;
-  function queueScan(){clearTimeout(scanTimer);scanTimer=setTimeout(scanCards,120);}
-  new MutationObserver(queueScan).observe(document.body,{childList:true,subtree:true});
-  setTimeout(scanCards,80);
+  function queuePosterPriority(){
+    if(!posterPriorityFrame)posterPriorityFrame=requestAnimationFrame(prioritizeVisiblePosters);
+  }
+  const posterRoot=document.getElementById('mainSection') || document.body;
+  new MutationObserver(queuePosterPriority).observe(posterRoot,{childList:true,subtree:true});
+  queuePosterPriority();
 
-  try{
-    const previousOpenMediaModal=openMediaModal;
-    openMediaModal=function(item,requestedType=''){
-      if(item){
-        const cached=seriesCache.get(seriesKey(item))||sessionSeries(item)||bestSeries(allSeriesRows(),item);
-        if(cached&&isSeries(item))mergeSeries(item,cached);
-        const details=detailCache.get(detailKey(item));if(details)applyDetail(item,details);
-        primePreview(item);
-      }
-      const result=previousOpenMediaModal.apply(this,arguments);
-      if(item){
-        queueMicrotask(()=>{
-          if(isSeries(item))fastHydrate(item);
-          prefetchTitleDetails(item);
-        });
-      }
-      return result;
-    };
-    window.openMediaModal=openMediaModal;
-  }catch(_){ }
+  // The base modal already renders from in-memory catalog data. Avoid an
+  // additional title-details request and artwork warmup around every open.
 
   try{
     const style=document.createElement('style');
@@ -359,4 +343,124 @@
     document.head.appendChild(style);
     const preview=document.getElementById('modalPreview');if(preview)preview.preload='none';
   }catch(_){ }
+
+  function svModalStillCurrent(item,token){
+    const modal=document.getElementById('mediaModal');
+    return token===mediaModalRenderToken && currentMediaModalItem===item && modal && !modal.classList.contains('hidden');
+  }
+  function svModalIdle(callback){
+    if('requestIdleCallback' in window)return requestIdleCallback(callback,{timeout:600});
+    return setTimeout(callback,0);
+  }
+  function svModalTitleData(item,type,details={}){
+    const local={
+      ok:true,
+      title:item?.name || item?.title || '',
+      overview:item?.overview || '',
+      poster:item?.poster || '',
+      backdrop:item?.backdrop || item?.poster || '',
+      year:item?.year || '',
+      rating:item?.rating || '',
+      runtime:item?.runtime || '',
+      genres:item?.genre || item?.genres || '',
+      language:item?.language || '',
+      cast:Array.isArray(item?.cast) ? item.cast : [],
+      similar:Array.isArray(item?.similar) ? item.similar : []
+    };
+    return details?.ok ? {...local,...details} : local;
+  }
+  function svUpdateModalHeader(item,type,data){
+    const title=data.title || item.name || item.title || 'Untitled';
+    const meta=[data.rating ? '\u2605 '+data.rating : '',data.year || item.year || '',data.runtime || item.runtime || '',data.genres || item.genre || '',type==='tv'?'Series':'Movie'].filter(Boolean);
+    document.getElementById('modalTitle').textContent=title;
+    document.getElementById('modalMeta').textContent=meta.join('  \u2022  ');
+    document.getElementById('modalDescriptionHeading').textContent='About '+title;
+    document.getElementById('modalDescription').textContent=data.overview || item.overview || 'No overview is available for this title yet.';
+  }
+  function svRenderModalMetadata(item,type,data){
+    const extra=document.getElementById('modalExtraInfo');
+    extra.className='media-modal-section';
+    extra.innerHTML='<h2 class="media-modal-heading">Details</h2><div class="metadata-grid">'+metadataGridFromItems([
+      {label:'Year',value:data.year || item.year || 'Unknown'},
+      {label:'Rating',value:data.rating ? data.rating+'/10' : 'Unrated'},
+      {label:'Runtime',value:data.runtime || item.runtime || (type==='tv' ? Object.keys(item.seasons || {}).length+' seasons' : 'Unknown')},
+      {label:'Genres',value:data.genres || item.genre || 'Unknown'},
+      {label:'Language',value:data.language || item.language || 'Unknown'},
+      {label:'Type',value:type==='tv' ? 'Series' : 'Movie'}
+    ])+'</div>';
+  }
+  function svRenderModalCast(data){
+    const cast=Array.isArray(data.cast) ? data.cast.slice(0,12) : [];
+    const root=document.getElementById('modalCast');
+    root.className='media-modal-section';
+    root.style.display=cast.length ? '' : 'none';
+    root.innerHTML=cast.length ? '<h2 class="media-modal-heading">Cast</h2><div class="media-modal-cast-track">'+cast.map(person=>'<div class="person-card"><div class="person-photo">'+(person.image?'<img src="'+esc(person.image)+'" alt="'+esc(person.name || '')+'" loading="lazy" decoding="async">':personPlaceholder())+'</div><div class="person-name">'+esc(person.name || 'Unknown')+'</div><div class="person-role">'+esc(person.role || '')+'</div></div>').join('')+'</div>' : '';
+  }
+  function svRenderModalRelated(item,type,data){
+    const local=localTitleDetails(item,type);
+    const candidates=[...(Array.isArray(data.similar)?data.similar:[]),...(Array.isArray(local.similar)?local.similar:[])];
+    const seen=new Set();
+    const playable=filterPlayableMediaItems(candidates).filter(candidate=>{
+      const key=String(candidate.tmdbId || candidate.id || candidate.streamUrl || candidate.name || '').toLowerCase();
+      if(!key || seen.has(key))return false;
+      seen.add(key);return true;
+    }).slice(0,16);
+    const root=document.getElementById('modalRelated');
+    root.className='media-modal-section';
+    root.style.display=playable.length ? '' : 'none';
+    root.innerHTML=playable.length ? '<h2 class="media-modal-heading">More Like This</h2><div class="media-modal-related-track">'+playable.map(candidate=>(candidate.type==='tv'||candidate.seasons)?sCardHTML(candidate):cardHTML(candidate)).join('')+'</div>' : '';
+  }
+  function svRenderModalShell(item,type){
+    const data=svModalTitleData(item,type);
+    svUpdateModalHeader(item,type,data);
+    renderMediaModalActions(item,type);
+    const preview=document.getElementById('modalPreview');
+    preview.pause();
+    preview.removeAttribute('src');
+    preview.preload='none';
+    const artworkItem=data.backdrop || data.poster ? {...item,...data} : item;
+    svApplyMediaModalArtwork(preview,artworkItem,type,item);
+    svRenderModalMetadata(item,type,data);
+    const cast=document.getElementById('modalCast');
+    cast.innerHTML='';cast.style.display='none';
+    const related=document.getElementById('modalRelated');
+    related.innerHTML='';related.style.display='none';
+    if(type==='tv')renderMediaModalEpisodes(item);
+    else{
+      const episodes=document.getElementById('modalEpisodes');
+      episodes.innerHTML='';episodes.className='';episodes.style.display='none';
+    }
+  }
+
+  // Detail UI and playback metadata are separate. Playback fetches its own
+  // media information only after the user presses Play.
+  try{svPrewarmPlaybackMetadata=function(){};window.svPrewarmPlaybackMetadata=svPrewarmPlaybackMetadata;}catch(_){}
+  try{svQueueModalArtworkPreload=function(){};window.svQueueModalArtworkPreload=svQueueModalArtworkPreload;}catch(_){}
+
+  try{
+    populateModalFields=async function(item){
+      const type=currentMediaModalType;
+      const token=++mediaModalRenderToken;
+      svRenderModalShell(item,type);
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      try{
+        const details=await fetchTitleDetails(item,type);
+        if(!svModalStillCurrent(item,token))return;
+        mergeTitleDetails(item,details);
+        const data=svModalTitleData(item,type,details || {});
+        svUpdateModalHeader(item,type,data);
+        renderMediaModalActions(item,type);
+        svRenderModalMetadata(item,type,data);
+        if(data.backdrop || data.poster)svApplyMediaModalArtwork(document.getElementById('modalPreview'),{...item,...data},type,item);
+        svModalIdle(()=>{if(svModalStillCurrent(item,token))svRenderModalCast(data);});
+        svModalIdle(()=>{if(svModalStillCurrent(item,token))svRenderModalRelated(item,type,data);});
+      }catch(error){
+        if(error?.name!=='AbortError')console.warn('[Media Modal] Online details unavailable:',error?.message || error);
+      }
+    };
+    populateModal=function(item){return populateModalFields(item);};
+    window.populateModalFields=populateModalFields;
+    window.populateModal=populateModal;
+  }catch(_){}
+
 })();

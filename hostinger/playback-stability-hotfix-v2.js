@@ -1,10 +1,10 @@
-/* SV_PLAYBACK_STABILITY_HOTFIX_V2_20260818 */
+/* SV_PLAYBACK_STABILITY_HOTFIX_V3_20260825 */
 (function(){
   'use strict';
   if(window.__SV_PLAYBACK_STABILITY_HOTFIX_V2)return;
   window.__SV_PLAYBACK_STABILITY_HOTFIX_V2=true;
 
-  const VERSION='20260818-playback-stability-v2';
+  const VERSION='20260825-play-click-only-v3';
   const moviePrimePromises=new WeakMap();
   let autoplayIntentUntil=0;
 
@@ -91,40 +91,8 @@
     return Array.isArray(seasons[keys[0]]) ? seasons[keys[0]][0] : null;
   }
 
-  const previousOpenMediaModal=window.openMediaModal;
-  if(typeof previousOpenMediaModal==='function'){
-    window.openMediaModal=function stabilityOpenMediaModal(item,requestedType=''){
-      const result=previousOpenMediaModal.apply(this,arguments);
-      try{
-        const type=String(requestedType||item?.type||'').toLowerCase();
-        if(type==='series' || type==='tv' || item?.seasons)primeEpisode(firstEpisode(item));
-        else primeMovie(item);
-      }catch(_){ }
-      return result;
-    };
-  }
-
-  function episodeFromCard(card){
-    if(!card)return null;
-    const key=String(card.id||'').replace(/^epcard-/,'');
-    if(!key)return null;
-    try{
-      const seasons=(typeof currentShow!=='undefined' && currentShow?.seasons) ? currentShow.seasons : {};
-      for(const eps of Object.values(seasons)){
-        for(const ep of (Array.isArray(eps)?eps:[])){
-          if(String(ep?.streamId??'')===key)return ep;
-        }
-      }
-    }catch(_){ }
-    return null;
-  }
-
-  document.addEventListener('pointerover',event=>{
-    const card=event.target?.closest?.('.ep-card');
-    if(!card)return;
-    const ep=episodeFromCard(card);
-    if(ep)primeEpisode(ep);
-  },true);
+  // Opening or hovering a detail view must not probe media. The existing
+  // hydrate/playback path still primes metadata after an explicit Play.
 
   function isPlaybackStartControl(target){
     const el=target?.closest?.('button,.ep-card,[role="button"]');
@@ -203,3 +171,4 @@
 
   window.__SV_PLAYBACK_STABILITY_VERSION=VERSION;
 })();
+

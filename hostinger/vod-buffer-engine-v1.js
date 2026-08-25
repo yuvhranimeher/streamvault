@@ -1,9 +1,9 @@
-/* STREAMVAULT_VOD_BUFFER_ENGINE_V1 — one buffering rule for every VOD title */
+/* STREAMVAULT_VOD_BUFFER_ENGINE_V2 — buffer only after explicit playback */
 (function(){
   'use strict';
   if(window.__SV_VOD_BUFFER_ENGINE_V1)return;
   window.__SV_VOD_BUFFER_ENGINE_V1=true;
-  window.__SV_VOD_BUFFER_ENGINE_VERSION='20260818-vod-buffer-engine-v1';
+  window.__SV_VOD_BUFFER_ENGINE_VERSION='20260825-play-click-only-v2';
 
   const video=document.getElementById('videoPlayer');
   if(!video)return;
@@ -172,134 +172,8 @@
     }
   }catch(_){ }
 
-  async function warmHls(plan){
-    if(!plan?.src||String(plan.mode||'').toLowerCase()!=='hls')return;
-    try{
-      const controller=new AbortController();
-      const timer=setTimeout(()=>controller.abort(),6000);
-      const response=await fetch(plan.src,{cache:'no-store',signal:controller.signal,headers:{Accept:'application/vnd.apple.mpegurl,application/json;q=.9,*/*;q=.8'}});
-      if(response.ok)await response.text();
-      clearTimeout(timer);
-    }catch(_){ }
-  }
-
-  async function primeFtp(url){
-    const source=String(url||'').trim();
-    if(!source)return;
-    const key='ftp|'+source;
-    if(primeInflight.has(key))return primeInflight.get(key);
-    const task=(async()=>{
-      let info=null;
-      try{
-        if(typeof svFetchMediaInfoData==='function'&&typeof svFtpAudioInfoUrl==='function'){
-          info=await svFetchMediaInfoData(svFtpAudioInfoUrl(source),7000).catch(()=>null);
-        }
-      }catch(_){ }
-      let options={};
-      try{if(info&&typeof startupPlaybackOptions==='function')options=startupPlaybackOptions(info,source)||{};}catch(_){ }
-      try{
-        if(typeof window.fetchFtpPlaybackPlan==='function'){
-          const plan=await window.fetchFtpPlaybackPlan(source,0,{...options,fallbackReason:'detail preload'});
-          await warmHls(plan);
-        }
-      }catch(_){ }
-    })().finally(()=>primeInflight.delete(key));
-    primeInflight.set(key,task);
-    return task;
-  }
-
-  async function primeLocal(id,item={}){
-    if(id===undefined||id===null||id==='')return;
-    const key='local|'+String(id);
-    if(primeInflight.has(key))return primeInflight.get(key);
-    const task=(async()=>{
-      let info=null;
-      try{
-        if(typeof svFetchMediaInfoData==='function'&&typeof svLocalAudioInfoUrl==='function'){
-          info=await svFetchMediaInfoData(svLocalAudioInfoUrl(id),7000).catch(()=>null);
-        }
-      }catch(_){ }
-      let options={};
-      try{if(info&&typeof startupPlaybackOptions==='function')options=startupPlaybackOptions(info,item?.file||item?.name||'')||{};}catch(_){ }
-      try{
-        if(typeof window.fetchLocalPlaybackPlan==='function'){
-          const plan=await window.fetchLocalPlaybackPlan(id,0,{...options,fallbackReason:'detail preload'});
-          await warmHls(plan);
-        }
-      }catch(_){ }
-    })().finally(()=>primeInflight.delete(key));
-    primeInflight.set(key,task);
-    return task;
-  }
-
-  function primeEpisode(ep){
-    if(!ep)return;
-    if(ep.streamUrl)return primeFtp(ep.streamUrl);
-    if(ep.streamId!==undefined&&ep.streamId!==null)return primeLocal(ep.streamId,ep);
-  }
-  function firstEpisode(show){
-    const seasons=show?.seasons||{};
-    const keys=Object.keys(seasons).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
-    for(const season of keys){
-      const eps=Array.isArray(seasons[season])?seasons[season]:[];
-      if(eps.length)return eps[0];
-    }
-    return null;
-  }
-  async function primeItem(item,type=''){
-    if(!item)return;
-    const kind=String(type||item.type||item.mediaType||'').toLowerCase();
-    if(kind==='tv'||kind==='series'||kind==='show'||item.seasons){
-      const ep=firstEpisode(item);
-      if(ep)return primeEpisode(ep);
-      setTimeout(()=>{
-        try{
-          const current=(typeof currentShow!=='undefined'&&currentShow)||item;
-          primeEpisode(firstEpisode(current));
-        }catch(_){ }
-      },350);
-      return;
-    }
-    let resolved=item;
-    try{
-      if(!resolved.streamUrl&&typeof window.hydrateMoviePlayback==='function')resolved=await window.hydrateMoviePlayback(item)||item;
-    }catch(_){ }
-    if(resolved?.streamUrl)return primeFtp(resolved.streamUrl);
-    if(resolved?.streamId!==undefined&&resolved?.streamId!==null)return primeLocal(resolved.streamId,resolved);
-  }
-
-  try{
-    const previousOpenMediaModal=window.openMediaModal;
-    if(typeof previousOpenMediaModal==='function'){
-      window.openMediaModal=function bufferedOpenMediaModal(item,requestedType=''){
-        const result=previousOpenMediaModal.apply(this,arguments);
-        queueMicrotask(()=>primeItem(item,requestedType));
-        return result;
-      };
-    }
-  }catch(_){ }
-
-  function episodeFromCard(card){
-    if(!card)return null;
-    const key=String(card.id||'').replace(/^epcard-/,'');
-    try{
-      const show=typeof currentShow!=='undefined'?currentShow:null;
-      for(const eps of Object.values(show?.seasons||{})){
-        for(const ep of (Array.isArray(eps)?eps:[])){
-          if(key&&String(ep?.streamId??'')===key)return ep;
-        }
-      }
-    }catch(_){ }
-    return null;
-  }
-  document.addEventListener('pointerover',event=>{
-    const card=event.target?.closest?.('.ep-card');
-    if(card)primeEpisode(episodeFromCard(card));
-  },{capture:true,passive:true});
-  document.addEventListener('pointerdown',event=>{
-    const card=event.target?.closest?.('.ep-card');
-    if(card)primeEpisode(episodeFromCard(card));
-  },{capture:true,passive:true});
+  // Detail windows never probe media, resolve playback plans, or warm HLS.
+  // The existing playback functions perform this work after an explicit Play.
 
   window.__SV_VOD_BUFFER_STATS=()=>({
     version:window.__SV_VOD_BUFFER_ENGINE_VERSION,
@@ -311,3 +185,4 @@
     localPlans:localPlanCache.size
   });
 })();
+

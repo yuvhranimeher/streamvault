@@ -24,10 +24,14 @@
     return key;
   };
 
-  window._svEagerImageBudget = 9999;
+  // Keep eager loading for the small above-the-fold set only. The old 9,999
+  // budget caused every provider row to compete with the visible posters.
+  window._svEagerImageBudget = 12;
 
   svConsumeImageAttrs = function(priority=false, immediate=false){
-    const eager = true;
+    const budgeted = window._svEagerImageBudget > 0;
+    const eager = !!priority || (budgeted && !!immediate);
+    if(eager && !priority)window._svEagerImageBudget--;
     const fetchPriority = priority ? 'high' : (eager ? 'auto' : 'low');
     return eager
       ? `loading="eager" fetchpriority="${fetchPriority}" decoding="async" onload="this.dataset.svLoaded='1';this.classList.add('poster-loaded','is-loaded')"`

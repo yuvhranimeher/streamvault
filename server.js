@@ -6,6 +6,22 @@ const http    = require('http');
 const crypto  = require('crypto');
 const zlib    = require('zlib');
 const { spawn } = require('child_process');
+const { pipeline } = require('stream');
+const {
+  buildSeriesCatalog,
+  parseSeriesEntry,
+  walkVideoFiles,
+} = require('./lib/series-library');
+const {
+  createCanonicalSeriesIndex,
+  groupEpisodeRecords,
+  seriesSummary: canonicalSeriesSummary,
+} = require('./lib/canonical-series');
+const {
+  MediaDownloadError,
+  contentDisposition,
+  createMediaDownloadResolver,
+} = require('./lib/media-download');
 
 const tracker         = require('./middleware/tracker');
 const dashboardRoutes = require('./routes/dashboard');
@@ -45,7 +61,7 @@ app.use((req, res, next) => {
   next();
 });
 
-const PORT = 3000;
+const PORT = Math.max(1, Math.min(65535, Number(process.env.PORT || 3000) || 3000));
 const infraTelemetry = createInfraTelemetry({
   app,
   nodeName: 'mac-mini-streamvault',
@@ -55,14 +71,15 @@ const FFMPEG_BIN = process.env.FFMPEG_BIN || process.env.FFMPEG_PATH || 'ffmpeg'
 const FFPROBE_BIN = process.env.FFPROBE_BIN || process.env.FFPROBE_PATH || 'ffprobe';
 
 // â”€â”€ Paths â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-const MEDIA_ROOT   = 'C:\\Users\\Mac Mini\\Desktop\\Website Host\\Streaming_Website\\streamvault';
-const MOVIES_DIR   = 'C:\\Users\\Mac Mini\\Desktop\\Website Host\\Streaming_Website\\streamvault\\movies';
-const SERIES_DIR   = 'C:\\Users\\Mac Mini\\Desktop\\Website Host\\Streaming_Website\\streamvault\\series';
+const MEDIA_ROOT   = process.env.MEDIA_ROOT || __dirname;
+const MOVIES_DIR   = process.env.MOVIES_DIR || path.join(MEDIA_ROOT, 'movies');
+const SERIES_DIR   = process.env.SERIES_DIR || path.join(MEDIA_ROOT, 'series');
 const CACHE_FILE   = path.join(__dirname, 'poster-cache.json');
 const HISTORY_FILE = path.join(__dirname, 'watch-history.json');
 const INDEX_FILE   = path.join(__dirname, 'file-index.json');
 const CHANNELS_FILE = path.join(__dirname, 'channels.json');
-const MASSIVE_CATALOG_FILE = path.join(__dirname, 'scan-output', 'clean-catalog.json');
+const FTP_CATALOG_FILE = process.env.FTP_CATALOG_FILE || path.join(__dirname, 'catalog.json');
+const MASSIVE_CATALOG_FILE = process.env.MASSIVE_CATALOG_FILE || path.join(__dirname, 'scan-output', 'clean-catalog.json');
 const SV_CACHE_DIR = path.join(__dirname, 'cache');
 const SV_BOOT_SEARCH_FILE = path.join(SV_CACHE_DIR, 'boot-search-index.json');
 const MOBILE_HLS_DIR = path.join(__dirname, 'cache', 'mobile-hls');
@@ -547,6 +564,21 @@ let channels     = [];
 let _movieList   = null;   // built synchronously at startup
 let _seriesList  = null;   // built synchronously at startup
 let _enrichBusy  = false;  // background TMDB enrichment flag
+let _seriesDiagnostics = {
+  seriesRootAvailable: false,
+  videoFilesDiscovered: 0,
+  episodesParsed: 0,
+  unparsed: 0,
+  shows: 0,
+  seasons: 0,
+  duplicates: 0,
+  conflicts: 0,
+  sampleUnparsed: [],
+  sampleParsed: [],
+  sampleDuplicates: [],
+  sampleConflicts: [],
+  scanErrors: [],
+};
 
 function loadJSON(file, fallback) {
   try { if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
@@ -559,7 +591,7 @@ channels     = loadJSON(CHANNELS_FILE, []);
 // â”€â”€ FTP Catalog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let ftpCatalog = { movies: [], series: [] };
 try {
-  const catalogPath = path.join(__dirname, 'catalog.json');
+  const catalogPath = FTP_CATALOG_FILE;
   if (fs.existsSync(catalogPath)) {
     ftpCatalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
     console.log(`ðŸ“¡ FTP Catalog loaded: ${ftpCatalog.movies.length} movies, ${ftpCatalog.series.length} series`);
@@ -641,6 +673,59 @@ function getCachedSeries() {
 let _massiveCatalogLoaded = false;
 let _massiveMovies = [];
 let _massiveSeries = [];
+let _massiveSeriesDiagnostics = { candidates: 0, parsed: 0, unparsed: 0, sampleUnparsed: [] };
+let _canonicalSeriesState = null;
+let _canonicalSeriesStamp = '';
+
+function svCanonicalSeriesSourceStamp() {
+  return [
+    (_seriesList || []).length,
+    (ftpCatalog.series || []).length,
+    (_massiveSeries || []).length,
+  ].join(':');
+}
+
+function svGetCanonicalSeriesState() {
+  loadMassiveCatalog();
+  const stamp = svCanonicalSeriesSourceStamp();
+  if (_canonicalSeriesState && _canonicalSeriesStamp === stamp) return _canonicalSeriesState;
+  const state = createCanonicalSeriesIndex({
+    local: _seriesList || buildSeriesListSync(),
+    ftpCatalog: Array.isArray(ftpCatalog.series) ? ftpCatalog.series : [],
+    massiveCatalog: Array.isArray(_massiveSeries) ? _massiveSeries : [],
+    cards: [
+      ...(_seriesList || []).map(show => ({ ...show, cardSource: 'local' })),
+      ...(Array.isArray(ftpCatalog.series) ? ftpCatalog.series : []).map(show => ({ ...show, cardSource: 'ftpCatalog' })),
+      ...(Array.isArray(_massiveSeries) ? _massiveSeries : []).map(show => ({ ...show, cardSource: 'massiveCatalog' })),
+    ],
+  });
+  getCachedSeries().forEach((show, index) => {
+    const canonical = state.find({ name: show.name || show.title, year: show.year, tmdbId: show.tmdbId });
+    if (canonical) state.aliases.set(show.id || `ftp_series_${index}`, canonical);
+  });
+  state.diagnostics.sources.massiveCatalog = {
+    ...(state.diagnostics.sources.massiveCatalog || { shows: 0, episodes: 0 }),
+    rawCandidates: _massiveSeriesDiagnostics.candidates,
+    rawEpisodeRecords: _massiveSeriesDiagnostics.parsed,
+    rawUnparsed: _massiveSeriesDiagnostics.unparsed,
+  };
+  state.diagnostics.unparsedEpisodeRecords += _massiveSeriesDiagnostics.unparsed;
+  state.diagnostics.sampleUnparsedEpisodeRecords = [
+    ...state.diagnostics.sampleUnparsedEpisodeRecords,
+    ..._massiveSeriesDiagnostics.sampleUnparsed.map(item => ({ source: 'massiveCatalog', ...item })),
+  ].slice(0, 25);
+  state.diagnostics.summaryCardsResolvable = state.shows.filter(show => show.episodeCount > 0).length;
+  _canonicalSeriesState = state;
+  _canonicalSeriesStamp = stamp;
+  console.log(`[Series pipeline] Canonical index: ${state.diagnostics.canonical.shows} shows, ${state.diagnostics.canonical.episodes} episodes, ${state.diagnostics.duplicatesSuppressed} duplicates suppressed`);
+  return state;
+}
+
+function svCanonicalSeriesSummary(raw) {
+  const state = svGetCanonicalSeriesState();
+  const canonical = state.find({ id: raw?.id, tmdbId: raw?.tmdbId, name: raw?.name || raw?.title, year: raw?.year });
+  return canonical ? canonicalSeriesSummary(canonical) : raw;
+}
 
 function svSafeDecode(value) {
   try { return decodeURIComponent(String(value || '')); }
@@ -712,6 +797,23 @@ function svExtractYear(value) {
   return m ? m[1] : '';
 }
 
+// SV_20260817_MASSIVE_YEAR_V3: massive catalog filenames may contain a year as part of the title
+// followed by a bracketed release year, e.g. Madrid, 1987 (2011).
+function svExtractMassiveReleaseYear(value) {
+  const text = svSafeDecode(value || '')
+    .split(/[?#]/)[0]
+    .replace(/\\/g, '/')
+    .split('/')
+    .pop() || '';
+
+  const wrapped = [...text.matchAll(/[\(\[\{]\s*((?:19|20)\d{2})\s*[\)\]\}]/g)];
+  if (wrapped.length) return wrapped[wrapped.length - 1][1];
+
+  const years = [...text.matchAll(/(?:^|[^0-9])((?:19|20)\d{2})(?=[^0-9]|$)/g)]
+    .map(match => match[1]);
+  return years.length ? years[years.length - 1] : '';
+}
+
 function svStableId(prefix, value) {
   return `${prefix}_${crypto.createHash('md5').update(String(value || '')).digest('hex').slice(0, 12)}`;
 }
@@ -750,48 +852,18 @@ function loadMassiveCatalog() {
   try {
     const raw = JSON.parse(fs.readFileSync(MASSIVE_CATALOG_FILE, 'utf8'));
     const movieSeen = new Set();
-    const seriesMap = new Map();
+    const groupedEpisodes = groupEpisodeRecords(raw, {
+      isSeriesRecord: value => svLooksLikeSeries(value),
+    });
+    const seriesEpisodeUrls = groupedEpisodes.episodeUrls;
 
     for (const item of Array.isArray(raw) ? raw : []) {
       const url = String(item.url || item.streamUrl || '').trim();
       if (!/^https?:\/\//i.test(url)) continue;
       if (!/\.(mp4|mkv|avi|mov|webm|m3u8|ts|flv|wmv|mpg|mpeg)(?:$|[?#])/i.test(url)) continue;
-      const year = svExtractYear(item.title || url);
+      const year = svExtractMassiveReleaseYear(item.title || url);
 
-      if (svLooksLikeSeries(item.title || url)) {
-        const showName = svCanonicalTitleForSearch(svBaseShowTitle(item.title || url), year);
-        if (svIsNoisyMassiveTitle(showName, item.title || url)) continue;
-        const key = `${showName.toLowerCase()}|${year}`;
-        const ep = svParseEpisode(item.title || url);
-        if (!seriesMap.has(key)) {
-          seriesMap.set(key, {
-            id: svStableId('sv_series', key),
-            name: showName,
-            title: showName,
-            year,
-            poster: null,
-            backdrop: null,
-            rating: null,
-            genre: '',
-            type: 'series',
-            isFtp: true,
-            isMassiveCatalog: true,
-            seasons: {}
-          });
-        }
-        const show = seriesMap.get(key);
-        if (!show.seasons[ep.season]) show.seasons[ep.season] = [];
-        show.seasons[ep.season].push({
-          streamId: null,
-          episode: ep.episode,
-          epTitle: `Episode ${ep.episode}`,
-          file: svSafeDecode(url).split('/').pop() || '',
-          streamUrl: url,
-          isFtp: true,
-          isMassiveCatalog: true
-        });
-        continue;
-      }
+      if (seriesEpisodeUrls.has(url) || svLooksLikeSeries(item.title || url)) continue;
 
       const title = svCanonicalTitleForSearch(item.title || url, year);
       if (svIsNoisyMassiveTitle(title, item.title || url)) continue;
@@ -817,11 +889,10 @@ function loadMassiveCatalog() {
       });
     }
 
-    _massiveSeries = [...seriesMap.values()].map(show => {
-      for (const eps of Object.values(show.seasons)) eps.sort((a, b) => a.episode - b.episode);
-      return show;
-    });
+    _massiveSeries = groupedEpisodes.shows;
+    _massiveSeriesDiagnostics = groupedEpisodes.diagnostics;
     console.log(`ðŸ“š Massive clean catalog loaded: ${_massiveMovies.length} movies, ${_massiveSeries.length} series`);
+    console.log(`[Series pipeline] Massive episode records parsed: ${groupedEpisodes.diagnostics.parsed}; unparsed candidates: ${groupedEpisodes.diagnostics.unparsed}`);
   } catch (e) {
     console.warn('âš  Could not load massive clean catalog:', e.message);
     _massiveMovies = [];
@@ -903,7 +974,9 @@ function svShouldDropSearchResult(entry, score, terms, queryNorm) {
   const phrase = queryNorm || terms.join(' ');
   const name = entry.name || '';
   const nameTokens = entry.nameTokens || [];
-  const exactHits = terms.filter(t => nameTokens.includes(t)).length;
+
+  const searchTokens = entry.searchTokens || [];
+  const exactHits = terms.filter(t => nameTokens.includes(t) || searchTokens.includes(t)).length;
   const phraseHit = phrase && (name === phrase || name.startsWith(phrase + ' ') || name.includes(' ' + phrase + ' '));
   // Massive no-art entries must be very clearly relevant. Display caps are applied later.
   if (!svSearchHasArt(item) && !phraseHit && exactHits < terms.length) return true;
@@ -914,7 +987,7 @@ function svShouldDropSearchResult(entry, score, terms, queryNorm) {
 const SV_SEARCH_STOPWORDS = new Set(['in','on','of','to','a','an','the','and','or','for','with','by','from']);
 const SV_SEARCH_CACHE_LIMIT = Number(process.env.SV_SEARCH_CACHE_LIMIT || 160);
 const SV_SEARCH_CANDIDATE_LIMIT = Number(process.env.SV_SEARCH_CANDIDATE_LIMIT || 6000);
-const SV_BOOT_SEARCH_VERSION = '20260624-playable-only-search1';
+const SV_BOOT_SEARCH_VERSION = '20260820-canonical-series1';
 const SV_BOOT_SEARCH_MAX_ITEMS = Number(process.env.SV_BOOT_SEARCH_MAX_ITEMS || 50000);
 const _svQueryResultCache = new Map();
 let _svFastSearchIndex = null;
@@ -1082,6 +1155,7 @@ function svBuildFastSearchIndex() {
   const seen = new Set();
   const entries = [];
   function add(item, kind) {
+    if (kind === 'series') item = svCanonicalSeriesSummary(item);
     const key = `${kind}|${String(item.name || item.title || '').toLowerCase()}|${item.year || ''}|${item.streamUrl || item.id || ''}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -1280,7 +1354,8 @@ function svFastSearch(req, kind = 'mixed') {
   const RESULT_CAP = Number(process.env.SV_SEARCH_RESULT_CAP || 120);
   // If poster-rich results exist, hide blank massive release variants completely.
   // If nothing poster-rich exists, keep a small exact fallback so rare catalog-only files remain findable.
-  const NO_POSTER_MASSIVE_CAP = hasPosterResults ? 0 : Number(process.env.SV_SEARCH_NO_POSTER_CAP || 18);
+  /* SV_SEARCH_AUTHORITY_KEEP_CATALOG_ONLY_V1 */
+  const NO_POSTER_MASSIVE_CAP = Number(process.env.SV_SEARCH_NO_POSTER_CAP || RESULT_CAP);
   for (const row of scored) {
     const key = svSearchResultDedupeKey(row.entry);
     if (key && seenTitles.has(key)) continue;
@@ -1347,6 +1422,7 @@ function svBootSearchSeasons(seasons = {}) {
 
 function svBootSearchItem(raw, kind = 'movie', source = 'local', sourceRank = 0, index = 0) {
   if (!raw) return null;
+  if (kind === 'series') raw = svCanonicalSeriesSummary(raw);
   const name = String(raw.name || raw.title || raw.file || raw.filename || '').trim();
   if (!name) return null;
   const year = String(raw.year || svExtractYear(name || raw.file || raw.filename || raw.streamUrl || '') || '');
@@ -1371,8 +1447,10 @@ function svBootSearchItem(raw, kind = 'movie', source = 'local', sourceRank = 0,
   if (isSeries) {
     item._isSeries = true;
     item.seasons = svBootSearchSeasons(raw.seasons || {});
-    item.seasonCount = Object.keys(item.seasons).length;
-    item.episodeCount = Object.values(item.seasons).reduce((sum, eps) => sum + (Array.isArray(eps) ? eps.length : 0), 0);
+    item.seasonCount = raw.seasonCount ?? Object.keys(item.seasons).length;
+    item.episodeCount = raw.episodeCount ?? Object.values(item.seasons).reduce((sum, eps) => sum + (Array.isArray(eps) ? eps.length : 0), 0);
+    item.hasEpisodes = item.episodeCount > 0;
+    item.detailResolvable = raw.detailResolvable !== false;
   }
   const searchText = [
     svCanonicalTitleForSearch(name, year),
@@ -1875,6 +1953,7 @@ function isTrustedRemotePlaybackUrl(srcUrl, matched) {
   try {
     const parsed = new URL(srcUrl);
     const host = parsed.hostname.toLowerCase();
+    if (/(?:^|\.)circleftp\.net$/i.test(host)) return true;
     return /^172\.16\.50\.\d{1,3}$/.test(host)
       || /^172\.22\.\d{1,3}\.\d{1,3}$/.test(host)
       || /^server[\w-]*\.ftpbd\.net$/i.test(host);
@@ -2204,6 +2283,28 @@ function selectionFromAbsoluteAudio(req, track, source = 'first-playable-audio',
   };
 }
 
+// SV_AUDIO_AUTHORITY_V4
+function svAudioTrackLanguageV4(track = {}) {
+  const raw = [track.language, track.lang, track.title, track.label, track.name]
+    .filter(Boolean).join(' ').toLowerCase();
+  if (/(?:^|[^a-z])(eng|en|english)(?:[^a-z]|$)/i.test(raw)) return 'en';
+  if (/(?:^|[^a-z])(hin|hi|hindi)(?:[^a-z]|$)/i.test(raw)) return 'hi';
+  return '';
+}
+
+function svEnglishPlayableTrackV4(tracks = []) {
+  const list = Array.isArray(tracks) ? tracks : [];
+  return list.find(track =>
+    svAudioTrackLanguageV4(track) === 'en' &&
+    firstPlayableAudioStream([track]) === track
+  ) || null;
+}
+
+function svManualAudioRequestV4(req) {
+  const reason = String(req?.query?.fallbackReason || '').toLowerCase();
+  return /audio\s*switch|manual\s*audio|user\s*audio/.test(reason);
+}
+
 async function resolvePlaybackAudioSelection(req, input, label = 'media') {
   const selection = playbackAudioSelectionFromReq(req);
   const isFtpInput = isFtpPlaybackInput(input);
@@ -2227,13 +2328,63 @@ async function resolvePlaybackAudioSelection(req, input, label = 'media') {
   }
 
   if (isFtpInput) {
-    const validated = await firstValidDecodedAudioStream(input, tracks, label);
-    const selectedTrack = validated.selectedTrack;
+    // The frontend may send the source container's default stream during startup.
+    // That is NOT a user choice. Only an explicit audio-switch request is manual.
+    const manualRequest = svManualAudioRequestV4(req);
+
+    if (manualRequest && selection.audioStreamIdx !== null) {
+      const requested = tracks.find(track => serverAudioTrackAbsoluteIndex(track) === selection.audioStreamIdx);
+      if (requested && firstPlayableAudioStream([requested]) === requested) {
+        const requestedIndex = tracks.indexOf(requested);
+        console.log('[AUDIO AUTHORITY V4]', { label, mode:'manual', selectedIndex:requestedIndex, streamIndex:selection.audioStreamIdx, language:svAudioTrackLanguageV4(requested) });
+        return {
+          ...selectionFromAbsoluteAudio(req, requested, 'ftp-manual-audio-switch', videoStartTime, videoStreamIdx, info?.videoCodec || ''),
+          defaultAudioIndex: requestedIndex,
+          audioIndex: requestedIndex,
+          ftpAudioValidated: true,
+        };
+      }
+    }
+
+    // Global default: English wins whenever a playable English track exists.
+    // Ignore container default flags and startup audioStream=... values.
+    let selectedTrack = svEnglishPlayableTrackV4(tracks);
+    let selectedIndex = selectedTrack ? tracks.indexOf(selectedTrack) : -1;
+
+    if (selectedTrack) {
+      try {
+        const decoded = await decodeFtpAudioStream(input, selectedTrack);
+        if (!decoded.decodable || !decoded.audioPacketsDetected || decoded.decodedFrames <= 0) {
+          selectedTrack = null;
+          selectedIndex = -1;
+        }
+      } catch (_) {
+        selectedTrack = null;
+        selectedIndex = -1;
+      }
+    }
+
+    if (!selectedTrack) {
+      const validated = await firstValidDecodedAudioStream(input, tracks, label);
+      selectedTrack = validated.selectedTrack;
+      selectedIndex = validated.selectedIndex;
+    }
+
     if (!selectedTrack) return selection;
+
+    console.log('[AUDIO AUTHORITY V4]', {
+      label,
+      mode:'automatic',
+      selectedIndex,
+      streamIndex:serverAudioTrackAbsoluteIndex(selectedTrack),
+      language:svAudioTrackLanguageV4(selectedTrack),
+      available:tracks.map((track,index)=>({index,streamIndex:serverAudioTrackAbsoluteIndex(track),language:svAudioTrackLanguageV4(track),tag:track.language||track.lang||'',title:track.title||''}))
+    });
+
     return {
-      ...selectionFromAbsoluteAudio(req, selectedTrack, 'ftp-decoded-stream', videoStartTime, videoStreamIdx, info?.videoCodec || ''),
-      defaultAudioIndex: validated.selectedIndex,
-      audioIndex: validated.selectedIndex,
+      ...selectionFromAbsoluteAudio(req, selectedTrack, 'ftp-english-authority-v4', videoStartTime, videoStreamIdx, info?.videoCodec || ''),
+      defaultAudioIndex: selectedIndex,
+      audioIndex: selectedIndex,
       ftpAudioValidated: true,
     };
   }
@@ -2251,7 +2402,7 @@ async function resolvePlaybackAudioSelection(req, input, label = 'media') {
       source = 'absolute-stream';
     }
   }
-  if (!selectedTrack) selectedTrack = firstPlayableAudioStream(tracks);
+  if (!selectedTrack) selectedTrack = svEnglishPlayableTrackV4(tracks) || firstPlayableAudioStream(tracks);
   logAudioSelectionFix(label, tracks, selectedTrack);
   if (!selectedTrack) return selection;
   const resolved = selectionFromAbsoluteAudio(req, selectedTrack, source, videoStartTime, videoStreamIdx, info?.videoCodec || '');
@@ -2290,7 +2441,7 @@ function resolvePlaybackAudioSelectionFromMediaInfo(req, mediaInfo = {}, label =
       source = 'absolute-stream';
     }
   }
-  if (!selectedTrack) selectedTrack = firstPlayableAudioStream(tracks);
+  if (!selectedTrack) selectedTrack = svEnglishPlayableTrackV4(tracks) || firstPlayableAudioStream(tracks);
   logAudioSelectionFix(label, tracks, selectedTrack);
   if (!selectedTrack) return selection;
   return {
@@ -2660,6 +2811,12 @@ function cleanTitle(filename) {
 }
 
 function parseSeriesFilename(filename) {
+  const pathAware = parseSeriesEntry({
+    file: path.basename(filename),
+    relativePath: filename,
+    type: 'episode',
+  });
+  if (pathAware) return pathAware;
   const parts   = filename.replace(/\\/g, '/').split('/');
   const base     = path.basename(filename, path.extname(filename));
   const parentDir = parts.length >= 2 ? parts[parts.length - 2] : '';
@@ -2894,13 +3051,22 @@ function buildFileIndex() {
   fileIndex = [];
   let movieFiles = [];
   try { movieFiles = fs.readdirSync(MOVIES_DIR).filter(f => VIDEO_EXTS.includes(path.extname(f).toLowerCase())); } catch (e) { console.warn('âš  Cannot read MOVIES_DIR:', e.message); }
+  movieFiles.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
   for (const f of movieFiles) fileIndex.push({ dir: MOVIES_DIR, file: f, type: 'movie' });
   console.log(`ðŸ“ Indexed ${movieFiles.length} movie files`);
 
-  let seriesFiles = [];
-  try { seriesFiles = fs.readdirSync(SERIES_DIR).filter(f => VIDEO_EXTS.includes(path.extname(f).toLowerCase())); } catch (e) { console.warn('âš  Cannot read SERIES_DIR:', e.message); }
-  for (const f of seriesFiles) fileIndex.push({ dir: SERIES_DIR, file: f, type: 'episode' });
-  console.log(`ðŸ“º Indexed ${seriesFiles.length} series episode files`);
+  const seriesScan = walkVideoFiles(SERIES_DIR, VIDEO_EXTS);
+  for (const entry of seriesScan.files) fileIndex.push(entry);
+  _seriesDiagnostics = {
+    ..._seriesDiagnostics,
+    seriesRootAvailable: fs.existsSync(SERIES_DIR),
+    videoFilesDiscovered: seriesScan.files.length,
+    scanErrors: seriesScan.errors.slice(0, 25),
+  };
+  if (seriesScan.errors.length) {
+    console.warn(`âš  Series scan encountered ${seriesScan.errors.length} filesystem error(s); continuing`);
+  }
+  console.log(`ðŸ“º Indexed ${seriesScan.files.length} series episode files recursively`);
   console.log(`âœ… Total stream IDs: ${fileIndex.length}`);
 }
 function entryPath(entry) { return path.join(entry.dir, entry.file); }
@@ -2937,41 +3103,24 @@ function buildMovieListSync() {
 
 // â”€â”€ Build instant series list (sync â€” reads only from posterCache) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function buildSeriesListSync() {
-  const showMap = {};
-  for (let id = 0; id < fileIndex.length; id++) {
-    const entry = fileIndex[id];
-    if (entry.type !== 'episode') continue;
-    const parsed = parseSeriesFilename(entry.file);
-    if (!parsed) continue;
-    const { showName, season, episode, epTitle } = parsed;
-    if (!showMap[showName]) showMap[showName] = { name: showName, seasons: {} };
-    if (!showMap[showName].seasons[season]) showMap[showName].seasons[season] = [];
-    showMap[showName].seasons[season].push({
-      streamId: id,
-      episode,
-      epTitle:  epTitle || `Episode ${episode}`,
-      file:     entry.file,
-    });
+  const built = buildSeriesCatalog(fileIndex, posterCache);
+  _seriesDiagnostics = {
+    ...built.diagnostics,
+    seriesRootAvailable: fs.existsSync(SERIES_DIR),
+    scanErrors: _seriesDiagnostics.scanErrors || [],
+  };
+  console.log(`[Series parser] Series videos discovered recursively: ${_seriesDiagnostics.videoFilesDiscovered}`);
+  console.log(`[Series parser] Series episodes parsed: ${_seriesDiagnostics.episodesParsed}`);
+  console.log(`[Series parser] Series files unparsed: ${_seriesDiagnostics.unparsed}`);
+  console.log(`[Series parser] Series shows generated: ${_seriesDiagnostics.shows}`);
+  console.log(`[Series parser] Series seasons generated: ${_seriesDiagnostics.seasons}`);
+  if (_seriesDiagnostics.duplicates) console.log(`[Series parser] Duplicate episode files suppressed: ${_seriesDiagnostics.duplicates}`);
+  if (_seriesDiagnostics.conflicts) console.warn(`[Series parser] Filename/folder season conflicts: ${_seriesDiagnostics.conflicts}`);
+  for (const relativePath of _seriesDiagnostics.sampleUnparsed) console.warn(`[Series parser] Unparsed: ${relativePath}`);
+  for (const conflict of _seriesDiagnostics.sampleConflicts) {
+    console.warn(`[Series parser] Season conflict: ${conflict.path} (filename=${conflict.filename}, directory=${conflict.directory}; filename kept)`);
   }
-  for (const show of Object.values(showMap))
-    for (const eps of Object.values(show.seasons))
-      eps.sort((a, b) => a.episode - b.episode);
-
-  return Object.values(showMap).map(show => {
-    const key  = '__series__' + show.name;
-    const info = posterCache[key] || null;
-    if (info) Object.assign(show, {
-      poster:   info.poster,
-      tmdbId:   info.tmdbId || show.tmdbId || null,
-      overview: info.overview,
-      year:     info.year,
-      rating:   info.rating,
-      genre:    info.genre,
-      language: info.language,
-      productionCompanies: info.productionCompanies || [],
-    });
-    return show;
-  }).sort((a, b) => a.name.localeCompare(b.name));
+  return built.shows;
 }
 
 // â”€â”€ Called once at startup â€” builds both lists in milliseconds â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -6057,45 +6206,113 @@ function allApiMoviesForDetails() {
 }
 
 function allApiSeriesForDetails() {
+  // SV_SERIES_EPISODE_AUTHORITY_V4
+  // SV_SERIES_EPISODE_AUTHORITY_V3 SV_SERIES_EPISODE_AUTHORITY_V2 SV_SERIES_EPISODE_AUTHORITY_V1
+  // getCachedSeries() uses an array-of-season-objects shape:
+  //   [{ season, episodes: [...] }, ...]
+  // while the massive catalog already uses { seasonNumber: [episodes] }.
+  // Normalize both shapes into the detail API's canonical seasons object.
   const localSeries = _seriesList || buildSeriesListSync();
+
+  function normalizeEpisode(rawEpisode, showIndex, seasonNumber, episodeIndex) {
+    const ep = rawEpisode && typeof rawEpisode === 'object'
+      ? rawEpisode
+      : { url: String(rawEpisode || '') };
+    const streamUrl = ep.streamUrl || ep.url || ep.src || ep.link || '';
+    const streamId = ep.streamId != null ? ep.streamId : null;
+    if (!streamUrl && streamId == null) return null;
+    return {
+      ...ep,
+      id: ep.id || `ftp_ep_${showIndex}_${seasonNumber}_${episodeIndex}`,
+      name: ep.name || ep.title || ep.epTitle || `Episode ${episodeIndex + 1}`,
+      epTitle: ep.epTitle || ep.name || ep.title || `Episode ${episodeIndex + 1}`,
+      episode: Number(ep.episode || ep.number || ep.episodeNumber || episodeIndex + 1) || episodeIndex + 1,
+      season: Number(ep.season || ep.seasonNumber || seasonNumber) || 1,
+      streamUrl,
+      url: streamUrl,
+      streamId,
+      isFtp: true
+    };
+  }
+
+  function normalizeSeasons(rawSeasons, showIndex) {
+    const out = {};
+
+    if (Array.isArray(rawSeasons)) {
+      rawSeasons.forEach((seasonObj, seasonIndex) => {
+        if (!seasonObj) return;
+        const seasonNumber = Number(
+          seasonObj.season ?? seasonObj.seasonNumber ?? seasonObj.number ?? seasonIndex + 1
+        ) || seasonIndex + 1;
+        const rawEpisodes = Array.isArray(seasonObj.episodes)
+          ? seasonObj.episodes
+          : Array.isArray(seasonObj.items)
+            ? seasonObj.items
+            : [];
+        const episodes = rawEpisodes
+          .map((ep, episodeIndex) => normalizeEpisode(ep, showIndex, seasonNumber, episodeIndex))
+          .filter(Boolean);
+        if (episodes.length) out[seasonNumber] = episodes;
+      });
+      return out;
+    }
+
+    if (rawSeasons && typeof rawSeasons === 'object') {
+      Object.entries(rawSeasons).forEach(([seasonKey, seasonValue], seasonIndex) => {
+        const seasonNumber = Number(seasonKey) || Number(seasonValue?.season || seasonValue?.seasonNumber) || seasonIndex + 1;
+        const rawEpisodes = Array.isArray(seasonValue)
+          ? seasonValue
+          : Array.isArray(seasonValue?.episodes)
+            ? seasonValue.episodes
+            : Array.isArray(seasonValue?.items)
+              ? seasonValue.items
+              : [];
+        const episodes = rawEpisodes
+          .map((ep, episodeIndex) => normalizeEpisode(ep, showIndex, seasonNumber, episodeIndex))
+          .filter(Boolean);
+        if (episodes.length) out[seasonNumber] = episodes;
+      });
+    }
+
+    return out;
+  }
+
   const ftpSeries = getCachedSeries()
     .filter(s => !isCartoonOrAnime(s))
     .map((s, i) => ({
-      id: `ftp_series_${i}`,
-      name: s.title,
+      id: s.id || `ftp_series_${i}`,
+      name: s.name || s.title,
+      title: s.title || s.name,
       poster: s.poster || null,
       backdrop: s.backdrop || s.poster || null,
       tmdbId: s.tmdbId || null,
-      imdbId: s.imdbId || '',
-      overview: s.overview || '',
       year: s.year || '',
       rating: s.rating || null,
+      type: 'series',
       genre: s.genre || '',
-      category: s.category || '',
-      language: s.language || '',
-      productionCompanies: s.productionCompanies || [],
+      category: s.category || 'Series',
+      seasons: normalizeSeasons(s.seasons, i),
       isFtp: true,
-      seasons: (s.seasons || []).reduce((acc, seasonObj) => {
-        const num = parseInt(String(seasonObj.season || '').match(/\d+/)?.[0] || '1', 10);
-        acc[num] = (seasonObj.episodes || []).map((e, i) => {
-          const parsed = parseSeriesFilename(e.filename);
-          const epNum = parsed?.episode || i + 1;
-          return {
-            streamId: null,
-            episode: epNum,
-            epTitle: parsed?.epTitle?.trim() || `Episode ${epNum}`,
-            file: e.filename,
-            streamUrl: e.streamUrl,
-            thumb: e.thumb || e.thumbnail || null,
-            overview: e.overview || '',
-            isFtp: true,
-          };
-        });
-        return acc;
-      }, {}),
+      _isSeries: true
     }));
-  const seenShows = new Set(localSeries.map(s => s.name));
-  return [...localSeries, ...ftpSeries.filter(s => !seenShows.has(s.name))];
+
+  let massiveSeries = [];
+  try {
+    loadMassiveCatalog();
+    massiveSeries = Array.isArray(_massiveSeries)
+      ? _massiveSeries.map((s, i) => ({
+          ...s,
+          type: 'series',
+          _isSeries: true,
+          isSummary: false,
+          seasons: normalizeSeasons(s.seasons, `massive_${i}`)
+        }))
+      : [];
+  } catch (error) {
+    if (SV_DETAIL_VERBOSE) console.warn('[Series detail] Massive catalog unavailable:', error.message);
+  }
+
+  return [...localSeries, ...ftpSeries, ...massiveSeries];
 }
 
 function splitDetailGenres(value) {
@@ -6424,17 +6641,338 @@ app.get('/api/playback/movie/:id', (req, res) => {
 
 // Series summaries contain counts only. Hydrate seasons and episode URLs on
 // detail click instead of putting the full series catalog back in home-feed.json.
+// SV_SERIES_EPISODE_DIRECT_V7
+const svDirectEpisodeResponseCacheV7 = new Map();
+let svDirectEpisodeIndexV7 = null;
+
+function svDirectEpisodeKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\b(?:19|20)\d{2}\b/g, ' ')
+    .replace(/\b(?:tv\s+(?:mini\s+)?series|web\s+series|mini\s+series|series)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function svDirectDeepDecode(value) {
+  let text = String(value || '').trim();
+  for (let i = 0; i < 4 && /%[0-9a-f]{2}/i.test(text); i++) {
+    try {
+      const next = decodeURIComponent(text);
+      if (next === text) break;
+      text = next;
+    } catch (_) { break; }
+  }
+  return text.replace(/\+/g, ' ');
+}
+
+function svDirectGenericEpisodeTitle(value, number) {
+  const text = String(value || '').trim();
+  if (!text) return true;
+  return /^(?:episode|ep)\s*0*\d+$/i.test(text)
+    || /^s\d{1,2}e\d{1,3}$/i.test(text)
+    || /^e\d{1,3}$/i.test(text)
+    || text === String(number);
+}
+
+function svDirectEpisodeDisplayTitle(raw, number, showTitle) {
+  let text = svDirectDeepDecode(raw);
+  if (!text) return '';
+  if (/(?:https?:\/\/|ftp:\/\/|\/|\\)/i.test(text)) {
+    text = text.split(/[?#]/)[0].replace(/\\/g, '/').split('/').filter(Boolean).pop() || text;
+  }
+  text = svDirectDeepDecode(text)
+    .replace(/\.(?:mkv|mp4|m4v|avi|mov|webm|ts|m2ts)$/i, '')
+    .replace(/[._]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const marker = text.match(/(?:^|\s)(?:s\d{1,2}\s*e\d{1,3}|\d{1,2}\s*x\s*\d{1,3}|episode\s*\d{1,3}|ep\s*\d{1,3})(?:\s|$)/i);
+  if (marker) text = text.slice((marker.index || 0) + marker[0].length).trim();
+  else if (showTitle) {
+    const escaped = String(showTitle).replace(/[.*+?^{}$()|[\]\\]/g, '\\$&');
+    if (escaped) text = text.replace(new RegExp('^' + escaped + '(?:\\s*[-–—:]?\\s*)', 'i'), '').trim();
+  }
+
+  text = text
+    .replace(/^\s*(?:episode|ep|e)\s*0*\d+\s*[-–—:]?\s*/i, '')
+    .replace(/^[-–—: ]+/, '')
+    .replace(/\[[^\]]*]/g, ' ')
+    .replace(/\([^)]*(?:2160|1080|720|480|web|bluray|x26|hevc|aac|ddp|h\.?26)[^)]*\)/gi, ' ')
+    .replace(/\b(?:2160p|1080p|720p|480p|4k|uhd|hdr10?|dv|dolby\s*vision|web[- ]?dl|webrip|web|bluray|brrip|bdrip|hdrip|hdtv|remux|x264|x265|h\.?264|h\.?265|hevc|avc|aac(?:2\.0)?|ac3|eac3|ddp(?:5\.1)?|dts(?:-hd)?|10bit|8bit|multi[- ]?audio|dual[- ]?audio|nf|netflix|amzn|amazon|dsnp|proper|repack|extended|uncut|rarbg|yify|yts|psa|pahe|galaxytv)\b.*$/i, ' ')
+    .replace(/[()[\]{}]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!text || svDirectGenericEpisodeTitle(text, number) || /%[0-9a-f]{2}/i.test(text)) return '';
+  return text.length > 120 ? text.slice(0, 120).trim() : text;
+}
+
+function svDirectNormalizeEpisodes(show) {
+  const seasonsOut = {};
+  const sourceSeasons = show && show.seasons;
+  const showTitle = show && (show.name || show.title) || '';
+
+  const put = (seasonNo, rawEpisodes) => {
+    let list = [];
+    if (Array.isArray(rawEpisodes)) list = rawEpisodes;
+    else if (rawEpisodes && Array.isArray(rawEpisodes.episodes)) list = rawEpisodes.episodes;
+    else if (rawEpisodes && typeof rawEpisodes === 'object') list = Object.values(rawEpisodes);
+
+    const normalized = list.filter(Boolean).map((raw, index) => {
+      const ep = raw && typeof raw === 'object' ? raw : { url: String(raw || '') };
+      const streamUrl = ep.streamUrl || ep.url || ep.src || ep.link || '';
+      const streamId = ep.streamId != null ? ep.streamId : null;
+      if (!streamUrl && streamId == null) return null;
+      const number = Number(ep.episode || ep.number || index + 1) || index + 1;
+      let displayTitle = '';
+      for (const value of [ep.epTitle, ep.title, ep.name, ep.displayTitle]) {
+        displayTitle = svDirectEpisodeDisplayTitle(value, number, showTitle);
+        if (displayTitle) break;
+      }
+      if (!displayTitle) {
+        for (const value of [ep.fileName, ep.filename, ep.file, ep.path, streamUrl]) {
+          displayTitle = svDirectEpisodeDisplayTitle(value, number, showTitle);
+          if (displayTitle) break;
+        }
+      }
+      if (!displayTitle) displayTitle = 'Episode ' + number;
+      return {
+        ...ep,
+        id: ep.id || ('direct_ep_' + seasonNo + '_' + index),
+        name: displayTitle,
+        title: displayTitle,
+        epTitle: displayTitle,
+        displayTitle,
+        episode: number,
+        season: Number(ep.season || seasonNo) || 1,
+        streamUrl,
+        url: streamUrl,
+        streamId,
+        isFtp: ep.isFtp !== false
+      };
+    }).filter(Boolean).sort((a, b) => a.episode - b.episode);
+
+    if (normalized.length) seasonsOut[String(Number(seasonNo) || seasonNo || 1)] = normalized;
+  };
+
+  if (Array.isArray(sourceSeasons)) {
+    sourceSeasons.forEach((seasonObj, index) => {
+      const seasonNo = Number(seasonObj && (seasonObj.season ?? seasonObj.seasonNumber ?? seasonObj.number)) || index + 1;
+      put(seasonNo, seasonObj);
+    });
+  } else if (sourceSeasons && typeof sourceSeasons === 'object') {
+    Object.entries(sourceSeasons).forEach(([seasonNo, value]) => put(seasonNo, value));
+  }
+  return seasonsOut;
+}
+
+function svDirectBuildEpisodeIndexV7() {
+  if (svDirectEpisodeIndexV7) return svDirectEpisodeIndexV7;
+  const index = new Map();
+  const candidates = [];
+  try {
+    loadMassiveCatalog();
+    if (Array.isArray(_massiveSeries)) candidates.push(..._massiveSeries);
+  } catch (error) {
+    if (SV_DETAIL_VERBOSE) console.warn('[Episodes direct V7] massive catalog:', error.message);
+  }
+  try {
+    const ftp = getCachedSeries();
+    if (Array.isArray(ftp)) candidates.push(...ftp);
+  } catch (error) {
+    if (SV_DETAIL_VERBOSE) console.warn('[Episodes direct V7] FTP catalog:', error.message);
+  }
+  for (const show of candidates) {
+    if (!show) continue;
+    const key = svDirectEpisodeKey(show.name || show.title || '');
+    if (!key) continue;
+    const list = index.get(key) || [];
+    list.push(show);
+    index.set(key, list);
+  }
+  svDirectEpisodeIndexV7 = index;
+  return index;
+}
+
+app.get('/api/series/episodes-direct', (req, res) => {
+  try {
+    const requestedTitle = req.query.title || req.query.name || req.query.q || '';
+    const requestedYear = String(req.query.year || '').match(/(?:19|20)\d{2}/)?.[0] || '';
+    const target = svDirectEpisodeKey(requestedTitle);
+    if (!target) return jsonError(res, 400, 'SERIES_TITLE_REQUIRED', 'Series title is required');
+
+    const responseKey = target + '|' + requestedYear;
+    const cached = svDirectEpisodeResponseCacheV7.get(responseKey);
+    if (cached) {
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      res.setHeader('X-StreamVault-Episode-Authority', 'v7-cache');
+      return res.json(cached);
+    }
+
+    const index = svDirectBuildEpisodeIndexV7();
+    let candidates = index.get(target) || [];
+    if (!candidates.length) {
+      candidates = [];
+      for (const [key, list] of index.entries()) {
+        if (key.startsWith(target + ' ') || target.startsWith(key + ' ')) candidates.push(...list);
+      }
+    }
+
+    const ranked = candidates.map(show => {
+      const seasons = svDirectNormalizeEpisodes(show);
+      const episodeCount = Object.values(seasons).reduce((n, eps) => n + eps.length, 0);
+      if (!episodeCount) return null;
+      const title = show && (show.name || show.title) || '';
+      const showYear = String(show.year || title).match(/(?:19|20)\d{2}/)?.[0] || '';
+      let score = episodeCount;
+      if (svDirectEpisodeKey(title) === target) score += 10000;
+      if (requestedYear && showYear) score += requestedYear === showYear ? 1000 : -500;
+      return { show, seasons, episodeCount, score };
+    }).filter(Boolean).sort((a, b) => b.score - a.score || b.episodeCount - a.episodeCount);
+
+    const match = ranked[0];
+    if (!match) return jsonError(res, 404, 'SERIES_EPISODES_DIRECT_NOT_FOUND', 'Series episodes were not found in direct catalogs');
+
+    const payload = {
+      ...match.show,
+      id: match.show.id || requestedTitle,
+      name: match.show.name || match.show.title || requestedTitle,
+      title: match.show.title || match.show.name || requestedTitle,
+      type: 'series',
+      seasons: match.seasons,
+      seasonCount: Object.keys(match.seasons).length,
+      episodeCount: match.episodeCount,
+      streamAvailable: true,
+      hasStream: true,
+      isSummary: false,
+      authority: 'series-episode-direct-v7'
+    };
+
+    svDirectEpisodeResponseCacheV7.set(responseKey, payload);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('X-StreamVault-Episode-Authority', 'v7-index');
+    return res.json(payload);
+  } catch (error) {
+    console.error('[Episodes direct V7] failed:', error.stack || error.message);
+    return jsonError(res, 500, 'SERIES_EPISODES_DIRECT_FAILED', error.message || 'Direct episode lookup failed');
+  }
+});
+
+// SV_SERIES_EPISODE_METADATA_V8
+const svEpisodeMetadataCacheV8 = new Map();
+
+function svEpisodeMetadataKeyV8(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\b(?:19|20)\d{2}\b/g, ' ')
+    .replace(/\b(?:tv\s+(?:mini\s+)?series|web\s+series|mini\s+series|series)\b/g, ' ')
+    .replace(/\b(?:2160p|1080p|720p|480p|4k|uhd|hdr|dual\s+audio|multi\s+audio)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function svEpisodeMetadataYearV8(value) {
+  return String(value || '').match(/(?:19|20)\d{2}/)?.[0] || '';
+}
+
+async function svResolveTmdbSeriesV8(title, year) {
+  const clean = svEpisodeMetadataKeyV8(title);
+  if (!clean || typeof tmdbGet !== 'function') return null;
+  const query = encodeURIComponent(clean);
+  const yearPart = year ? '&first_air_date_year=' + encodeURIComponent(year) : '';
+  const search = await tmdbGet('/search/tv?query=' + query + yearPart + '&include_adult=false&language=en-US&page=1');
+  const results = Array.isArray(search?.results) ? search.results : [];
+  if (!results.length) return null;
+
+  const ranked = results.map(item => {
+    const key = svEpisodeMetadataKeyV8(item?.name || item?.original_name || '');
+    const itemYear = svEpisodeMetadataYearV8(item?.first_air_date || '');
+    let score = 0;
+    if (key === clean) score += 1000;
+    else if (key.startsWith(clean + ' ') || clean.startsWith(key + ' ')) score += 500;
+    else return null;
+    if (year && itemYear) score += year === itemYear ? 200 : -100;
+    score += Number(item?.popularity || 0) / 1000;
+    return { item, score };
+  }).filter(Boolean).sort((a, b) => b.score - a.score);
+
+  return ranked[0]?.item || results[0] || null;
+}
+
+app.get('/api/series/episode-metadata', async (req, res) => {
+  try {
+    const title = String(req.query.title || req.query.name || '').trim();
+    const year = svEpisodeMetadataYearV8(req.query.year || title);
+    if (!title) return jsonError(res, 400, 'SERIES_TITLE_REQUIRED', 'Series title is required');
+
+    const seasonNumbers = [...new Set(String(req.query.seasons || '')
+      .split(',')
+      .map(value => Number(value))
+      .filter(value => Number.isInteger(value) && value > 0 && value <= 100))]
+      .sort((a, b) => a - b);
+    if (!seasonNumbers.length) seasonNumbers.push(1);
+
+    const cacheKey = svEpisodeMetadataKeyV8(title) + '|' + year + '|' + seasonNumbers.join(',');
+    const cached = svEpisodeMetadataCacheV8.get(cacheKey);
+    if (cached) {
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.setHeader('X-StreamVault-Episode-Metadata', 'v8-cache');
+      return res.json(cached);
+    }
+
+    const show = await svResolveTmdbSeriesV8(title, year);
+    if (!show?.id) return jsonError(res, 404, 'SERIES_METADATA_NOT_FOUND', 'Series metadata was not found');
+
+    const seasonPayloads = await Promise.all(seasonNumbers.map(async seasonNumber => {
+      const data = await tmdbGet('/tv/' + encodeURIComponent(show.id) + '/season/' + seasonNumber + '?language=en-US');
+      return { seasonNumber, data };
+    }));
+
+    const seasons = {};
+    for (const { seasonNumber, data } of seasonPayloads) {
+      const episodes = Array.isArray(data?.episodes) ? data.episodes : [];
+      seasons[String(seasonNumber)] = episodes.map(ep => ({
+        episode: Number(ep?.episode_number || 0),
+        title: String(ep?.name || '').trim(),
+        overview: String(ep?.overview || '').trim(),
+        airDate: String(ep?.air_date || ''),
+        runtime: Number(ep?.runtime || 0) || null,
+        still: ep?.still_path ? ('https://image.tmdb.org/t/p/w500' + ep.still_path) : ''
+      })).filter(ep => ep.episode > 0 && ep.title);
+    }
+
+    const payload = {
+      ok: true,
+      authority: 'series-episode-metadata-v8',
+      tmdbId: show.id,
+      title: show.name || title,
+      year: svEpisodeMetadataYearV8(show.first_air_date || '') || year,
+      seasons
+    };
+    svEpisodeMetadataCacheV8.set(cacheKey, payload);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('X-StreamVault-Episode-Metadata', 'v8-tmdb');
+    return res.json(payload);
+  } catch (error) {
+    console.error('[Episode metadata V8] failed:', error.stack || error.message);
+    return jsonError(res, 500, 'SERIES_METADATA_FAILED', error.message || 'Episode metadata lookup failed');
+  }
+});
+
 app.get('/api/series/detail', (req, res) => {
-  const show = findPlaybackCatalogItem(
-    allApiSeriesForDetails(),
-    req.query.id,
-    req.query.name || req.query.title,
-    req.query.year,
-    item => Object.values(item.seasons || {}).some(eps => Array.isArray(eps) && eps.some(ep => ep.streamUrl || ep.streamId != null))
-  );
+  const show = svGetCanonicalSeriesState().find({
+    id: req.query.id,
+    tmdbId: req.query.tmdbId,
+    name: req.query.name || req.query.title,
+    year: req.query.year,
+  });
   if (!show) return jsonError(res, 404, 'SERIES_PLAYBACK_NOT_FOUND', 'Playable series episodes were not found');
   const seasons = show.seasons || {};
   const episodeCount = Object.values(seasons).reduce((total, eps) => total + (Array.isArray(eps) ? eps.length : 0), 0);
+  if (!episodeCount) return jsonError(res, 404, 'SERIES_PLAYBACK_NOT_FOUND', 'Playable series episodes were not found');
   res.setHeader('Cache-Control', 'private, max-age=300');
   return res.json({
     ...show,
@@ -7711,6 +8249,151 @@ app.get('/api/movies', (req, res) => {
   } catch (e) { console.error('/api/movies error:', e.message); res.json({ movies: [], total: 0, page: 0, pages: 0 }); }
 });
 
+
+/* SV_SEARCH_AUTHORITY_BACKEND_V1
+ * One authoritative media search path.
+ * Coverage: local file index, FTP catalog.json, Circle/runtime massive clean-catalog,
+ * and the persisted boot search index as a fallback/coverage supplement.
+ * This route intentionally shadows the older /api/search handler below it.
+ */
+function svAuthoritySearchKind(req) {
+  const raw = String(req.query.kind || req.query.type || 'mixed').toLowerCase();
+  if (raw === 'movie' || raw === 'movies') return 'movie';
+  if (raw === 'series' || raw === 'tv' || raw === 'show' || raw === 'shows') return 'series';
+  return 'mixed';
+}
+
+function svAuthoritySearchKey(item) {
+  const kind = (item && (item.type === 'series' || item.type === 'tv' || item._isSeries || item.seasons)) ? 'series' : 'movie';
+  const stream = String(item?.streamUrl || item?.url || '');
+  if (stream) return kind + '|url|' + stream.toLowerCase();
+  const id = String(item?.id ?? '');
+  if (id) return kind + '|id|' + id.toLowerCase();
+  const name = svNormalizeSearchText(item?.name || item?.title || item?.file || '');
+  const year = String(item?.year || '').match(/(?:19|20)\d{2}/)?.[0] || '';
+  return kind + '|title|' + name + '|' + year;
+}
+
+function svAuthoritySearchVariants(query) {
+  const clean = svNormalizeSearchText(query);
+  if (!clean) return [];
+  const out = [clean];
+  const parts = clean.split(' ').filter(Boolean);
+  if (parts.length) {
+    const last = parts[parts.length - 1];
+    if (last.length >= 4) {
+      if (last.endsWith('s')) {
+        const copy = parts.slice();
+        copy[copy.length - 1] = last.slice(0, -1);
+        out.push(copy.join(' '));
+      } else {
+        const copy = parts.slice();
+        copy[copy.length - 1] = last + 's';
+        out.push(copy.join(' '));
+      }
+    }
+  }
+  return [...new Set(out)];
+}
+
+function svAuthoritySearchRequest(req, q) {
+  return { ...req, query: { ...req.query, q, massive: '1', background: '1' } };
+}
+
+app.get('/api/search-authority/status', (req, res) => {
+  try {
+    loadMassiveCatalog();
+    const index = svGetFastSearchIndex();
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      version: '20260819-search-authority-v1',
+      indexedItems: index?.entries?.length || 0,
+      massiveMovies: Array.isArray(_massiveMovies) ? _massiveMovies.length : 0,
+      massiveSeries: Array.isArray(_massiveSeries) ? _massiveSeries.length : 0,
+      ftpMovies: getCachedMovies().length,
+      ftpSeries: getCachedSeries().length,
+      localMovies: (_movieList || []).length,
+      localSeries: (_seriesList || []).length,
+      fuzzy: true,
+      prefix: true,
+      typoTolerance: true,
+      catalogOnlyVisible: true,
+      source: 'local+ftp+massive+boot'
+    });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.get('/api/search', (req, res, next) => {
+  if (String(req.query.legacySearch || '') === '1') return next();
+  try {
+    const q = String(req.query.q || '').trim();
+    const page = Math.max(1, parseInt(req.query.page || '1', 10) || 1);
+    const limit = Math.min(120, Math.max(1, parseInt(req.query.limit || '72', 10) || 72));
+    if (q.length < 2) {
+      res.setHeader('Cache-Control', 'no-store');
+      return res.json({ items: [], total: 0, page, pages: 0, authority: true, version: '20260819-search-authority-v1' });
+    }
+
+    const kind = svAuthoritySearchKind(req);
+    const variants = svAuthoritySearchVariants(q);
+    const merged = [];
+    const seen = new Set();
+    const append = items => {
+      for (const item of Array.isArray(items) ? items : []) {
+        if (!item) continue;
+        const key = svAuthoritySearchKey(item);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        merged.push(item);
+      }
+    };
+
+    for (const variant of variants) {
+      append(svFastSearch(svAuthoritySearchRequest(req, variant), kind) || []);
+      if (merged.length >= Math.max(limit * 4, 240)) break;
+    }
+
+    try {
+      const boot = svQueryBootSearchPaged(q, kind, Math.min(240, Math.max(limit * 2, 120)), 1);
+      append(boot?.items || []);
+    } catch (_) {}
+
+    const start = (page - 1) * limit;
+    const items = merged.slice(start, start + limit);
+    const total = merged.length;
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      items,
+      total,
+      page,
+      pages: total ? Math.ceil(total / limit) : 0,
+      authority: true,
+      indexed: true,
+      massive: true,
+      fuzzy: true,
+      source: 'authority',
+      version: '20260819-search-authority-v1'
+    });
+  } catch (error) {
+    console.error('[Search Authority] request failed:', error.stack || error.message);
+    return next();
+  }
+});
+
+const svAuthorityWarmTimer = setTimeout(() => {
+  try {
+    loadMassiveCatalog();
+    const index = svBuildFastSearchIndex();
+    console.log('[Search Authority] warm index ready:', index?.entries?.length || 0, 'items');
+  } catch (error) {
+    console.error('[Search Authority] warmup failed:', error.message);
+  }
+}, 1200);
+svAuthorityWarmTimer.unref?.();
+
 app.get('/api/search', (req, res) => {
   try {
     const q = String(req.query.q || '').trim();
@@ -7867,64 +8550,308 @@ app.get('/api/movies/keywords', (req, res) => {
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // API: SERIES (with cartoon filter applied)
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+app.get('/api/series-diagnostics', (req, res) => {
+  res.json({
+    seriesRoot: path.basename(SERIES_DIR) || 'series',
+    ..._seriesDiagnostics,
+  });
+});
+
+app.get('/api/series-pipeline-diagnostics', (req, res) => {
+  const state = svGetCanonicalSeriesState();
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    ...state.diagnostics,
+    massiveCatalogParsing: _massiveSeriesDiagnostics,
+  });
+});
+
+// Original media downloads use catalog/file identities only. No client-supplied
+// URL is accepted by these routes, so this cannot be used as an arbitrary proxy.
+function svMediaDownloadMovieItems() {
+  loadMassiveCatalog();
+  const ftpMovies = getCachedMovies()
+    .filter(movie => !isCartoonOrAnime(movie))
+    .map((movie, index) => ({
+      ...movie,
+      id: movie.id || `ftp_${index}`,
+      name: movie.name || movie.title,
+      title: movie.title || movie.name,
+      type: 'movie',
+      isFtp: true,
+    }));
+  return [
+    ...(_movieList || buildMovieListSync()),
+    ...ftpMovies,
+    ...(Array.isArray(_massiveMovies) ? _massiveMovies : []),
+  ];
+}
+
+const svMediaDownloadResolver = createMediaDownloadResolver({
+  getFileIndex: () => fileIndex,
+  getMovieItems: svMediaDownloadMovieItems,
+  getSeriesState: svGetCanonicalSeriesState,
+});
+
+function svDownloadError(res, error) {
+  const status = Number(error?.status) || 500;
+  const code = error?.code || 'MEDIA_DOWNLOAD_FAILED';
+  const message = status >= 500 ? 'Media download failed' : (error?.message || 'Media download failed');
+  if (res.headersSent) return res.destroy();
+  return jsonError(res, status, code, message);
+}
+
+function svDownloadMime(filename, upstreamType = '') {
+  const localMime = MIME[path.extname(String(filename || '')).toLowerCase()];
+  const remoteType = String(upstreamType || '').trim();
+  return localMime || (!remoteType || /octet-stream/i.test(remoteType) ? 'application/octet-stream' : remoteType);
+}
+
+function svDownloadRequestLog(resolved) {
+  if (resolved.mediaType === 'episode') {
+    if (resolved.show) {
+      console.log(`[Download] episode series=${resolved.show.id} season=${resolved.seasonNumber} episode=${resolved.episodeNumber}`);
+    } else {
+      console.log(`[Download] episode streamId=${resolved.streamId}`);
+    }
+  } else {
+    console.log(`[Download] movie request id=${resolved.movie?.id ?? resolved.streamId ?? ''}`);
+  }
+  if (resolved.kind === 'remote') {
+    let host = '';
+    try { host = new URL(resolved.url).host; } catch {}
+    console.log(`[Download] source=remote host=${host}`);
+  } else {
+    console.log(`[Download] source=local streamId=${resolved.streamId}`);
+  }
+  console.log(`[Download] filename=${resolved.filename}`);
+}
+
+function svServeLocalDownload(req, res, resolved) {
+  let stat;
+  try { stat = fs.statSync(resolved.filePath); }
+  catch { throw new MediaDownloadError(404, 'LOCAL_MEDIA_MISSING', 'Local media file is missing'); }
+  if (!stat.isFile()) throw new MediaDownloadError(404, 'LOCAL_MEDIA_MISSING', 'Local media file is missing');
+
+  const rangeHeader = req.headers.range;
+  const parsedRange = rangeHeader ? parseSingleByteRange(rangeHeader, stat.size) : null;
+  if (rangeHeader && !parsedRange) {
+    res.writeHead(416, {
+      'Content-Range': `bytes */${stat.size}`,
+      'Content-Length': '0',
+      'Accept-Ranges': 'bytes',
+      'Content-Disposition': contentDisposition(resolved.filename),
+      'Content-Type': svDownloadMime(resolved.filename),
+      'Cache-Control': 'private, no-store',
+    });
+    return res.end();
+  }
+
+  const start = parsedRange?.start ?? 0;
+  const end = parsedRange?.end ?? stat.size - 1;
+  const status = parsedRange ? 206 : 200;
+  const headers = {
+    'Content-Type': svDownloadMime(resolved.filename),
+    'Content-Length': String(end - start + 1),
+    'Content-Disposition': contentDisposition(resolved.filename),
+    'Accept-Ranges': 'bytes',
+    'Last-Modified': stat.mtime.toUTCString(),
+    'Cache-Control': 'private, no-store',
+  };
+  if (parsedRange) headers['Content-Range'] = `bytes ${start}-${end}/${stat.size}`;
+  res.writeHead(status, headers);
+  if (req.method === 'HEAD') return res.end();
+
+  const source = fs.createReadStream(resolved.filePath, parsedRange ? { start, end } : undefined);
+  let finished = false;
+  res.once('finish', () => { finished = true; });
+  res.once('close', () => {
+    source.destroy();
+    if (!finished) console.log('[Download] client disconnected');
+  });
+  pipeline(source, res, error => {
+    if (error && error.code !== 'ERR_STREAM_PREMATURE_CLOSE' && !res.destroyed) {
+      console.error('[Download] local stream failed:', error.message);
+      res.destroy(error);
+    }
+  });
+}
+
+function svBlockedDownloadHostname(hostname) {
+  const host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  if (!host || host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true;
+  if (host === '::1' || host === '0.0.0.0') return true;
+  if (/^(?:127|0)\./.test(host) || /^169\.254\./.test(host)) return true;
+  if (/^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(?:1[6-9]|2\d|3[01])\./.test(host)) return true;
+  return /^f[cd][0-9a-f]{2}:/i.test(host) || /^fe[89ab][0-9a-f]:/i.test(host);
+}
+
+function svValidateDownloadUrl(url, knownCatalogUrl = false) {
+  let parsed;
+  try { parsed = new URL(url); }
+  catch { throw new MediaDownloadError(400, 'INVALID_REMOTE_MEDIA_URL', 'Remote media source is invalid'); }
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+    throw new MediaDownloadError(403, 'REMOTE_MEDIA_NOT_ALLOWED', 'Remote media source is not allowed');
+  }
+  if (svServerLiveSourceBlockReason(parsed.href)) {
+    throw new MediaDownloadError(403, 'LIVE_MEDIA_SOURCE_BLOCKED', 'Live media cannot be downloaded');
+  }
+  if (svBlockedDownloadHostname(parsed.hostname) && !knownCatalogUrl && !findCatalogItemByStreamUrl(parsed.href)) {
+    throw new MediaDownloadError(403, 'REMOTE_MEDIA_NOT_ALLOWED', 'Remote media source is not allowed');
+  }
+  return parsed;
+}
+
+function svStreamRemoteDownload(req, res, resolved, sourceUrl = resolved.url, redirectsLeft = 5, knownCatalogUrl = true) {
+  let parsed;
+  try { parsed = svValidateDownloadUrl(sourceUrl, knownCatalogUrl); }
+  catch (error) { return svDownloadError(res, error); }
+
+  const headers = {
+    'User-Agent': req.headers['user-agent'] || 'StreamVault/1.0',
+    'Accept': '*/*',
+    'Accept-Encoding': 'identity',
+  };
+  if (req.headers.range) headers.Range = req.headers.range;
+  const transport = parsed.protocol === 'https:' ? https : http;
+  const upstream = transport.request(parsed, {
+    method: req.method === 'HEAD' ? 'HEAD' : 'GET',
+    headers,
+  }, upstreamResponse => {
+    upstream.setTimeout(0);
+    const status = upstreamResponse.statusCode || 502;
+    const location = upstreamResponse.headers.location;
+    if ([301, 302, 303, 307, 308].includes(status) && location) {
+      upstreamResponse.resume();
+      if (redirectsLeft <= 0) return svDownloadError(res, new MediaDownloadError(502, 'REMOTE_REDIRECT_LIMIT', 'Remote source redirected too many times'));
+      let nextUrl;
+      try { nextUrl = new URL(location, parsed).href; }
+      catch { return svDownloadError(res, new MediaDownloadError(502, 'REMOTE_REDIRECT_INVALID', 'Remote source returned an invalid redirect')); }
+      return svStreamRemoteDownload(req, res, resolved, nextUrl, redirectsLeft - 1, false);
+    }
+
+    if (status === 416) {
+      const responseHeaders = {
+        'Content-Length': '0',
+        'Accept-Ranges': 'bytes',
+        'Content-Disposition': contentDisposition(resolved.filename),
+        'Content-Type': svDownloadMime(resolved.filename),
+        'Cache-Control': 'private, no-store',
+      };
+      if (upstreamResponse.headers['content-range']) responseHeaders['Content-Range'] = upstreamResponse.headers['content-range'];
+      upstreamResponse.resume();
+      res.writeHead(416, responseHeaders);
+      return res.end();
+    }
+    if (status >= 400) {
+      upstreamResponse.resume();
+      const timeout = status === 408 || status === 504;
+      return svDownloadError(res, new MediaDownloadError(timeout ? 504 : 502, timeout ? 'REMOTE_DOWNLOAD_TIMEOUT' : 'REMOTE_DOWNLOAD_FAILED', 'Remote media source is unavailable'));
+    }
+
+    const responseHeaders = {
+      'Content-Type': svDownloadMime(resolved.filename, upstreamResponse.headers['content-type']),
+      'Content-Disposition': contentDisposition(resolved.filename),
+      'Cache-Control': 'private, no-store',
+    };
+    for (const name of ['content-length', 'content-range', 'last-modified', 'etag']) {
+      if (upstreamResponse.headers[name]) responseHeaders[name.replace(/(^|-)([a-z])/g, (_, prefix, letter) => `${prefix}${letter.toUpperCase()}`)] = upstreamResponse.headers[name];
+    }
+    if (String(upstreamResponse.headers['accept-ranges'] || '').toLowerCase() === 'bytes' || status === 206) {
+      responseHeaders['Accept-Ranges'] = 'bytes';
+    }
+    res.writeHead(status === 206 ? 206 : 200, responseHeaders);
+    if (req.method === 'HEAD') {
+      upstreamResponse.resume();
+      return res.end();
+    }
+
+    let finished = false;
+    res.once('finish', () => { finished = true; });
+    res.once('close', () => {
+      upstreamResponse.destroy();
+      upstream.destroy();
+      if (!finished) console.log('[Download] client disconnected');
+    });
+    pipeline(upstreamResponse, res, error => {
+      if (error && error.code !== 'ERR_STREAM_PREMATURE_CLOSE' && !res.destroyed) {
+        console.error('[Download] remote stream failed:', error.message);
+        res.destroy(error);
+      }
+    });
+  });
+
+  upstream.setTimeout(20000, () => {
+    upstream.destroy(Object.assign(new Error('Remote connection timed out'), { code: 'ETIMEDOUT' }));
+  });
+  upstream.on('error', error => {
+    if (res.headersSent || res.destroyed) return;
+    const timedOut = error.code === 'ETIMEDOUT';
+    svDownloadError(res, new MediaDownloadError(timedOut ? 504 : 502, timedOut ? 'REMOTE_DOWNLOAD_TIMEOUT' : 'REMOTE_DOWNLOAD_FAILED', timedOut ? 'Remote media source timed out' : 'Remote media source is unavailable'));
+  });
+  res.once('close', () => upstream.destroy());
+  upstream.end();
+}
+
+function svHandleMediaDownload(req, res, resolve) {
+  let resolved;
+  try {
+    resolved = resolve();
+    svDownloadRequestLog(resolved);
+    if (resolved.kind === 'local') return svServeLocalDownload(req, res, resolved);
+    return svStreamRemoteDownload(req, res, resolved);
+  } catch (error) {
+    return svDownloadError(res, error);
+  }
+}
+
+app.get('/api/download/movie/:id', (req, res) => svHandleMediaDownload(req, res, () =>
+  svMediaDownloadResolver.resolveMovie({ id: req.params.id, title: req.query.title, year: req.query.year })
+));
+
+app.get('/api/download/media/:id', (req, res) => svHandleMediaDownload(req, res, () =>
+  svMediaDownloadResolver.resolveIndexed({ id: req.params.id })
+));
+
+app.get('/api/download/series/:seriesId/:season/:episode', (req, res) => svHandleMediaDownload(req, res, () =>
+  svMediaDownloadResolver.resolveEpisode({
+    seriesId: req.params.seriesId,
+    season: req.params.season,
+    episode: req.params.episode,
+    name: req.query.name || req.query.title,
+    year: req.query.year,
+    tmdbId: req.query.tmdbId,
+    streamId: req.query.streamId,
+  })
+));
+
+app.get('/api/series/:seriesId', (req, res) => {
+  const state = svGetCanonicalSeriesState();
+  const show = state.find({
+    id: req.params.seriesId,
+    tmdbId: req.query.tmdbId,
+    name: req.query.name || req.query.title,
+    year: req.query.year,
+  });
+  if (!show || !show.episodeCount) {
+    return jsonError(res, 404, 'CANONICAL_SERIES_NOT_FOUND', 'Canonical series episodes were not found');
+  }
+  res.setHeader('Cache-Control', 'private, max-age=300');
+  res.json({ ...show, isSummary: false, detailResolvable: true, hasStream: true, streamAvailable: true });
+});
+
 app.get('/api/series', (req, res) => {
   try {
-    const localSeries = _seriesList || buildSeriesListSync();
+    const state = svGetCanonicalSeriesState();
     const limit = Math.max(0, parseInt(req.query.limit || '0', 10) || 0);
-
-    const ftpSeriesRaw = getCachedSeries();
-    const ftpSource = limit && !String(req.query.q || '').trim() ? ftpSeriesRaw.slice(0, Math.max(limit - localSeries.length, 0)) : ftpSeriesRaw;
-    const ftpSeries = ftpSource
-      .filter(s => !isCartoonOrAnime(s))
-      .map(s => ({
-        name:   s.title,
-        title:  s.title,
-        poster: s.poster  || null,
-        backdrop: s.backdrop || s.poster || null,
-        tmdbId: s.tmdbId  || null,
-        year:   s.year    || '',
-        rating: s.rating  || null,
-        genre:  s.genre   || '',
-        type:   'series',
-        isFtp:  true,
-        seasons: s.seasons.reduce((acc, seasonObj) => {
-          const num = parseInt(seasonObj.season.match(/\d+/)?.[0] || '1');
-          acc[num] = seasonObj.episodes.map((e, i) => {
-            const parsed = parseSeriesFilename(e.filename);
-            const epNum  = parsed?.episode || i + 1;
-            const epTitle = (parsed?.epTitle && parsed.epTitle.trim())
-              ? parsed.epTitle.trim()
-              : `Episode ${epNum}`;
-            return {
-              streamId:  null,
-              episode:   epNum,
-              epTitle,
-              file:      e.filename,
-              streamUrl: e.streamUrl,
-              isFtp:     true,
-            };
-          });
-          return acc;
-        }, {}),
-      }));
-
-    const seenShows = new Set(localSeries.map(s => String(s.name || s.title || '').toLowerCase()));
-    const baseSeries = [...localSeries, ...ftpSeries.filter(s => !seenShows.has(String(s.name || s.title || '').toLowerCase()))];
-    let allSeries = baseSeries;
-
     const hasSearch = String(req.query.q || '').trim().length >= 2;
-    if (hasSearch && String(req.query.massive || '1') !== '0') {
-      loadMassiveCatalog();
-      const seen = new Set(baseSeries.map(s => `${String(s.name || s.title || '').toLowerCase()}|${s.year || ''}`));
-      allSeries = [...baseSeries, ..._massiveSeries.filter(s => {
-        const key = `${String(s.name || s.title || '').toLowerCase()}|${s.year || ''}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })];
-      const paged = svFilterPaged(allSeries, req, true, 'series');
-      return res.json({ series: paged.items, total: paged.list.length, page: paged.page, pages: paged.pages });
-    }
+    const includeMassiveOnly = hasSearch && String(req.query.massive || '1') !== '0';
+    let allSeries = state.shows.filter(show =>
+      show.episodeCount > 0 && !isCartoonOrAnime(show) &&
+      (includeMassiveOnly || show.sourceKinds.some(source => source === 'local' || source === 'ftpCatalog'))
+    );
+    const summary = String(req.query.summary || '') === '1';
+    if (summary) allSeries = allSeries.map(canonicalSeriesSummary);
 
     if (String(req.query.page || '') !== '' || String(req.query.q || '').trim()) {
       const paged = svFilterPaged(allSeries, req, true, 'series');
@@ -8061,17 +8988,50 @@ function resultYear(item, mediaType) {
   return String(date || '').slice(0, 4);
 }
 
-function cleanSearchTitle(title) {
-  return normalizeDetailTitle(title).title;
+// SV_20260817_TITLE_IDENTITY_V4: keep year-like numbers that belong to a title when an explicit release year is supplied.
+function svDetailIdentityForLookup(title, fallbackYear = '') {
+  let raw = String(title || '')
+    .replace(/\.[a-z0-9]{2,5}$/i, ' ')
+    .replace(/[._]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const explicitReleaseYear = String(fallbackYear || '').match(/(?:19|20)\d{2}/)?.[0] || '';
+  const yearMatches = [...raw.matchAll(/\b((?:19|20)\d{2})\b/g)];
+  const releaseYear = explicitReleaseYear || (yearMatches.length ? yearMatches[yearMatches.length - 1][1] : '');
+
+  if (releaseYear) {
+    const matches = [...raw.matchAll(new RegExp('\\b' + releaseYear + '\\b', 'g'))];
+    if (matches.length) {
+      const last = matches[matches.length - 1];
+      const candidate = (raw.slice(0, last.index) + raw.slice(last.index + last[0].length))
+        .replace(/[\(\)\[\]\{\}]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (candidate && !/^\d+$/.test(candidate)) raw = candidate;
+    }
+  }
+
+  raw = raw
+    .replace(/\bS\d{1,2}E\d{1,3}\b/ig, ' ')
+    .replace(/\b(?:2160p|1080p|720p|540p|480p|4k|uhd|hdr|webrip|web-rip|webdl|web-dl|bluray|brrip|hdrip|hdtv|dvdrip|x264|x265|hevc|aac|dts|ac3|eac3|ddp|nf|amzn|hmax|dsnp|itunes|mkv|mp4|esub|msubs|dual audio|multi audio|hindi|english|bengali|bangla|spanish)\b.*$/ig, ' ')
+    .replace(/[\[\]\(\)\{\}]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return { title: raw || String(title || '').trim(), year: releaseYear };
+}
+
+function cleanSearchTitle(title, year = '') {
+  return svDetailIdentityForLookup(title, year).title;
 }
 
 function splitSearchTitleYear(title, year = '') {
-  const normalized = normalizeDetailTitle(title, year);
-  return { title: normalized.title, year: normalized.year };
+  return svDetailIdentityForLookup(title, year);
 }
 
 function pickTmdbResult(results, title, year, mediaType) {
-  const clean = cleanSearchTitle(title).toLowerCase();
+  const clean = cleanSearchTitle(title, year).toLowerCase();
   const desiredYear = String(year || '').slice(0, 4);
   const cleanWords = new Set(clean.split(/\s+/).filter(w => w.length > 1));
   return (results || [])
@@ -8097,26 +9057,33 @@ function pickTmdbResult(results, title, year, mediaType) {
 }
 
 async function searchTmdbMedia(title, year, mediaType) {
+  // SV_20260817_TITLE_V5
   const normalized = splitSearchTitleYear(title, year);
   const clean = normalized.title;
   const searchYear = normalized.year;
   if (!clean) return null;
-  const endpoint = mediaType === 'tv' ? '/search/tv' : '/search/movie';
-  const yearParam = searchYear
-    ? mediaType === 'tv'
-      ? `&first_air_date_year=${encodeURIComponent(searchYear)}`
-      : `&year=${encodeURIComponent(searchYear)}`
-    : '';
-  let data = await tmdbGet(`${endpoint}?query=${encodeURIComponent(clean)}${yearParam}&include_adult=false&language=en-US&page=1`);
-  let picked = pickTmdbResult(data?.results || [], clean, searchYear, mediaType);
-  if (!picked && yearParam) {
-    data = await tmdbGet(`${endpoint}?query=${encodeURIComponent(clean)}&include_adult=false&language=en-US&page=1`);
-    picked = pickTmdbResult(data?.results || [], clean, searchYear, mediaType);
+  const variants=[];
+  const add=v=>{v=String(v||'').replace(/\s+/g,' ').trim();if(v&&!variants.includes(v))variants.push(v);};
+  const m=clean.match(/^(.*?)(?:[,;:\-]?\s+)((?:19|20)\d{2})$/);
+  if(m&&m[2]!==String(searchYear||'')){
+    const base=m[1].replace(/[\s,;:\-]+$/g,'').trim();
+    if(base)add(base+', '+m[2]);
   }
-  if (picked && SV_DETAIL_VERBOSE) console.log('[Details] TMDB matched', picked.id, resultTitle(picked, mediaType), resultYear(picked, mediaType));
-  return picked;
+  add(clean);
+  const endpoint=mediaType==='tv'?'/search/tv':'/search/movie';
+  for(const queryTitle of variants){
+    const yearParam=searchYear?(mediaType==='tv'?'&first_air_date_year='+encodeURIComponent(searchYear):'&year='+encodeURIComponent(searchYear)):'';
+    let data=await tmdbGet(endpoint+'?query='+encodeURIComponent(queryTitle)+yearParam+'&include_adult=false&language=en-US&page=1');
+    let picked=pickTmdbResult(data?.results||[],queryTitle,searchYear,mediaType);
+    if(picked)return picked;
+    if(yearParam){
+      data=await tmdbGet(endpoint+'?query='+encodeURIComponent(queryTitle)+'&include_adult=false&language=en-US&page=1');
+      picked=pickTmdbResult(data?.results||[],queryTitle,searchYear,mediaType);
+      if(picked)return picked;
+    }
+  }
+  return null;
 }
-
 function mapTmdbMediaCard(item, fallbackType) {
   const mediaType = item.media_type === 'tv' || fallbackType === 'tv' ? 'tv' : 'movie';
   const name = resultTitle(item, mediaType);
@@ -10234,6 +11201,17 @@ app.get(['/api/ftp/media-info', '/api/ftp/info'], async (req, res) => {
 
   try {
     const audioOnly = req.query.audioOnly === '1';
+    // SV_20260817_STARTUP_V6
+    if (req.query.startup === '1') {
+      const info = await getCachedMediaInfo(media.decodedUrl);
+      return res.json({
+        ok:true, requestedUrl:media.requestedUrl, decodedUrl:media.decodedUrl,
+        matchedCatalogItem:matched, playUrl:urls.finalPlayUrl, finalPlayUrl:urls.finalPlayUrl,
+        ...info, audioTracks:Array.isArray(info.audioTracks)?info.audioTracks:[],
+        sidecarSubtitleTracks:[], duration:Number(info.duration)||0,
+        ftpAudioValidated:false, startupProbe:true
+      });
+    }
     const [info, sidecarSubtitleTracks] = await Promise.all([
       audioOnly ? getCachedAudioOnlyMediaInfo(media.decodedUrl) : getCachedMediaInfo(media.decodedUrl),
       audioOnly ? Promise.resolve([]) : discoverRemoteSubtitleTracks(media.decodedUrl, req).catch(() => [])
@@ -10377,7 +11355,10 @@ app.get('/api/ftp/stream', async (req, res) => {
   const audioStreamIdx = audioSelection.audioStreamIdx;
   const mobilePlayback = isMobilePlaybackRequest(req);
   const smoothPlayback = req.query.smooth === '1' || req.query.profile === 'smooth';
-  const copyVideo = !smoothPlayback && !mobilePlayback && isRemoteDirectPlayable(srcUrl) && remoteVideoCanCopy(srcUrl);
+  const forceCircleFtpCompatibility = (() => {
+    try { return /(?:^|\.)circleftp\.net$/i.test(new URL(srcUrl).hostname); } catch (_) { return false; }
+  })();
+  const copyVideo = !forceCircleFtpCompatibility && !smoothPlayback && !mobilePlayback && isRemoteDirectPlayable(srcUrl) && remoteVideoCanCopy(srcUrl);
   const compatibilityTranscode = !copyVideo;
   const seekProfile = compatibilitySeekProfileForSource(srcUrl, { compatibilityTranscode, mobilePlayback });
   const seekWindow = compatibilitySeekWindow(startSec, seekProfile);
@@ -10689,9 +11670,6 @@ app.get('/api/ftp/test', async (req, res) => {
 
   setTimeout(() => { try { ffmpeg.kill('SIGKILL'); } catch(_){} }, 15000);
 });
-
-
-
 // â”€â”€ Software / downloads API restored safely â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Isolated from homepage/media/search. It only powers downloads.js and /download/:id.
 const SV_SOFTWARE_CATALOG_PATHS = [
@@ -10933,6 +11911,20 @@ app.get('/api/infra/events', requireInfraAccess, (req, res) => {
 });
 app.get('/api/infra/nodes', requireInfraAccess, (req, res) => res.json(infraTelemetry.nodes()));
 
+
+/* SV_MOBILE_DIRECT_V1_INSTALL */
+try {
+  require('./lib/mobile-direct').installMobileDirect({
+    app,
+    cacheDir: SV_CACHE_DIR,
+    getMediaInfo: getCachedMediaInfo,
+    getMovies: allApiMoviesForDetails,
+    getSeries: allApiSeriesForDetails
+  });
+} catch (error) {
+  console.error('[Mobile Direct] install failed:', error.message);
+}
+
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err.message);
@@ -10982,7 +11974,7 @@ function getLanIP() {
   return 'your-laptop-ip';
 }
 
-const server = app.listen(3000, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   const lan = getLanIP();
   const configured = channels.filter(c => c.url).length;
   console.log(`\nðŸŽ¬ StreamVault Enhanced â†’ http://0.0.0.0:${PORT}`);
@@ -11004,21 +11996,15 @@ const server = app.listen(3000, '0.0.0.0', () => {
   }, 2500);
 });
 infraTelemetry.attachWebSocket(server);
-
-
-
-
-
-
-
-
 /* SV_INSTANT_LIVE_PREWARM_PATCH */
-setTimeout(() => {
-  try {
-    if (typeof svEnsureLiveRelay === 'function') {
-      ['tsports','shomoy','jamuna','channel24'].forEach(id => {
-        try { svEnsureLiveRelay(id); } catch {}
-      });
-    }
-  } catch {}
-}, 2500);
+if (process.env.SV_DISABLE_LIVE_PREWARM !== '1') {
+  setTimeout(() => {
+    try {
+      if (typeof svEnsureLiveRelay === 'function') {
+        ['tsports','shomoy','jamuna','channel24'].forEach(id => {
+          try { svEnsureLiveRelay(id); } catch {}
+        });
+      }
+    } catch {}
+  }, 2500);
+}

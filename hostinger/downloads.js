@@ -1,4 +1,4 @@
-﻿window.API_BASE = window.StreamVaultConfig?.apiOrigin || 'https://backend.streamvault.fit';
+﻿window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE || '';
 (function(){
   const state = {
     loaded: false,
@@ -9,7 +9,8 @@
     pageSize: 72,
     filter: 'All',
     query: '',
-    timer: 0
+    timer: 0,
+    error: ''
   };
 
   const filters = ['All', 'Windows', 'Android', 'Games', 'Console', 'OS', 'Archives'];
@@ -109,6 +110,7 @@
 
   function cardHtml(item){
     const id = encodeURIComponent(String(item.id || ''));
+    const downloadUrl = window.StreamVaultConfig?.backendUrl(`/download/${id}`) || `/download/${id}`;
     const ext = String(item.extension || '').toUpperCase();
     const size = sizeLabel(item.size);
     const meta = [item.platform, ext].filter(Boolean).join(' - ');
@@ -119,7 +121,7 @@
         <div class="download-meta">${dEsc(meta || item.category || 'Download')}</div>
         ${size ? `<div class="download-size">${dEsc(size)}</div>` : ''}
       </div>
-      <a class="download-action" href="/download/${id}" target="_blank" rel="noopener">Download</a>
+      <a class="download-action" href="${dEsc(downloadUrl)}" target="_blank" rel="noopener">Download</a>
     </article>`;
   }
 
@@ -154,6 +156,12 @@
       return;
     }
 
+    if (state.error) {
+      grid.innerHTML = `<div class="downloads-empty">${dEsc(state.error)}</div>`;
+      if (count) count.textContent = '';
+      return;
+    }
+
     state.filtered = filteredItems();
     state.rendered = 0;
     if (count) {
@@ -171,17 +179,19 @@
   async function loadDownloads(){
     if (state.loaded || state.loading) return;
     state.loading = true;
+    state.error = '';
     renderDownloads();
     try {
-      const res = await fetch(API_BASE + '/api/downloads');
+      if(window.StreamVaultConfig?.backendStatus?.available === false)throw new Error('backend offline');
+      const res = await fetchWithTimeout(API_BASE + '/api/downloads', {}, 3500);
+      if(!res.ok)throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const items = Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items : []);
       state.items = items.filter(item => item && item.id);
       state.loaded = true;
     } catch {
       state.items = [];
-      const grid = document.getElementById('downloadsGrid');
-      if (grid) grid.innerHTML = '<div class="downloads-empty">Could not load downloads.</div>';
+      state.error = 'Downloads are unavailable while the backend is offline.';
     } finally {
       state.loading = false;
       renderDownloads();
@@ -270,6 +280,13 @@
   document.addEventListener('DOMContentLoaded', () => {
     if (hasDownloadsHash()) setTimeout(() => switchTab('downloads'), 0);
   }, { once: true });
+
+  window.addEventListener('streamvault:backend-status', event => {
+    if(!event.detail?.available || !state.error)return;
+    state.loaded = false;
+    state.error = '';
+    try{ if(currentTab === 'downloads')loadDownloads(); }catch{}
+  });
 })();
 
 

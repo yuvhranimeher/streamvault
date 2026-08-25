@@ -5,6 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "test:series-parser": "node scripts/test-series-parser.js",
+    "test:canonical-series": "node scripts/test-canonical-series.js",
+    "test:media-download": "node --test tests/media-download.test.js",
     "details:shadow:audit": "node tools/details-parity-v1/audit-details-fixtures.js",
     "details:shadow:schema": "node tools/details-parity-v1/validate-details-fixture-schema.js",
     "details:shadow:schema:negative": "node tools/details-parity-v1/test-details-fixture-schema-negative.js",
@@ -19,12 +22,13 @@
   },
   "dependencies": {
     "axios": "^1.15.0",
-    "basic-ftp": "^5.2.2",
     "cheerio": "^1.2.0",
     "express": "^4.18.2",
     "ws": "^8.21.0"
   },
   "devDependencies": {
-    "@types/k6": "^1.7.0"
+    "@types/k6": "^1.7.0",
+    "basic-ftp": "^6.0.1",
+    "dotenv": "^17.4.2"
   }
 }

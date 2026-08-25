@@ -448,7 +448,7 @@ nav:not(.solid){background:linear-gradient(to bottom,rgba(0,0,0,.88),transparent
 .ep-card:hover .ep-thumb-play{opacity:1}
 .ep-info{flex:1;min-width:0;padding-top:2px;}
 .ep-num-label{font-size:.65rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:rgba(255,255,255,.35);margin-bottom:4px;}
-.ep-title{font-size:.88rem;font-weight:600;color:#fff;line-height:1.35;overflow:hidden;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;}
+.ep-title{font-size:.88rem;font-weight:600;color:#fff;line-height:1.35;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
 .ep-overview{font-size:.72rem;color:rgba(255,255,255,.42);line-height:1.5;margin-top:5px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;min-height:1em;}
 .ep-brief-skeleton{display:block;height:.65rem;width:85%;border-radius:4px;background:linear-gradient(90deg,var(--surface3) 25%,var(--surface2) 50%,var(--surface3) 75%);background-size:200% 100%;animation:shimmer 1.4s infinite;}
 @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
@@ -1602,11 +1602,11 @@ nav.solid{background:var(--nav-bg) !important;border-color:var(--border)}
   .media-modal-season-row{display:flex;align-items:center;gap:12px;margin-bottom:16px}
   .media-modal-season-row select{background:#25272b;color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:9px 12px;font-weight:800}
   .media-modal-episodes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-  .media-modal-episode{display:flex;gap:14px;padding:12px;border:0;border-radius:10px;background:#1c1e22;color:#fff;text-align:left;cursor:pointer}
-  .media-modal-episode img{width:150px;aspect-ratio:16/9;object-fit:cover;border-radius:7px;background:#090a0c}
-  .media-modal-episode-copy{min-width:0;align-self:center}
-  .media-modal-episode-number{color:#aeb2b8;font-size:.72rem;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
-  .media-modal-episode-title{margin-top:5px;font-size:.92rem;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .media-modal-episode{display:flex;align-items:center;min-width:0;overflow:hidden;gap:14px;padding:12px;border:0;border-radius:10px;background:#1c1e22;color:#fff;text-align:left;cursor:pointer}
+  .media-modal-episode img{flex:0 0 150px;width:150px;aspect-ratio:16/9;object-fit:cover;border-radius:7px;background:#090a0c}
+  .media-modal-episode-copy{display:flex;flex:1;min-width:0;align-self:center;flex-direction:column;align-items:flex-start}
+  .media-modal-episode-number{display:block;color:#aeb2b8;font-size:.72rem;font-weight:900;line-height:1.2;text-transform:uppercase;letter-spacing:.06em}
+  .media-modal-episode-title{display:-webkit-box;width:100%;margin-top:5px;font-size:.92rem;font-weight:850;line-height:1.35;white-space:normal;overflow:hidden;overflow-wrap:anywhere;-webkit-box-orient:vertical;-webkit-line-clamp:2}
   @keyframes mediaModalFade{from{opacity:0}to{opacity:1}}
   @keyframes mediaModalScale{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
 }

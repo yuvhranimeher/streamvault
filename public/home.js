@@ -559,7 +559,7 @@
     const prevKeys = track._svItemKeys || svRowItemKeys(prevItems);
     track._svItems = list;
     track._svRenderItem = renderItem;
-    track._svInitial = opts.initial || (window.innerWidth < 760 ? 7 : 10);
+    track._svInitial = opts.initial || list.length;
     track._svBuffer = opts.buffer ?? (svWeakDevice ? 1 : (window.innerWidth < 760 ? 3 : 4));
     track._svBatch = opts.batch || (svWeakDevice ? 4 : (window.innerWidth < 760 ? 5 : 6));
     track._svRowId = rowId;
@@ -2958,7 +2958,7 @@
       svRenderVirtualTrackElement(cardsEl, heroMovies, renderFeatured, {
         rowId:'hero',
         limit:SV_EXCLUSIVE_HERO_LIMIT,
-        initial:window.innerWidth < 760 ? 8 : 12,
+        initial:50,
         batch:window.innerWidth < 760 ? 6 : 8,
         buffer:window.innerWidth < 760 ? 3 : 5
       });

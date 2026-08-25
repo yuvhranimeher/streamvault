@@ -882,8 +882,8 @@ async function attachPlayerSource(src, mode='direct', options={}){
       maxMaxBufferLength:isMobilePlaybackClient()?60:120,
       maxBufferSize:isMobilePlaybackClient()?28*1000*1000:80*1000*1000,
       backBufferLength:isMobilePlaybackClient()?30:45,
-      fragLoadingTimeOut:20000,
-      manifestLoadingTimeOut:15000,
+      fragLoadingTimeOut:12000,
+      manifestLoadingTimeOut:8000,
     });
     hlsInstance.on(Hls.Events.MEDIA_ATTACHED,()=>{
       if(abortIfStale())return finish(false, svStalePlaybackError('Superseded HLS attach'));
@@ -2604,6 +2604,137 @@ function mediaModalDirectPreview(details={}, item={}){
   return candidates.find(url=>/\.(?:mp4|webm|ogg)(?:$|[?#])/i.test(String(url || ''))) || '';
 }
 
+function mediaDownloadIconSvg(){
+  return '<svg class="media-download-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 3h2v10.17l3.59-3.58L18 11l-6 6-6-6 1.41-1.41L11 13.17V3zM5 19h14v2H5v-2z"/></svg>';
+}
+
+function triggerMediaDownload(url){
+  if(!url){
+    console.error('[Download] Unable to resolve downloadable media');
+    showToast('Unable to download this file');
+    return false;
+  }
+  showToast('Starting download…');
+  const anchor=document.createElement('a');
+  anchor.href=url;
+  anchor.download='';
+  anchor.style.display='none';
+  anchor.setAttribute('aria-hidden','true');
+  document.body.appendChild(anchor);
+  anchor.click();
+  setTimeout(()=>anchor.remove(),0);
+  return true;
+}
+
+function movieDownloadUrl(movie){
+  if(!movie || movie.id === null || movie.id === undefined)return '';
+  const params=new URLSearchParams();
+  if(movie.name || movie.title)params.set('title',movie.name || movie.title);
+  if(movie.year)params.set('year',movie.year);
+  const query=params.toString();
+  return `/api/download/movie/${encodeURIComponent(movie.id)}${query?'?'+query:''}`;
+}
+
+function indexedMediaId(mediaId){
+  if(mediaId === null || mediaId === undefined || (typeof mediaId === 'string' && !mediaId.trim()))return '';
+  const id=Number(mediaId);
+  if(!Number.isInteger(id) || id<0)return '';
+  return id;
+}
+
+function seriesEpisodeDownloadUrl(show,episode,season){
+  if(!show || !episode)return '';
+  const seriesId=show.id;
+  const seasonNumber=Number(season);
+  const episodeNumber=Number(episode.episode);
+  if(!seriesId || !Number.isInteger(seasonNumber) || seasonNumber<0 || !Number.isInteger(episodeNumber) || episodeNumber<0)return '';
+  const params=new URLSearchParams();
+  if(show.name || show.title)params.set('name',show.name || show.title);
+  if(show.year)params.set('year',show.year);
+  if(show.tmdbId)params.set('tmdbId',show.tmdbId);
+  const streamId=indexedMediaId(episode.streamId);
+  if(streamId !== '')params.set('streamId',String(streamId));
+  const query=params.toString();
+  return `/api/download/series/${encodeURIComponent(seriesId)}/${encodeURIComponent(seasonNumber)}/${encodeURIComponent(episodeNumber)}${query?'?'+query:''}`;
+}
+
+const mediaDownloadSeriesIdCache=new Map();
+
+function mediaDownloadSeriesKey(value){
+  let text=String(value || '');
+  try{if(typeof cleanDisplayTitle === 'function')text=cleanDisplayTitle(text);}catch{}
+  return text.normalize('NFKD').toLowerCase()
+    .replace(/\[[^\]]*\]/g,' ')
+    .replace(/\([^)]*(?:tv series|mini series|series|720p|1080p|2160p|480p|4k|web|bluray|x264|x265|hevc|19\d{2}|20\d{2})[^)]*\)/g,' ')
+    .replace(/\b(?:tv series|mini series|series|complete|dual audio|multi audio|web[- ]?dl|webrip|bluray|brrip|hdrip|hdtv|x264|x265|hevc|aac|ddp|nf|amzn|2160p|1080p|720p|480p|4k)\b/g,' ')
+    .replace(/\b(?:19|20)\d{2}(?:\s*[-–]\s*(?:19|20)\d{2})?\b/g,' ')
+    .replace(/[^\p{L}\p{N}]+/gu,' ')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+async function canonicalSeriesDownloadId(show){
+  const currentId=String(show?.id || '').trim();
+  if(/^series_[a-f0-9]+$/i.test(currentId))return currentId;
+  const name=String(show?.name || show?.title || '').trim();
+  if(!name)return currentId;
+  const year=String(show?.year || '').match(/(?:19|20)\d{2}/)?.[0] || '';
+  const cacheKey=`${mediaDownloadSeriesKey(name)}|${year}`;
+  if(mediaDownloadSeriesIdCache.has(cacheKey))return mediaDownloadSeriesIdCache.get(cacheKey);
+  const pending=(async()=>{
+    try{
+      const params=new URLSearchParams({q:mediaDownloadSeriesKey(name) || name,limit:'50',summary:'1'});
+      const response=await fetchWithTimeout(`/api/series?${params.toString()}`,{},12000);
+      if(!response?.ok)return currentId;
+      const payload=await response.json();
+      const items=Array.isArray(payload) ? payload : (payload.series || payload.items || []);
+      const wantedKey=mediaDownloadSeriesKey(name);
+      const matches=items.filter(item=>{
+        if(!/^series_[a-f0-9]+$/i.test(String(item?.id || '')))return false;
+        if(mediaDownloadSeriesKey(item?.name || item?.title) !== wantedKey)return false;
+        const itemYear=String(item?.year || '').match(/(?:19|20)\d{2}/)?.[0] || '';
+        return !year || !itemYear || itemYear === year;
+      });
+      return String(matches[0]?.id || currentId);
+    }catch(error){
+      console.warn('[Download] Canonical series identity unavailable:',error?.message || error);
+      return currentId;
+    }
+  })();
+  mediaDownloadSeriesIdCache.set(cacheKey,pending);
+  const resolved=await pending;
+  mediaDownloadSeriesIdCache.set(cacheKey,resolved);
+  return resolved;
+}
+
+async function downloadMedia(media,options={}){
+  const type=options.type === 'episode' ? 'episode' : 'movie';
+  let url='';
+  if(type === 'episode'){
+    const canonicalId=await canonicalSeriesDownloadId(options.show);
+    url=seriesEpisodeDownloadUrl({...options.show,id:canonicalId},media,options.season);
+  }
+  if(type === 'movie')url=movieDownloadUrl(media);
+  if(!url)console.error('[Download] Invalid media identifier:',type === 'episode' ? media?.streamId : (media?.streamId ?? media?.id));
+  return triggerMediaDownload(url);
+}
+
+function downloadMovieFromDetail(event){
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  const movie=currentMediaModalType === 'movie' && currentMediaModalItem ? currentMediaModalItem : currentDetailMovie;
+  return downloadMedia(movie,{type:'movie'});
+}
+
+function downloadSeriesEpisode(event,season,index){
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  const show=currentShow;
+  const episodes=show?.seasons?.[String(Number(season))] || show?.seasons?.[Number(season)] || [];
+  const episode=episodes[Number(index)];
+  return downloadMedia(episode,{type:'episode',show,season:Number(season)});
+}
+
 function renderMediaModalActions(item, type){
   const actions=document.getElementById('modalButtons');
   if(!actions)return;
@@ -2620,6 +2751,7 @@ function renderMediaModalActions(item, type){
   const progress=watchProgress[item?.streamId ?? item?.id] || null;
   actions.innerHTML=`
     <button class="media-modal-action primary" type="button" onclick="playMediaModalPrimary()"${unavailable?' disabled':''}>${unavailable?'Unavailable':'Play'}</button>
+    ${!unavailable?`<button class="media-modal-action secondary media-download-action" type="button" onclick="downloadMovieFromDetail(event)" title="Download original media file" aria-label="Download ${esc(item?.name || item?.title || 'movie')}">${mediaDownloadIconSvg()}<span>Download</span></button>`:''}
     ${!unavailable && progress && Number(progress.progress) > .02 ? '<button class="media-modal-action secondary" type="button" onclick="playMediaModalPrimary()">Resume</button>' : ''}
     <button class="media-modal-action secondary" type="button" onclick="toggleMediaModalWatchlist()">${isMovieWatchlisted(item)?'In Watchlist':'Watchlist'}</button>`;
 }
@@ -2636,13 +2768,16 @@ function renderMediaModalEpisodes(show, selectedSeason){
   const cards=episodes.map((episode,index)=>{
     const thumb=episode.thumb || episode.thumbnail || episode.poster || show.backdrop || show.poster || imageFallbackData(show.name);
     const title=episode.epTitle || episode.title || `Episode ${episode.episode || index + 1}`;
-    return `<button class="media-modal-episode" type="button" onclick="playMediaModalEpisode(${season},${index})">
-      <img src="${esc(thumb)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${esc(imageFallbackData(show.name))}'">
-      <span class="media-modal-episode-copy">
-        <span class="media-modal-episode-number">Episode ${esc(episode.episode || index + 1)}</span>
-        <span class="media-modal-episode-title">${esc(title)}</span>
-      </span>
-    </button>`;
+    return `<div class="media-modal-episode">
+      <button class="media-modal-episode-play" type="button" onclick="playMediaModalEpisode(${season},${index})" aria-label="Play Episode ${esc(episode.episode || index + 1)}">
+        <img src="${esc(thumb)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${esc(imageFallbackData(show.name))}'">
+        <span class="media-modal-episode-copy">
+          <span class="media-modal-episode-number">Episode ${esc(episode.episode || index + 1)}</span>
+          <span class="media-modal-episode-title">${esc(title)}</span>
+        </span>
+      </button>
+      <button class="media-modal-episode-download" type="button" onclick="downloadSeriesEpisode(event,${season},${index})" title="Download Episode ${esc(episode.episode || index + 1)}" aria-label="Download Episode ${esc(episode.episode || index + 1)}">${mediaDownloadIconSvg()}</button>
+    </div>`;
   }).join('');
   root.className='media-modal-section';
   root.innerHTML=`<h2 class="media-modal-heading">Episodes</h2>
@@ -2816,7 +2951,10 @@ function svInstallDesktopMediaModalOverride(){
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
-    openMediaModal(item,mediaModalTypeFor(item));
+    if(mediaModalTypeFor(item) === 'tv'){
+      const key=registerSeriesForDetail(item);
+      openSeriesDetail(key);
+    }else openMediaModal(item,'movie');
   };
   document.addEventListener('click',intercept,true);
   document.addEventListener('keydown',intercept,true);
@@ -2930,11 +3068,10 @@ function hydrateOpenSeriesDetail(show){
 
 function openSeriesModal(showName){
   const show=series.find(s=>s.name===showName||esc(s.name)===showName);
-  if(show && window.innerWidth > 768){
-    openMediaModal(show,'tv');
-    return;
+  if(show){
+    const key=registerSeriesForDetail(show);
+    openSeriesDetail(key);
   }
-  if(show)showSeriesDetail(show);
   return;
   if(!show)return;
   currentShow=show;
@@ -3058,6 +3195,7 @@ function renderEpisodes(show,season){
         <div class="ep-overview" id="epbrief-${ep.streamId||'ftp-'+Math.random()}">${existingBrief?esc(existingBrief):'<span class="ep-brief-skeleton"></span>'}</div>
         ${ep.runtime?`<div class="ep-duration">${ep.runtime}</div>`:''}
       </div>
+      <button class="ep-download-btn" type="button" onclick="downloadSeriesEpisode(event,${season},${epIdx})" title="Download Episode ${esc(ep.episode)}" aria-label="Download Episode ${esc(ep.episode)}">${mediaDownloadIconSvg()}</button>
     </div>`;
   }).join('');
   const genericCount = eps.filter(ep=>!ep.epTitle||/^Episode \d+$/.test(ep.epTitle)).length;
@@ -7875,6 +8013,12 @@ function openMovieDetail(key){
     ? '<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5v6h-2V7h2zm0 8v2h-2v-2h2z"/></svg>Unavailable'
     : '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>Watch';
   watchBtn.onclick = unavailable ? ()=>showToast('This title is unavailable') : ()=>playMovieFromDetail();
+  const downloadBtn = document.getElementById('mdDownloadBtn');
+  if(downloadBtn){
+    downloadBtn.disabled = unavailable;
+    downloadBtn.style.display = unavailable ? 'none' : '';
+    downloadBtn.onclick = unavailable ? ()=>showToast('Download unavailable') : event=>downloadMovieFromDetail(event);
+  }
   document.getElementById('mdSimilarTitle').textContent = movie.type === 'tv' ? 'Similar Shows' : 'Similar Movies';
   const token = ++_titleDetailsToken;
   renderOnlineSections('md', localTitleDetails(movie, movie.type === 'tv' ? 'tv' : 'movie'), movie.type === 'tv' ? 'tv' : 'movie', movie);
@@ -8677,13 +8821,7 @@ function svOptimizedCardFallbackMovieHTML(m, sp=false){
   return `<div class="card" role="button" tabindex="0" onclick="openMovieDetail('${detailKey}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMovieDetail('${detailKey}')}">${img}<div class="card-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div><div class="card-overlay"><div class="card-title">${esc(m.name || '')}</div><div class="card-meta">${m.rating?`<span class="card-rating">&#9733; ${esc(m.rating)}</span>`:''} ${m.year?`<span>${esc(m.year)}</span>`:''}</div></div>${bar}</div>`;
 }
 
-function svInitialCardCount(rowId){
-  const mobile = window.innerWidth < 760;
-  if(_svWeakDevice)return mobile ? 4 : 6;
-  if(rowId === 'newRow')return mobile ? 8 : 12;
-  if(rowId === 'seriesRow')return mobile ? 8 : 12;
-  return mobile ? 7 : 10;
-}
+function svInitialCardCount(rowId){ return 50; }
 function svFallbackItemKey(item){
   return [
     item?.type || (item?.seasons ? 'series' : 'movie'),
@@ -8783,7 +8921,7 @@ function svRenderLazyTrack(trackId, rowId, items, renderItem, opts={}){
     track._svItems = existingItems.concat(appendItems);
     track._svItemKeys = renderedKeys.concat(appendKeys);
     track._svRenderedKeys = renderedKeys;
-    svRenderSlice(track, rendered, Math.min(track._svItems.length, rendered + (opts.initial || svInitialCardCount(rowId))));
+    svRenderSlice(track, rendered, track._svItems.length);
     show(rowId);
     return;
   }
@@ -8793,7 +8931,7 @@ function svRenderLazyTrack(trackId, rowId, items, renderItem, opts={}){
   track._svBatch=opts.batch || (window.innerWidth < 760 ? 6 : 8);
   track._svRowId=rowId;
   track._svRendered=0;
-  svRenderSlice(track,0,Math.min(list.length,opts.initial || svInitialCardCount(rowId)));
+  svRenderSlice(track,0,list.length);
   if(!track.dataset.lazyAppendBound){
     track.dataset.lazyAppendBound='1';
     track.addEventListener('scroll',()=>{
@@ -9266,3 +9404,64 @@ function buildRows(){
 
 
 
+
+
+/* SV_INSTANT_POSTER_LOAD_PATCH */
+(function(){
+  if(window.__svInstantPosterLoadPatch)return;
+  window.__svInstantPosterLoadPatch = true;
+
+  function loadImgs(root){
+    const scope = root && root.querySelectorAll ? root : document;
+    const imgs = [];
+    if(scope.matches && scope.matches('img[data-sv-src]')) imgs.push(scope);
+    scope.querySelectorAll && scope.querySelectorAll('img[data-sv-src]').forEach(i=>imgs.push(i));
+    imgs.forEach(img=>{
+      const src = img.dataset.svSrc;
+      if(!src || img.dataset.svLoaded === '1')return;
+      img.loading = 'eager';
+      img.decoding = 'async';
+      img.fetchPriority = 'high';
+      if(img.getAttribute('src') !== src) img.setAttribute('src', src);
+      img.onload = () => {
+        img.dataset.svLoaded = '1';
+        img.classList.add('poster-loaded','is-loaded');
+      };
+    });
+  }
+
+  function renderAllTracks(){
+    document.querySelectorAll('.cards-track').forEach(track=>{
+      if(!track._svItems || !track._svRenderItem)return;
+      const cards = track.querySelectorAll('.card,.live-ch-card').length;
+      const from = Math.max(track._svRendered || 0, cards);
+      const to = track._svItems.length;
+      if(from >= to)return;
+      const html = track._svItems.slice(from,to).map((item,i)=>{
+        const next = {...item, _immediateImage:true, _priorityImage:true};
+        return track._svRenderItem(next, from+i);
+      }).join('');
+      track.insertAdjacentHTML('beforeend', html);
+      track._svRendered = to;
+    });
+    loadImgs(document);
+  }
+
+  window.svQueuePosterImages = loadImgs;
+  const mo = new MutationObserver(records=>{
+    for(const r of records) r.addedNodes && r.addedNodes.forEach(n=>n.nodeType===1 && loadImgs(n));
+    setTimeout(renderAllTracks, 80);
+  });
+
+  function start(){
+    loadImgs(document);
+    renderAllTracks();
+    mo.observe(document.body,{childList:true,subtree:true});
+    setTimeout(renderAllTracks,500);
+    setTimeout(renderAllTracks,1500);
+    setTimeout(renderAllTracks,3000);
+  }
+
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, {once:true});
+  else start();
+})();

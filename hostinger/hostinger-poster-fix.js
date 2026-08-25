@@ -1,5 +1,5 @@
 ﻿(function(){
-  window.API_BASE = window.StreamVaultConfig?.apiOrigin || 'https://backend.streamvault.fit';
+  window.API_BASE = window.STREAMVAULT_CONFIG?.backendOrigin || window.API_BASE || '';
 
   const FALLBACK_POSTER = '/fallback.webp';
 
@@ -34,9 +34,7 @@
         img.setAttribute("src", fixUrl(sv));
       }
 
-      img.loading="eager";
-      img.fetchPriority="high";
-      img.decoding="async";
+      if(!img.getAttribute('decoding'))img.decoding='async';
     });
   }
 

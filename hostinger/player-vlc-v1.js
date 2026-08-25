@@ -128,7 +128,12 @@
       error.endpointUnavailable=response.status===404 && !payload?.code;
       throw error;
     }
-    try{return svNormalizeBackendUrls(payload);}catch(_){return payload;}
+    try{
+      const normalized=svNormalizeBackendUrls(payload);
+      normalized.mode=payload.mode;
+      normalized.strategy=payload.strategy;
+      return normalized;
+    }catch(_){return payload;}
   }
 
   function languageName(code){

@@ -211,6 +211,14 @@ function getMediaInfo(filePath) {
           videoCodec: videoStream?.codec_name || 'unknown',
           videoIndex: videoStream?.index ?? 0,
           videoStartTime: streamStartSeconds(videoStream?.start_time),
+          videoProfile: videoStream?.profile || '',
+          videoLevel: Number(videoStream?.level) || 0,
+          pixelFormat: videoStream?.pix_fmt || '',
+          width: Number(videoStream?.width) || 0,
+          height: Number(videoStream?.height) || 0,
+          frameRate: videoStream?.avg_frame_rate || videoStream?.r_frame_rate || '',
+          bitrate: Number(videoStream?.bit_rate) || Number(info.format?.bit_rate) || 0,
+          fileSize: Number(info.format?.size) || 0,
           duration: parseFloat(info.format?.duration) || 0,
           container: info.format?.format_name || 'unknown'
         });
@@ -2655,10 +2663,10 @@ function remoteSubtitleCandidateUrls(srcUrl) {
   if (!ext) return [];
   const basePath = parsed.pathname.slice(0, -ext.length);
   const suffixes = [
+    '.vtt', '.en.vtt', '.eng.vtt', '.english.vtt',
+    '.srt', '.en.srt', '.eng.srt', '.english.srt',
     '.esub.vtt', '.e-sub.vtt', '.msubs.vtt', '.m-subs.vtt', '.multi.vtt', '.multi-subs.vtt',
-    '.en.vtt', '.eng.vtt', '.english.vtt', '.vtt',
     '.esub.srt', '.e-sub.srt', '.msubs.srt', '.m-subs.srt', '.multi.srt', '.multi-subs.srt',
-    '.en.srt', '.eng.srt', '.english.srt', '.srt',
     '.esub.ass', '.e-sub.ass', '.msubs.ass', '.m-subs.ass', '.multi.ass', '.multi-subs.ass',
     '.en.ass', '.eng.ass', '.english.ass', '.ass',
     '.esub.ssa', '.e-sub.ssa', '.msubs.ssa', '.m-subs.ssa', '.multi.ssa', '.multi-subs.ssa',
@@ -11910,6 +11918,66 @@ app.get('/api/infra/events', requireInfraAccess, (req, res) => {
   res.json(infraTelemetry.events().slice(-limit));
 });
 app.get('/api/infra/nodes', requireInfraAccess, (req, res) => res.json(infraTelemetry.nodes()));
+
+
+/* StreamVault playback capability v2: direct first, stable alternate-audio HLS,
+   and independently cached WebVTT subtitle tracks. */
+try {
+  require('./lib/playback-capability').installPlaybackCapability({
+    app,
+    cacheDir: path.join(SV_CACHE_DIR, 'playback-v2'),
+    ffmpegBin: FFMPEG_BIN,
+    getMediaInfo: getCachedMediaInfo,
+    resolveLocal(id) {
+      const mediaId = String(id ?? '');
+      const entry = typeof resolveMediaEntry === 'function'
+        ? resolveMediaEntry(mediaId)
+        : (/^\d+$/.test(mediaId) ? fileIndex[Number(mediaId)] : null);
+      if (!entry) return null;
+      const input = entryPath(entry);
+      if (!fs.existsSync(input)) return null;
+      return {
+        id: entry.id || mediaId,
+        input,
+        filename: entry.file,
+        label: entry.file,
+        dir: entry.dir,
+        entry,
+        directUrl: `/stream/${encodeURIComponent(entry.id || mediaId)}?playbackType=media`,
+      };
+    },
+    resolveRemote(rawUrl) {
+      let input;
+      try {
+        input = new URL(String(rawUrl || '')).href;
+      } catch {
+        return null;
+      }
+      if (!/^https?:\/\//i.test(input)) return null;
+      const matched = findCatalogItemByStreamUrl(input);
+      if (!matched) return null;
+      return {
+        id: matched.id ?? matched.streamId ?? null,
+        input,
+        filename: matched.filename || remoteFilename(input),
+        label: matched.title || matched.name || remoteFilename(input),
+        matched,
+        directUrl: `/api/ftp/proxy?playbackType=media&url=${encodeURIComponent(input)}`,
+      };
+    },
+    getLocalSidecars(source) {
+      return findSubtitleTracks(source.dir, source.filename);
+    },
+    getRemoteSidecars(input, req) {
+      return discoverRemoteSubtitleTracks(input, req);
+    },
+    isRemoteSidecarAllowed(input, sidecarUrl) {
+      return isAllowedRemoteSubtitleSidecar(input, sidecarUrl);
+    },
+  });
+} catch (error) {
+  console.error('[Playback v2] install failed:', error.message);
+}
 
 
 /* SV_MOBILE_DIRECT_V1_INSTALL */

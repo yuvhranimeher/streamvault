@@ -54,6 +54,24 @@ test('copies compatible video and converts only DTS audio', () => {
   assert.equal(decision.strategy, 'audio-transcode');
   assert.equal(decision.videoAction, 'copy');
   assert.equal(decision.audioAction, 'transcode-aac');
+  assert.equal(decision.audioTracks[0].outputChannels, 2);
+});
+
+test('normalizes multichannel and HE-AAC tracks instead of copying incompatible MSE audio', () => {
+  const decision = playbackDecision({
+    container: 'matroska,webm',
+    videoCodec: 'hevc',
+    audioTracks: [
+      { index: 1, codec: 'aac', profile: 'LC', language: 'eng', channels: 8, channelLayout: '7.1' },
+      { index: 2, codec: 'aac', profile: 'HE-AAC', language: 'eng', channels: 2, channelLayout: 'stereo' },
+    ],
+  }, '/avengers.mkv', 'avengers.mkv', { ...chrome, hevc: true });
+  assert.equal(decision.mode, 'hls');
+  assert.equal(decision.videoAction, 'copy');
+  assert.equal(decision.audioAction, 'transcode-aac');
+  assert.equal(decision.strategy, 'alternate-audio-transcode');
+  assert.deepEqual(decision.audioTracks.map(track => track.outputAction), ['transcode-aac', 'transcode-aac']);
+  assert.deepEqual(decision.audioTracks.map(track => track.outputChannels), [2, 2]);
 });
 
 test('transcodes HEVC only when the requesting browser cannot decode it', () => {

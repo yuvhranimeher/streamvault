@@ -178,6 +178,7 @@ function getMediaInfo(filePath) {
             streamIndex: s.index,
             relativeIndex: i,
             codec: s.codec_name,
+            profile: s.profile || '',
             bitrate: Number(s.bit_rate) > 0 ? Number(s.bit_rate) : 0,
             bitrateReported: s.bit_rate !== undefined && s.bit_rate !== 'N/A',
             duration: parseFloat(s.duration) || parseFloat(info.format?.duration) || 0,

@@ -34,7 +34,7 @@
 #playerModal .play-pause-center {
   min-width: 42px;
   min-height: 42px;
-  border-radius: 6px;
+  border-radius: 999px;
   transition: background-color 120ms ease, transform 120ms ease, opacity 120ms ease;
 }
 
@@ -74,7 +74,7 @@
 
 #playerModal .progress-track {
   height: 4px;
-  border-radius: 2px;
+  border-radius: 999px;
   background: rgba(255, 255, 255, .27);
   transition: height 100ms ease;
 }
@@ -93,9 +93,11 @@
 }
 
 #playerModal .progress-thumb {
-  width: 12px;
-  height: 12px;
-  margin-top: -4px;
+  width: 14px;
+  height: 14px;
+  margin-top: 0;
+  box-sizing: border-box;
+  border-radius: 50%;
   background: #fff;
   border: 2px solid #ff7a1a;
   box-shadow: none;

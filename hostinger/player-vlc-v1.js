@@ -34,7 +34,9 @@
     bufferTimer:0,
     capability:null,
     source:null,
-    legacyFallbackUsed:false,
+    hls:null,
+    metrics:null,
+    seekSequence:0,
   };
 
   function transition(next,detail){
@@ -69,6 +71,7 @@
 
   function destroyEngine(){
     try{if(hlsInstance){hlsInstance.destroy();hlsInstance=null;}}catch(_){ }
+    session.hls=null;
     try{video.querySelectorAll('track[data-sv-v2]').forEach(track=>track.remove());}catch(_){ }
     try{for(let i=0;i<video.textTracks.length;i++)video.textTracks[i].mode='disabled';}catch(_){ }
     try{clearSubtitleOverlay?.();}catch(_){ }
@@ -76,7 +79,9 @@
   }
 
   function resetSession(reason='reset'){
+    releaseCompatibilitySession(session.capability);
     session.sequence+=1;
+    session.seekSequence+=1;
     session.active=false;
     try{session.abort?.abort();}catch(_){ }
     session.abort=null;
@@ -85,7 +90,8 @@
     destroyEngine();
     session.capability=null;
     session.source=null;
-    session.legacyFallbackUsed=false;
+    session.hls=null;
+    session.metrics=null;
     transition(STATES.IDLE,{reason});
   }
 
@@ -108,9 +114,21 @@
     try{return svBackendUrl(pathname);}catch(_){return `${window.API_BASE||''}${pathname}`;}
   }
 
+  async function releaseCompatibilitySession(capability){
+    const key=String(capability?.cacheKey||'');
+    if(!key)return false;
+    try{
+      const response=await fetch(backendUrl(`/api/playback-hls/${encodeURIComponent(key)}/release`),{
+        method:'POST',cache:'no-store',keepalive:true
+      });
+      return response.ok;
+    }catch(_){return false;}
+  }
+
   async function fetchCapability(source,signal,options={}){
     const params=capabilityParams();
     params.set('sidecars',options.sidecars?'1':'0');
+    if(Number(options.start)>0)params.set('start',String(Number(options.start)));
     let pathname;
     if(source.kind==='remote'){
       params.set('url',source.url);
@@ -173,7 +191,11 @@
     const title=usefulTitle(track.title);
     const base=language||title||`Audio Track ${index+1}`;
     const detailTitle=title && title.toLowerCase()!==base.toLowerCase()?title:'';
-    const technical=[String(track.codec||'').toUpperCase(),channelLabel(track)].filter(Boolean).join(' ');
+    const sourceTechnical=[String(track.codec||'').toUpperCase(),channelLabel(track)].filter(Boolean).join(' ');
+    const outputTechnical=track.outputAction && track.outputAction!=='copy'
+      ? [String(track.outputCodec||'AAC').toUpperCase(),channelLabel({channels:track.outputChannels,channelLayout:track.outputChannelLayout})].filter(Boolean).join(' ')
+      : '';
+    const technical=outputTechnical?`${sourceTechnical} → ${outputTechnical}`:sourceTechnical;
     return [base,detailTitle,technical].filter(Boolean).join(' — ');
   }
 
@@ -272,6 +294,8 @@
     closeAllSeriesDropdowns?.();
     hidePlayerNotice?.();
     clearMediaStartupWatchdog?.();
+    try{clearFtpPostStartMetadataSchedule?.();}catch(_){ }
+    try{resetFtpHeavyPlaybackState?.();}catch(_){ }
     video.pause();
     video.removeAttribute('src');
     try{video.load();}catch(_){ }
@@ -321,10 +345,19 @@
       stopBufferSpinner();
     });
     listen(video,'canplay',()=>{if(current()){transition(video.paused?STATES.READY:STATES.PLAYING);stopBufferSpinner();}});
-    listen(video,'playing',()=>{if(current()){transition(STATES.PLAYING);stopBufferSpinner();}});
+    listen(video,'playing',()=>{if(current()){
+      transition(STATES.PLAYING);
+      stopBufferSpinner();
+      if(session.metrics && !session.metrics.firstPlayingAt)session.metrics.firstPlayingAt=performance.now();
+      if(session.metrics?.activeBufferStart){
+        session.metrics.bufferEvents.push({startedAt:session.metrics.activeBufferStart,endedAt:performance.now(),durationMs:performance.now()-session.metrics.activeBufferStart});
+        session.metrics.activeBufferStart=0;
+      }
+    }});
     listen(video,'pause',()=>{if(current() && !video.ended){transition(STATES.PAUSED);stopBufferSpinner();}});
     listen(video,'waiting',()=>{
       if(!current())return;
+      if(session.metrics && !session.metrics.activeBufferStart)session.metrics.activeBufferStart=performance.now();
       clearTimeout(session.bufferTimer);
       session.bufferTimer=setTimeout(()=>{if(current()){transition(STATES.BUFFERING);spinner(true);}},200);
     });
@@ -337,7 +370,7 @@
     listen(video,'ended',()=>{if(current()){transition(STATES.ENDED);stopBufferSpinner();}});
     listen(video,'error',()=>{
       if(!current() || hlsInstance)return;
-      failPlayback('Browser cannot decode this source',true);
+      failPlayback('Browser cannot decode this source');
     });
   }
 
@@ -375,6 +408,7 @@
         fragLoadingTimeOut:30000,
       });
       hlsInstance=hls;
+      session.hls=hls;
       const finish=(ok,error)=>{
         if(settled)return;
         settled=true;
@@ -395,8 +429,22 @@
         const selected=Math.min(currentAudioIdx,hls.audioTracks.length-1);
         hls.audioTrack=hls.audioTracks[selected]?.id??selected;
       });
+      hls.on(Hls.Events.AUDIO_TRACK_SWITCHED,(_event,data)=>{
+        if(stale())return;
+        const selected=hls.audioTracks.findIndex(track=>track.id===data?.id);
+        if(selected>=0 && selected<availableAudio.length){
+          currentAudioIdx=selected;
+          setAppliedAudioIndex?.(selected,'playback v2 HLS track switch');
+          renderAudioTracks?.();
+        }
+      });
       hls.on(Hls.Events.ERROR,(_event,data)=>{
-        if(stale() || !data?.fatal)return;
+        if(stale())return;
+        if(session.metrics)session.metrics.hlsErrors.push({
+          at:performance.now(),type:data?.type||'',details:data?.details||'',fatal:!!data?.fatal,
+          reason:String(data?.reason||data?.error?.message||'').slice(0,240)
+        });
+        if(!data?.fatal)return;
         if(data.type===Hls.ErrorTypes.NETWORK_ERROR && networkRetries<2){
           networkRetries+=1;
           setTimeout(()=>{if(!stale()){try{hls.startLoad();}catch(_){hls.loadSource(src);}}},networkRetries*500);
@@ -406,8 +454,9 @@
           mediaRetries+=1;
           try{hls.recoverMediaError();return;}catch(_){ }
         }
-        finish(false,new Error('Compatibility stream failed'));
-        failPlayback('Compatibility stream failed',true);
+        const error=new Error(`Compatibility stream failed${data?.details?`: ${data.details}`:''}`);
+        if(settled)failPlayback(userError(error));
+        else finish(false,error);
       });
       const timeout=setTimeout(()=>finish(false,new Error('Compatibility stream startup timed out')),35000);
       hls.attachMedia(video);
@@ -433,21 +482,7 @@
     return 'Unable to play this media';
   }
 
-  function fallbackToLegacy(reason){
-    if(!session.active || session.legacyFallbackUsed || !session.source)return false;
-    session.legacyFallbackUsed=true;
-    const source=session.source;
-    const functionToCall=source.kind==='remote'?legacy.playFtpMedia:legacy.playMedia;
-    if(typeof functionToCall!=='function')return false;
-    const args=source.kind==='remote'?[source.url,source.name,source.year]:[source.id,source.name,source.year];
-    resetSession('legacy fallback');
-    showToast?.(`${reason}. Using compatibility fallback.`);
-    setTimeout(()=>functionToCall.apply(window,args),0);
-    return true;
-  }
-
-  function failPlayback(message,allowFallback=false){
-    if(allowFallback && fallbackToLegacy(message))return;
+  function failPlayback(message){
     transition(STATES.ERROR,{message});
     stopBufferSpinner();
     showPlayerNotice?.(message);
@@ -460,6 +495,10 @@
     session.sequence+=1;
     const sequence=session.sequence;
     session.source=source;
+    session.metrics={
+      startedAt:performance.now(),firstPlayingAt:0,activeBufferStart:0,
+      bufferEvents:[],hlsErrors:[],seekEvents:[],source:{...source}
+    };
     session.abort=new AbortController();
     try{beginPlaybackRequestScope?.('playback v2 startup');}catch(_){ }
     if(source.kind==='local'){
@@ -476,6 +515,7 @@
       if(!session.active || sequence!==session.sequence)return;
       session.capability=capability;
       renderCapabilityMenus(capability);
+      video._sourceOffset=Number(capability.windowStart)||0;
       if(Number(capability.duration)>0){
         if(source.kind==='remote')_ftpDuration=Number(capability.duration);
         setPlayerDuration?.(Number(capability.duration),'api');
@@ -497,8 +537,70 @@
     }catch(error){
       if(error?.name==='AbortError' || !session.active || sequence!==session.sequence)return;
       console.error('[Playback v2] startup failed',error);
-      if(error.endpointUnavailable){fallbackToLegacy('New player unavailable');return;}
-      failPlayback(userError(error),true);
+      failPlayback(error.endpointUnavailable?'Player service unavailable':userError(error));
+    }
+  }
+
+  function seekInsideCurrentHlsWindow(target){
+    const offset=Number(session.capability?.windowStart)||0;
+    const localTarget=target-offset;
+    if(localTarget<0 || !video.seekable?.length)return false;
+    for(let index=0;index<video.seekable.length;index++){
+      const start=video.seekable.start(index);
+      const end=video.seekable.end(index);
+      if(localTarget>=start && localTarget<=end){
+        video.currentTime=Math.min(localTarget,Math.max(start,end-0.05));
+        return true;
+      }
+    }
+    return false;
+  }
+
+  async function seekHlsWindow(targetSeconds){
+    if(!session.active || session.capability?.mode!=='hls' || !session.source)return false;
+    const duration=Number(session.capability.duration)||0;
+    const target=Math.max(0,duration?Math.min(duration-1,targetSeconds):targetSeconds);
+    if(seekInsideCurrentHlsWindow(target))return true;
+    const seekSequence=++session.seekSequence;
+    const sequence=session.sequence;
+    const startedAt=performance.now();
+    const wasPaused=video.paused;
+    const audioIndex=currentAudioIdx;
+    const subtitleIndex=currentSubIdx;
+    const oldCapability=session.capability;
+    transition(STATES.PREPARING_SOURCE,{mode:'hls',strategy:'seek-window',target});
+    spinner(true);
+    try{
+      const capability=await fetchCapability(session.source,session.abort.signal,{start:target});
+      if(!session.active || sequence!==session.sequence || seekSequence!==session.seekSequence)return false;
+      if(capability.mode!=='hls')throw new Error('Seek window did not return HLS');
+      destroyEngine();
+      await releaseCompatibilitySession(oldCapability);
+      if(!session.active || sequence!==session.sequence || seekSequence!==session.seekSequence)return false;
+      video.pause();
+      video.removeAttribute('src');
+      try{video.load();}catch(_){ }
+      session.capability=capability;
+      renderCapabilityMenus(capability);
+      currentAudioIdx=Math.min(audioIndex,Math.max(0,availableAudio.length-1));
+      setAppliedAudioIndex?.(currentAudioIdx,'playback v2 seek window');
+      renderAudioTracks?.();
+      video._sourceOffset=Number(capability.windowStart)||target;
+      if(session.source.kind==='remote')_ftpCurrentTime=video._sourceOffset;
+      await attachHls(capability,sequence);
+      if(!session.active || sequence!==session.sequence || seekSequence!==session.seekSequence)return false;
+      video.playbackRate=currentSpeed||1;
+      if(!wasPaused)await video.play();
+      else transition(STATES.READY);
+      if(subtitleIndex>=0 && availableSubs[subtitleIndex]?.supported)setSubV2(subtitleIndex);
+      stopBufferSpinner();
+      session.metrics?.seekEvents.push({target,windowStart:video._sourceOffset,durationMs:performance.now()-startedAt,ok:true});
+      return true;
+    }catch(error){
+      if(error?.name==='AbortError' || !session.active || sequence!==session.sequence || seekSequence!==session.seekSequence)return false;
+      session.metrics?.seekEvents.push({target,durationMs:performance.now()-startedAt,ok:false,error:String(error.message||error)});
+      failPlayback(userError(error));
+      return false;
     }
   }
 
@@ -651,6 +753,16 @@
         return false;
       }
       return applyLegacyAudioAuthority(...args);
+    };
+  }catch(_){ }
+  try{
+    const seekToTimeLegacy=seekToTime;
+    seekToTime=(seconds)=>{
+      if(session.active && session.capability?.mode==='hls'){
+        seekHlsWindow(Number(seconds)||0).catch(error=>failPlayback(userError(error)));
+        return;
+      }
+      return seekToTimeLegacy(seconds);
     };
   }catch(_){ }
   try{video.disablePictureInPicture=false;}catch(_){ }

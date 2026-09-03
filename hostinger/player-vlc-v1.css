@@ -38,6 +38,23 @@
   transition: background-color 120ms ease, transform 120ms ease, opacity 120ms ease;
 }
 
+#playerModal .ctrl-icon-only,
+#playerModal .player-back,
+#playerModal .skip-btn,
+#playerModal .play-pause-center {
+  flex: 0 0 auto;
+  padding: 0;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  justify-content: center;
+}
+
+#playerModal .player-tool-wrap .ctrl,
+#playerModal .series-ctrl-btn,
+#playerModal .next-ep-btn {
+  border-radius: 999px;
+}
+
 #playerModal .player-back:hover,
 #playerModal .ctrl:hover,
 #playerModal .skip-btn:hover {
@@ -93,6 +110,7 @@
 }
 
 #playerModal .progress-thumb {
+  top: 50%;
   width: 14px;
   height: 14px;
   margin-top: 0;

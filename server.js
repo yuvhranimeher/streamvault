@@ -22,6 +22,7 @@ const {
   contentDisposition,
   createMediaDownloadResolver,
 } = require('./lib/media-download');
+const { CatalogManager } = require('./lib/catalog/catalog-manager');
 
 const tracker         = require('./middleware/tracker');
 const dashboardRoutes = require('./routes/dashboard');
@@ -32,7 +33,7 @@ app.options('/api/ftp/media-info', (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,HEAD,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Range, Authorization');
-  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges, Content-Disposition, X-StreamVault-Canonical-Id, X-StreamVault-Source-Kind, X-StreamVault-Source-Fingerprint');
   return res.status(204).end();
 });
 /* EMERGENCY_HOSTINGER_CORS */
@@ -40,7 +41,7 @@ app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,HEAD,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Range, Authorization");
-  res.setHeader("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges");
+  res.setHeader("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges, Content-Disposition, X-StreamVault-Canonical-Id, X-StreamVault-Source-Kind, X-StreamVault-Source-Fingerprint");
   if (req.method === "OPTIONS") return res.status(204).end();
   next();
 });
@@ -76,7 +77,7 @@ const MOVIES_DIR   = process.env.MOVIES_DIR || path.join(MEDIA_ROOT, 'movies');
 const SERIES_DIR   = process.env.SERIES_DIR || path.join(MEDIA_ROOT, 'series');
 const CACHE_FILE   = path.join(__dirname, 'poster-cache.json');
 const HISTORY_FILE = path.join(__dirname, 'watch-history.json');
-const INDEX_FILE   = path.join(__dirname, 'file-index.json');
+const INDEX_FILE   = process.env.CATALOG_INDEX_FILE || path.join(__dirname, 'file-index.json');
 const CHANNELS_FILE = path.join(__dirname, 'channels.json');
 const FTP_CATALOG_FILE = process.env.FTP_CATALOG_FILE || path.join(__dirname, 'catalog.json');
 const MASSIVE_CATALOG_FILE = process.env.MASSIVE_CATALOG_FILE || path.join(__dirname, 'scan-output', 'clean-catalog.json');
@@ -360,6 +361,39 @@ function getDurationOnlyMediaInfo(filePath) {
   });
 }
 
+const SV_REMOTE_MEDIA_INFO_CACHE_DIR = path.join(SV_CACHE_DIR, 'remote-media-info-v2');
+const SV_REMOTE_MEDIA_INFO_CACHE_TTL_MS = Math.max(60 * 60 * 1000, Number(process.env.SV_REMOTE_MEDIA_INFO_CACHE_TTL_MS || 30 * 24 * 60 * 60 * 1000));
+
+function svRemoteMediaInfoCachePath(sourceUrl) {
+  const key = crypto.createHash('sha1').update(`remote-media-info-v2|${sourceUrl}`).digest('hex');
+  return path.join(SV_REMOTE_MEDIA_INFO_CACHE_DIR, `${key}.json`);
+}
+
+function svReadRemoteMediaInfoCache(sourceUrl) {
+  const filename = svRemoteMediaInfoCachePath(sourceUrl);
+  try {
+    const stat = fs.statSync(filename);
+    if (!stat.isFile() || Date.now() - stat.mtimeMs > SV_REMOTE_MEDIA_INFO_CACHE_TTL_MS) return null;
+    const cached = JSON.parse(fs.readFileSync(filename, 'utf8'));
+    if (cached?.version !== 2 || cached?.sourceUrl !== sourceUrl || !cached?.info?.videoCodec || !(Number(cached.info.duration) > 0)) return null;
+    return cached.info;
+  } catch {
+    return null;
+  }
+}
+
+function svWriteRemoteMediaInfoCache(sourceUrl, info) {
+  try {
+    fs.mkdirSync(SV_REMOTE_MEDIA_INFO_CACHE_DIR, { recursive: true });
+    const filename = svRemoteMediaInfoCachePath(sourceUrl);
+    const temp = `${filename}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+    fs.writeFileSync(temp, JSON.stringify({ version: 2, sourceUrl, cachedAt: Date.now(), info }));
+    fs.renameSync(temp, filename);
+  } catch (error) {
+    console.warn('[Media info] persistent cache write failed:', error.message);
+  }
+}
+
 function getCachedMediaInfo(filePath) {
   let stat;
   try {
@@ -368,7 +402,11 @@ function getCachedMediaInfo(filePath) {
     const cacheKey = `remote:${filePath}`;
     const cached = mediaInfoCache.get(cacheKey);
     if (cached) return cached.promise;
-    const promise = getMediaInfo(filePath).catch(err => {
+    const persistent = svReadRemoteMediaInfoCache(filePath);
+    const promise = (persistent ? Promise.resolve(persistent) : getMediaInfo(filePath).then(info => {
+      svWriteRemoteMediaInfoCache(filePath, info);
+      return info;
+    })).catch(err => {
       mediaInfoCache.delete(cacheKey);
       throw err;
     });
@@ -567,6 +605,9 @@ const QUALITY_TIERS = {
 let posterCache  = {};
 let watchHistory = {};
 let fileIndex    = [];
+let mediaById    = new Map();
+let catalogManager = null;
+let catalogGeneration = '';
 let channels     = [];
 
 // â”€â”€ Pre-built in-memory lists (instant API responses) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -688,6 +729,7 @@ let _canonicalSeriesStamp = '';
 
 function svCanonicalSeriesSourceStamp() {
   return [
+    catalogGeneration,
     (_seriesList || []).length,
     (ftpCatalog.series || []).length,
     (_massiveSeries || []).length,
@@ -1843,9 +1885,13 @@ function findCatalogItemByStreamUrl(streamUrl) {
   const target = normalizeUrlForCompare(streamUrl);
   if (!target) return null;
 
-  for (const movie of getCachedMovies()) {
+  const ftpMovies = getCachedMovies().filter(movie => !isCartoonOrAnime(movie));
+  for (let movieIndex = 0; movieIndex < ftpMovies.length; movieIndex += 1) {
+    const movie = ftpMovies[movieIndex];
     if (normalizeUrlForCompare(movie.streamUrl) === target) {
       return {
+        id: movie.id || `ftp_${movieIndex}`,
+        canonicalId: movie.id || `ftp_${movieIndex}`,
         type: 'movie',
         title: movie.title,
         filename: movie.filename,
@@ -1855,14 +1901,26 @@ function findCatalogItemByStreamUrl(streamUrl) {
     }
   }
 
-  for (const show of getCachedSeries()) {
-    for (const seasonObj of (show.seasons || [])) {
-      for (const episode of (seasonObj.episodes || [])) {
+  const ftpSeries = getCachedSeries().filter(show => !isCartoonOrAnime(show));
+  for (let showIndex = 0; showIndex < ftpSeries.length; showIndex += 1) {
+    const show = ftpSeries[showIndex];
+    const seasons = Array.isArray(show.seasons) ? show.seasons : [];
+    for (let seasonIndex = 0; seasonIndex < seasons.length; seasonIndex += 1) {
+      const seasonObj = seasons[seasonIndex];
+      const seasonNumber = Number(seasonObj?.season ?? seasonObj?.seasonNumber ?? seasonIndex + 1) || seasonIndex + 1;
+      const episodes = Array.isArray(seasonObj?.episodes) ? seasonObj.episodes : [];
+      for (let episodeIndex = 0; episodeIndex < episodes.length; episodeIndex += 1) {
+        const episode = episodes[episodeIndex];
         if (normalizeUrlForCompare(episode.streamUrl) === target) {
+          const episodeId = episode.id || `ftp_ep_${showIndex}_${seasonNumber}_${episodeIndex}`;
           return {
+            id: episodeId,
+            canonicalId: episodeId,
+            seriesId: show.id || `ftp_series_${showIndex}`,
             type: 'episode',
             title: show.title,
-            season: seasonObj.season,
+            season: seasonNumber,
+            episode: Number(episode.episode || episode.number || episode.episodeNumber || episodeIndex + 1) || episodeIndex + 1,
             filename: episode.filename,
             server: show.server,
             streamUrl: episode.streamUrl,
@@ -3057,41 +3115,47 @@ function findSubtitleTracks(dir, videoFile) {
 
 // â”€â”€ Build file index â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function buildFileIndex() {
-  fileIndex = [];
-  let movieFiles = [];
-  try { movieFiles = fs.readdirSync(MOVIES_DIR).filter(f => VIDEO_EXTS.includes(path.extname(f).toLowerCase())); } catch (e) { console.warn('âš  Cannot read MOVIES_DIR:', e.message); }
-  movieFiles.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-  for (const f of movieFiles) fileIndex.push({ dir: MOVIES_DIR, file: f, type: 'movie' });
-  console.log(`ðŸ“ Indexed ${movieFiles.length} movie files`);
+  throw new Error('Direct catalog scans are disabled; use CatalogManager.rescan()');
+}
 
-  const seriesScan = walkVideoFiles(SERIES_DIR, VIDEO_EXTS);
-  for (const entry of seriesScan.files) fileIndex.push(entry);
+function svApplyActiveCatalog(catalog) {
+  const nextIndex = Object.values(catalog?.media || {});
+  fileIndex = nextIndex;
+  mediaById = new Map(nextIndex.map(entry => [String(entry.id), entry]));
+  _movieList = Array.isArray(catalog?.movies) ? catalog.movies : [];
+  _seriesList = Array.isArray(catalog?.series) ? catalog.series : [];
   _seriesDiagnostics = {
     ..._seriesDiagnostics,
-    seriesRootAvailable: fs.existsSync(SERIES_DIR),
-    videoFilesDiscovered: seriesScan.files.length,
-    scanErrors: seriesScan.errors.slice(0, 25),
+    ...(catalog?.diagnostics || {}),
+    seriesRootAvailable: catalog?.availability?.seriesRootAvailable ?? _seriesDiagnostics.seriesRootAvailable,
   };
-  if (seriesScan.errors.length) {
-    console.warn(`âš  Series scan encountered ${seriesScan.errors.length} filesystem error(s); continuing`);
-  }
-  console.log(`ðŸ“º Indexed ${seriesScan.files.length} series episode files recursively`);
-  console.log(`âœ… Total stream IDs: ${fileIndex.length}`);
+  catalogGeneration = String(catalog?.generatedAt || Date.now());
+  _canonicalSeriesState = null;
+  _canonicalSeriesStamp = '';
+  filterCartoonsAndAnime();
+  console.log(`[Catalog] Active snapshot swapped: ${_movieList.length} movies / ${_seriesList.length} series / ${catalog?.stats?.episodes || 0} episodes`);
+}
+
+function resolveMediaEntry(id) {
+  const value = String(id ?? '');
+  if (mediaById.has(value)) return mediaById.get(value);
+  if (/^\d+$/.test(value)) return fileIndex[Number(value)] || null;
+  return null;
 }
 function entryPath(entry) { return path.join(entry.dir, entry.file); }
 
 // â”€â”€ Build instant movie list (sync â€” reads only from posterCache) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function buildMovieListSync() {
   const list = [];
-  for (let id = 0; id < fileIndex.length; id++) {
-    const entry = fileIndex[id];
+  for (let legacyIndex = 0; legacyIndex < fileIndex.length; legacyIndex++) {
+    const entry = fileIndex[legacyIndex];
     if (entry.type !== 'movie') continue;
     const name = cleanTitle(entry.file);
     if (!name) continue;
     const key  = path.basename(entry.file, path.extname(entry.file));
     const info = posterCache[key] || null;
     list.push({
-      id,
+      id: entry.id || legacyIndex,
       name,
       file:     entry.file,
       poster:   info?.poster   || null,
@@ -3219,7 +3283,7 @@ app.options('*', (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,HEAD,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Range, Authorization');
-  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges, Content-Disposition');
   return res.status(204).end();
 });
 app.use((_, res, next) => {
@@ -3229,7 +3293,7 @@ app.use((_, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Range');
-  res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges, Content-Length');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges, Content-Length, Content-Disposition');
   next();
 });
 app.use(infraTelemetry.requestMiddleware);
@@ -6159,8 +6223,8 @@ app.get('/api/heavy-compat-hls/ftp/index.m3u8', async (req, res) => {
 });
 
 app.get('/api/mobile-hls/local/:id/index.m3u8', async (req, res) => {
-  const idx = parseInt(req.params.id, 10);
-  const entry = fileIndex[idx];
+  const idx = String(req.params.id);
+  const entry = resolveMediaEntry(idx);
   if (!entry) return res.status(404).send('Not found');
   const filePath = entryPath(entry);
   if (!fs.existsSync(filePath)) return res.status(404).send('File missing');
@@ -6628,24 +6692,35 @@ function findPlaybackCatalogItem(items, requestedId, requestedTitle, requestedYe
 // Lightweight home cards intentionally omit stream URLs. Resolve the trusted
 // catalog source only after the user presses Watch, keeping the home feed small.
 app.get('/api/playback/movie/:id', (req, res) => {
-  const movie = findPlaybackCatalogItem(
-    allApiMoviesForDetails(),
-    req.params.id,
-    req.query.title,
-    req.query.year,
-    item => !!item.streamUrl
-  );
-  if (!movie) return jsonError(res, 404, 'MOVIE_PLAYBACK_NOT_FOUND', 'Playable movie source was not found');
-  res.setHeader('Cache-Control', 'private, max-age=300');
-  return res.json({
-    ok: true,
-    id: req.params.id,
-    title: movie.name || movie.title || '',
-    streamUrl: movie.streamUrl,
-    isFtp: true,
-    streamAvailable: true,
-    hasStream: true,
-  });
+  try {
+    const resolved = svMediaDownloadResolver.resolveMovie({
+      id: req.params.id,
+      title: req.query.title,
+      year: req.query.year,
+    });
+    const source = svPlaybackCapabilitySource(resolved, req.params.id);
+    if (!source) return jsonError(res, 503, 'MOVIE_PLAYBACK_SOURCE_UNAVAILABLE', 'Movie source is temporarily unavailable');
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    return res.json({
+      ok: true,
+      id: source.canonicalId,
+      title: resolved.movie?.name || resolved.movie?.title || source.label || '',
+      streamUrl: source.remote ? source.input : '',
+      streamId: source.remote ? null : source.id,
+      isFtp: source.remote,
+      streamAvailable: true,
+      hasStream: true,
+      source: {
+        canonicalId: source.canonicalId,
+        kind: source.remote ? 'remote' : 'local',
+        fingerprint: source.fingerprint,
+      },
+    });
+  } catch (error) {
+    const status = Number(error?.status) || 502;
+    const code = status === 404 ? 'MOVIE_PLAYBACK_NOT_FOUND' : 'MOVIE_PLAYBACK_SOURCE_UNAVAILABLE';
+    return jsonError(res, status, code, status === 404 ? 'Playable movie source was not found' : 'Movie source is temporarily unavailable');
+  }
 });
 
 // Series summaries contain counts only. Hydrate seasons and episode URLs on
@@ -8566,6 +8641,41 @@ app.get('/api/series-diagnostics', (req, res) => {
   });
 });
 
+app.get('/api/catalog/status', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!catalogManager) return res.status(503).json({ ready: false, error: 'catalog_unavailable' });
+  const local = catalogManager.getStatus();
+  const canonical = _canonicalSeriesState?.diagnostics?.canonical || null;
+  const persistedSeries = Array.isArray(ftpCatalog.series) ? ftpCatalog.series : [];
+  const fallbackSeriesCounts = canonical || {
+    shows: persistedSeries.length,
+    seasons: persistedSeries.reduce((count, show) => count + Object.keys(show.seasons || {}).length, 0),
+    episodes: persistedSeries.reduce((count, show) => count + Object.values(show.seasons || {}).reduce((sum, episodes) => sum + (Array.isArray(episodes) ? episodes.length : 0), 0), 0),
+  };
+  const hasPersistedExternalCatalog = fallbackSeriesCounts.episodes > 0 || (ftpCatalog.movies || []).length > 0;
+  res.json({
+    ...local,
+    ready: local.ready || hasPersistedExternalCatalog,
+    usingPersistedCatalog: local.usingPersistedCatalog || (!local.ready && hasPersistedExternalCatalog),
+    counts: {
+      movies: (_movieList || []).length + (ftpCatalog.movies || []).length + (_massiveMovies || []).length,
+      series: fallbackSeriesCounts.shows ?? fallbackSeriesCounts.series ?? 0,
+      seasons: fallbackSeriesCounts.seasons || 0,
+      episodes: fallbackSeriesCounts.episodes || 0,
+      unparsedEpisodes: local.counts.unparsedEpisodes + Number(_massiveSeriesDiagnostics.unparsed || 0),
+      duplicates: local.counts.duplicates + Number(_canonicalSeriesState?.diagnostics?.duplicatesSuppressed || 0),
+    },
+    localCounts: local.counts,
+  });
+});
+
+app.post('/api/catalog/rescan', (req, res) => {
+  if (!catalogManager) return res.status(503).json({ error: 'catalog_unavailable' });
+  const alreadyRunning = !!catalogManager.scanPromise;
+  catalogManager.rescan('manual').catch(() => {});
+  res.status(202).json({ accepted: true, coalesced: alreadyRunning });
+});
+
 app.get('/api/series-pipeline-diagnostics', (req, res) => {
   const state = svGetCanonicalSeriesState();
   res.setHeader('Cache-Control', 'no-store');
@@ -8598,6 +8708,7 @@ function svMediaDownloadMovieItems() {
 
 const svMediaDownloadResolver = createMediaDownloadResolver({
   getFileIndex: () => fileIndex,
+  getMediaById: id => resolveMediaEntry(id),
   getMovieItems: svMediaDownloadMovieItems,
   getSeriesState: svGetCanonicalSeriesState,
 });
@@ -8605,9 +8716,20 @@ const svMediaDownloadResolver = createMediaDownloadResolver({
 function svDownloadError(res, error) {
   const status = Number(error?.status) || 500;
   const code = error?.code || 'MEDIA_DOWNLOAD_FAILED';
-  const message = status >= 500 ? 'Media download failed' : (error?.message || 'Media download failed');
+  console.warn(`[Download] mediaId=${res.locals?.downloadMediaId || ''} resolved=false status=${status} error=${code}`);
   if (res.headersSent) return res.destroy();
-  return jsonError(res, status, code, message);
+  const publicError = status === 404
+    ? 'media_not_found'
+    : status === 503
+      ? 'media_source_unavailable'
+      : status >= 500
+        ? 'upstream_download_failed'
+        : 'media_download_failed';
+  return res.status(status).json({
+    error: publicError,
+    code,
+    ...(status === 404 && res.locals?.downloadMediaId ? { mediaId: res.locals.downloadMediaId } : {}),
+  });
 }
 
 function svDownloadMime(filename, upstreamType = '') {
@@ -8616,7 +8738,13 @@ function svDownloadMime(filename, upstreamType = '') {
   return localMime || (!remoteType || /octet-stream/i.test(remoteType) ? 'application/octet-stream' : remoteType);
 }
 
-function svDownloadRequestLog(resolved) {
+function svDownloadRequestLog(req, resolved) {
+  const canonicalId = resolved.mediaId || resolved.episode?.mediaId || resolved.episode?.id || resolved.movie?.id || resolved.streamId || '';
+  const sourceIdentity = resolved.kind === 'remote' ? resolved.url : resolved.filePath;
+  const sourceFingerprint = crypto.createHash('sha1').update(String(sourceIdentity || '')).digest('hex').slice(0, 20);
+  console.log(`[Download] mediaId=${canonicalId}`);
+  console.log(`[Download] type=${resolved.mediaType} sourceType=${resolved.kind} resolved=true range=${req.headers.range || ''}`);
+  console.log(`[Download] canonicalId=${canonicalId} sourceFingerprint=${sourceFingerprint}`);
   if (resolved.mediaType === 'episode') {
     if (resolved.show) {
       console.log(`[Download] episode series=${resolved.show.id} season=${resolved.seasonNumber} episode=${resolved.episodeNumber}`);
@@ -8639,8 +8767,8 @@ function svDownloadRequestLog(resolved) {
 function svServeLocalDownload(req, res, resolved) {
   let stat;
   try { stat = fs.statSync(resolved.filePath); }
-  catch { throw new MediaDownloadError(404, 'LOCAL_MEDIA_MISSING', 'Local media file is missing'); }
-  if (!stat.isFile()) throw new MediaDownloadError(404, 'LOCAL_MEDIA_MISSING', 'Local media file is missing');
+  catch { throw new MediaDownloadError(503, 'LOCAL_MEDIA_MISSING', 'Local media file is missing'); }
+  if (!stat.isFile()) throw new MediaDownloadError(503, 'LOCAL_MEDIA_MISSING', 'Local media file is missing');
 
   const rangeHeader = req.headers.range;
   const parsedRange = rangeHeader ? parseSingleByteRange(rangeHeader, stat.size) : null;
@@ -8668,6 +8796,7 @@ function svServeLocalDownload(req, res, resolved) {
     'Cache-Control': 'private, no-store',
   };
   if (parsedRange) headers['Content-Range'] = `bytes ${start}-${end}/${stat.size}`;
+  console.log(`[Download] status=${status} bytes=${headers['Content-Length']}`);
   res.writeHead(status, headers);
   if (req.method === 'HEAD') return res.end();
 
@@ -8770,6 +8899,7 @@ function svStreamRemoteDownload(req, res, resolved, sourceUrl = resolved.url, re
       responseHeaders['Accept-Ranges'] = 'bytes';
     }
     res.writeHead(status === 206 ? 206 : 200, responseHeaders);
+    console.log(`[Download] status=${status === 206 ? 206 : 200} bytes=${responseHeaders['Content-Length'] || 'unknown'}`);
     if (req.method === 'HEAD') {
       upstreamResponse.resume();
       return res.end();
@@ -8805,8 +8935,19 @@ function svStreamRemoteDownload(req, res, resolved, sourceUrl = resolved.url, re
 function svHandleMediaDownload(req, res, resolve) {
   let resolved;
   try {
+    // Download responses are intentionally navigated through a hidden iframe by
+    // older deployed clients. They are attachments, not embeddable documents.
+    res.removeHeader('X-Frame-Options');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors https://streamvault.fit https://mediumseagreen-butterfly-834518.hostingersite.com");
+    res.locals.downloadMediaId = req.params.id || req.query.mediaId || req.query.streamId || '';
     resolved = resolve();
-    svDownloadRequestLog(resolved);
+    const canonicalId = resolved.mediaId || resolved.episode?.mediaId || resolved.episode?.id || resolved.movie?.id || resolved.streamId || res.locals.downloadMediaId;
+    const sourceIdentity = resolved.kind === 'remote' ? resolved.url : resolved.filePath;
+    const sourceFingerprint = crypto.createHash('sha1').update(String(sourceIdentity || '')).digest('hex').slice(0, 20);
+    res.setHeader('X-StreamVault-Canonical-Id', String(canonicalId || ''));
+    res.setHeader('X-StreamVault-Source-Kind', resolved.kind);
+    res.setHeader('X-StreamVault-Source-Fingerprint', sourceFingerprint);
+    svDownloadRequestLog(req, resolved);
     if (resolved.kind === 'local') return svServeLocalDownload(req, res, resolved);
     return svStreamRemoteDownload(req, res, resolved);
   } catch (error) {
@@ -8820,6 +8961,10 @@ app.get('/api/download/movie/:id', (req, res) => svHandleMediaDownload(req, res,
 
 app.get('/api/download/media/:id', (req, res) => svHandleMediaDownload(req, res, () =>
   svMediaDownloadResolver.resolveIndexed({ id: req.params.id })
+));
+
+app.get('/api/download/episode/:id', (req, res) => svHandleMediaDownload(req, res, () =>
+  svMediaDownloadResolver.resolveEpisodeById({ id: req.params.id })
 ));
 
 app.get('/api/download/series/:seriesId/:season/:episode', (req, res) => svHandleMediaDownload(req, res, () =>
@@ -8849,6 +8994,22 @@ app.get('/api/series/:seriesId', (req, res) => {
   res.json({ ...show, isSummary: false, detailResolvable: true, hasStream: true, streamAvailable: true });
 });
 
+const svSeriesApiGzipCache = new Map();
+function svSendMemorySeries(res, list, cacheKey) {
+  if (!/\bgzip\b/i.test(String(res.req.headers['accept-encoding'] || ''))) return res.json(list);
+  let body = svSeriesApiGzipCache.get(cacheKey);
+  if (!body) {
+    body = zlib.gzipSync(Buffer.from(JSON.stringify(list)), { level: zlib.constants.Z_BEST_SPEED });
+    svSeriesApiGzipCache.clear();
+    svSeriesApiGzipCache.set(cacheKey, body);
+  }
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Encoding', 'gzip');
+  res.setHeader('Content-Length', body.length);
+  res.setHeader('Vary', 'Accept-Encoding');
+  res.end(body);
+}
+
 app.get('/api/series', (req, res) => {
   try {
     const state = svGetCanonicalSeriesState();
@@ -8867,8 +9028,14 @@ app.get('/api/series', (req, res) => {
       return res.json({ series: paged.items, total: paged.list.length, page: paged.page, pages: paged.pages });
     }
 
-    res.json(limit ? allSeries.slice(0, limit) : allSeries);
-  } catch (e) { console.error('/api/series error:', e.message); res.json([]); }
+    const payload = limit ? allSeries.slice(0, limit) : allSeries;
+    if (!limit) return svSendMemorySeries(res, payload, `${_canonicalSeriesStamp}|summary=${summary ? 1 : 0}|${payload.length}`);
+    res.json(payload);
+  } catch (e) {
+    console.error('/api/series error:', e.message);
+    if (_seriesList?.length) return res.json(_seriesList);
+    res.status(503).json({ error: 'catalog_unavailable' });
+  }
 });
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -9690,8 +9857,8 @@ app.get('/api/episode-titles', async (req, res) => {
 // Probed on demand and cached so seek math can use the real source duration.
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 app.get('/api/media-info/:id', async (req, res) => {
-  const idx = parseInt(req.params.id, 10);
-  const entry = fileIndex[idx];
+  const idx = String(req.params.id);
+  const entry = resolveMediaEntry(idx);
   if (!entry) return res.status(404).json({ error: 'Not found' });
   const filePath = entryPath(entry);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing' });
@@ -9751,8 +9918,8 @@ app.get('/api/media-info/:id', async (req, res) => {
 
 // â”€â”€ Duration info â”€â”€â”€â”€
 app.get('/api/duration/:id', async (req, res) => {
-  const idx = parseInt(req.params.id, 10);
-  const entry = fileIndex[idx];
+  const idx = String(req.params.id);
+  const entry = resolveMediaEntry(idx);
   if (!entry) return res.status(404).json({ error: 'Not found' });
   const filePath = entryPath(entry);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing' });
@@ -9768,8 +9935,8 @@ app.get('/api/duration/:id', async (req, res) => {
 
 // â”€â”€ Quality info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get('/api/qualities/:id', (req, res) => {
-  const idx = parseInt(req.params.id, 10);
-  const entry = fileIndex[idx];
+  const idx = String(req.params.id);
+  const entry = resolveMediaEntry(idx);
   if (!entry) return res.status(404).json({ error: 'Not found' });
   const filePath = entryPath(entry);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing' });
@@ -9786,8 +9953,8 @@ app.get('/api/qualities/:id', (req, res) => {
 
 // â”€â”€ Subtitles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get('/api/subtitles/:id', (req, res) => {
-  const idx = parseInt(req.params.id, 10);
-  const entry = fileIndex[idx];
+  const idx = String(req.params.id);
+  const entry = resolveMediaEntry(idx);
   if (!entry) return res.json([]);
   const tracks = findSubtitleTracks(entry.dir, entry.file).map((t, i) => ({ index: i, label: t.label, lang: t.lang, ext: t.ext, src: `/subtitles/${idx}/${i}`, sidecar: true }));
   res.json(tracks);
@@ -9797,15 +9964,15 @@ app.get('/api/subtitles/:id', (req, res) => {
 app.get('/api/history', (req, res) => res.json(watchHistory));
 app.post('/api/history', (req, res) => {
   const { id, progress, name, poster, duration } = req.body;
-  if (id === undefined || typeof id !== 'number') return res.status(400).json({ error: 'valid id required' });
+  if ((typeof id !== 'number' && typeof id !== 'string') || !String(id).trim()) return res.status(400).json({ error: 'valid id required' });
   if (typeof progress !== 'number' || progress < 0 || progress > 1) return res.status(400).json({ error: 'invalid progress' });
   watchHistory[id] = { progress, name: String(name || '').slice(0, 200), poster: poster || null, duration: duration || 0, updatedAt: Date.now() };
   saveHistory();
   res.json({ ok: true });
 });
 app.delete('/api/history/:id', (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  if (isNaN(id)) return res.status(400).json({ error: 'invalid id' });
+  const id = String(req.params.id || '').trim();
+  if (!id) return res.status(400).json({ error: 'invalid id' });
   delete watchHistory[id];
   saveHistory();
   res.json({ ok: true });
@@ -9813,8 +9980,8 @@ app.delete('/api/history/:id', (req, res) => {
 
 // â”€â”€ Refresh poster â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get('/api/refresh-poster/:id', async (req, res) => {
-  const idx = parseInt(req.params.id, 10);
-  const entry = fileIndex[idx];
+  const idx = String(req.params.id);
+  const entry = resolveMediaEntry(idx);
   if (!entry) return res.status(404).json({ error: 'Not found' });
   const key = path.basename(entry.file, path.extname(entry.file));
   delete posterCache[key];
@@ -10250,8 +10417,8 @@ async function serveMobileLocalPipeline(req, res, idx, entry, filePath) {
 }
 
 app.get('/api/playback/local/:id', async (req, res) => {
-  const idx = parseInt(req.params.id, 10);
-  const entry = fileIndex[idx];
+  const idx = String(req.params.id);
+  const entry = resolveMediaEntry(idx);
   if (!entry) return jsonError(res, 404, 'LOCAL_MEDIA_NOT_FOUND', 'Local media was not found');
   const filePath = entryPath(entry);
   if (!fs.existsSync(filePath)) return jsonError(res, 404, 'LOCAL_MEDIA_MISSING', 'Local media file is missing');
@@ -10270,8 +10437,8 @@ app.get('/api/playback/local/:id', async (req, res) => {
 });
 
 app.get('/api/playback/local/:id/stream', async (req, res) => {
-  const idx = parseInt(req.params.id, 10);
-  const entry = fileIndex[idx];
+  const idx = String(req.params.id);
+  const entry = resolveMediaEntry(idx);
   if (!entry) return jsonError(res, 404, 'LOCAL_MEDIA_NOT_FOUND', 'Local media was not found');
   const filePath = entryPath(entry);
 
@@ -10316,8 +10483,8 @@ app.get('/api/playback/local/:id/stream', async (req, res) => {
 });
 
 app.get('/stream/:id', async (req, res) => {
-  const idx = parseInt(req.params.id, 10);
-  const entry = fileIndex[idx];
+  const idx = String(req.params.id);
+  const entry = resolveMediaEntry(idx);
   if (!entry) return res.status(404).send('Not found');
   
   const filePath = entryPath(entry);
@@ -10356,8 +10523,8 @@ app.get('/stream/:id', async (req, res) => {
 
 // Seekable stream for nonâ€‘MP4 local files
 app.get('/api/stream-seek/:id', async (req, res) => {
-  const idx = parseInt(req.params.id, 10);
-  const entry = fileIndex[idx];
+  const idx = String(req.params.id);
+  const entry = resolveMediaEntry(idx);
   if (!entry) return res.status(404).send('Not found');
   const filePath = entryPath(entry);
   if (!fs.existsSync(filePath)) return res.status(404).send('File missing');
@@ -10694,9 +10861,9 @@ function transcodeStream(req, res, filePath, mediaInfo, entry) {
 // SUBTITLES
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 app.get('/subtitles/:id/embedded/:streamIdx.vtt', (req, res) => {
-  const idx = parseInt(req.params.id, 10);
+  const idx = String(req.params.id);
   const streamIdx = parseInt(req.params.streamIdx, 10);
-  const entry = fileIndex[idx];
+  const entry = resolveMediaEntry(idx);
   if (!entry) return res.status(404).send('No entry');
   if (!Number.isFinite(streamIdx) || streamIdx < 0) return res.status(400).send('Invalid subtitle stream');
   const filePath = entryPath(entry);
@@ -10743,8 +10910,8 @@ app.get('/subtitles/:id/embedded/:streamIdx.vtt', (req, res) => {
 });
 
 app.get('/subtitles/:id/:trackIdx?', (req, res) => {
-  const idx   = parseInt(req.params.id, 10);
-  const entry = fileIndex[idx];
+  const idx   = String(req.params.id);
+  const entry = resolveMediaEntry(idx);
   if (!entry) return res.status(404).send('No entry');
   const tracks = findSubtitleTracks(entry.dir, entry.file);
   if (!tracks.length) return res.status(404).send('No subtitles');
@@ -10848,7 +11015,12 @@ app.post('/party/:room/event', (req, res) => {
   
   if (!['load','play','pause','seek','chat'].includes(type)) return res.status(400).json({ error: 'invalid type' });
   
-  if (type === 'load')  { room.state.streamId = Number(streamId); room.state.time = 0; room.state.playing = false; }
+  if (type === 'load')  {
+    const rawStreamId = String(streamId ?? '').trim();
+    room.state.streamId = /^\d+$/.test(rawStreamId) ? Number(rawStreamId) : rawStreamId;
+    room.state.time = 0;
+    room.state.playing = false;
+  }
   if (type === 'play')  { room.state.playing = true;  room.state.time = Number(time) || room.state.time; }
   if (type === 'pause') { room.state.playing = false; room.state.time = Number(time) || room.state.time; }
   if (type === 'seek')  { room.state.time = Number(time) || 0; }
@@ -11507,6 +11679,210 @@ app.get('/api/ftp/stream', async (req, res) => {
   req.on('close', () => { try { ffmpeg.kill('SIGKILL'); } catch(_){} });
 });
 
+const SV_PLAYBACK_TAIL_CACHE_ITEM_BYTES = Math.max(1024 * 1024, Number(process.env.SV_PLAYBACK_TAIL_CACHE_ITEM_BYTES || 12 * 1024 * 1024));
+const SV_PLAYBACK_TAIL_CACHE_TOTAL_BYTES = Math.max(SV_PLAYBACK_TAIL_CACHE_ITEM_BYTES, Number(process.env.SV_PLAYBACK_TAIL_CACHE_TOTAL_BYTES || 64 * 1024 * 1024));
+const SV_PLAYBACK_TAIL_CACHE_TTL_MS = Math.max(60000, Number(process.env.SV_PLAYBACK_TAIL_CACHE_TTL_MS || 30 * 60 * 1000));
+const svPlaybackTailCache = new Map();
+let svPlaybackTailCacheBytes = 0;
+
+function svPlaybackSourceHeaders(meta = {}, extra = {}) {
+  return {
+    'Accept-Ranges': 'bytes',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Expose-Headers': 'Content-Range, Accept-Ranges, Content-Length, Content-Type, X-StreamVault-Canonical-Id, X-StreamVault-Source-Kind, X-StreamVault-Source-Fingerprint, X-StreamVault-Range-Cache',
+    'Cache-Control': 'private, max-age=300',
+    ...(meta.canonicalId ? { 'X-StreamVault-Canonical-Id': String(meta.canonicalId) } : {}),
+    ...(meta.sourceKind ? { 'X-StreamVault-Source-Kind': String(meta.sourceKind) } : {}),
+    ...(meta.fingerprint ? { 'X-StreamVault-Source-Fingerprint': String(meta.fingerprint) } : {}),
+    ...extra,
+  };
+}
+
+function svExplicitByteRange(value) {
+  const match = /^bytes=(\d+)-(\d*)$/i.exec(String(value || '').trim());
+  if (!match) return null;
+  const start = Number(match[1]);
+  const end = match[2] ? Number(match[2]) : null;
+  if (!Number.isSafeInteger(start) || start < 0 || (end !== null && (!Number.isSafeInteger(end) || end < start))) return null;
+  return { start, end };
+}
+
+function svParsedContentRange(value) {
+  const match = /^bytes\s+(\d+)-(\d+)\/(\d+)$/i.exec(String(value || '').trim());
+  if (!match) return null;
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  const total = Number(match[3]);
+  if (![start, end, total].every(Number.isSafeInteger) || start < 0 || end < start || total <= end) return null;
+  return { start, end, total };
+}
+
+function svExpirePlaybackTailCache(now = Date.now()) {
+  for (const [key, entry] of svPlaybackTailCache) {
+    if (now - entry.lastAccess <= SV_PLAYBACK_TAIL_CACHE_TTL_MS) continue;
+    svPlaybackTailCache.delete(key);
+    svPlaybackTailCacheBytes -= entry.buffer.length;
+  }
+}
+
+function svStorePlaybackTailRange(sourceUrl, entry) {
+  const key = normalizeUrlForCompare(sourceUrl);
+  const previous = svPlaybackTailCache.get(key);
+  if (previous) svPlaybackTailCacheBytes -= previous.buffer.length;
+  svPlaybackTailCache.set(key, { ...entry, lastAccess: Date.now() });
+  svPlaybackTailCacheBytes += entry.buffer.length;
+  svExpirePlaybackTailCache();
+  while (svPlaybackTailCacheBytes > SV_PLAYBACK_TAIL_CACHE_TOTAL_BYTES && svPlaybackTailCache.size) {
+    const oldest = [...svPlaybackTailCache.entries()].sort((a, b) => a[1].lastAccess - b[1].lastAccess)[0];
+    if (!oldest) break;
+    svPlaybackTailCache.delete(oldest[0]);
+    svPlaybackTailCacheBytes -= oldest[1].buffer.length;
+  }
+}
+
+function svServeCachedPlaybackTail(req, res, sourceUrl, meta = {}) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return false;
+  const requested = svExplicitByteRange(req.headers.range);
+  if (!requested) return false;
+  svExpirePlaybackTailCache();
+  const key = normalizeUrlForCompare(sourceUrl);
+  const cached = svPlaybackTailCache.get(key);
+  if (!cached || requested.start < cached.start) return false;
+  const end = requested.end === null ? cached.end : Math.min(requested.end, cached.end);
+  if (end < requested.start || end > cached.end) return false;
+  const offset = requested.start - cached.start;
+  const body = cached.buffer.subarray(offset, offset + (end - requested.start + 1));
+  cached.lastAccess = Date.now();
+  res.writeHead(206, svPlaybackSourceHeaders(meta, {
+    'Content-Type': cached.contentType,
+    'Content-Length': String(body.length),
+    'Content-Range': `bytes ${requested.start}-${end}/${cached.total}`,
+    'X-StreamVault-Range-Cache': 'HIT',
+  }));
+  if (req.method === 'HEAD') return res.end(), true;
+  res.end(body);
+  console.log(`[Playback Range] canonicalId=${meta.canonicalId || ''} cache=hit range=${req.headers.range} bytes=${body.length}`);
+  return true;
+}
+
+function svCapturePlaybackTail(sourceUrl, req, upstreamResponse, contentType) {
+  if (req.method !== 'GET') return;
+  const requested = svExplicitByteRange(req.headers.range);
+  const received = svParsedContentRange(upstreamResponse.headers['content-range']);
+  const length = Number(upstreamResponse.headers['content-length']);
+  if (!requested || !received || received.start !== requested.start || received.end !== received.total - 1) return;
+  if (!Number.isSafeInteger(length) || length <= 0 || length > SV_PLAYBACK_TAIL_CACHE_ITEM_BYTES || length !== received.end - received.start + 1) return;
+  const chunks = [];
+  let bytes = 0;
+  let failed = false;
+  upstreamResponse.on('data', chunk => {
+    if (failed) return;
+    bytes += chunk.length;
+    if (bytes > SV_PLAYBACK_TAIL_CACHE_ITEM_BYTES) {
+      failed = true;
+      chunks.length = 0;
+      return;
+    }
+    chunks.push(Buffer.from(chunk));
+  });
+  upstreamResponse.once('aborted', () => { failed = true; chunks.length = 0; });
+  upstreamResponse.once('error', () => { failed = true; chunks.length = 0; });
+  upstreamResponse.once('end', () => {
+    if (failed || bytes !== length) return;
+    svStorePlaybackTailRange(sourceUrl, {
+      start: received.start,
+      end: received.end,
+      total: received.total,
+      contentType,
+      buffer: Buffer.concat(chunks, bytes),
+    });
+    console.log(`[Playback Range] cache=store range=${received.start}-${received.end}/${received.total} bytes=${bytes}`);
+  });
+}
+
+function svStreamRemotePlayback(req, res, sourceUrl, meta = {}, redirectsLeft = 5, knownCatalogUrl = true) {
+  let parsed;
+  try { parsed = svValidateDownloadUrl(sourceUrl, knownCatalogUrl); }
+  catch (error) {
+    return jsonError(res, error.status || 400, error.code || 'REMOTE_MEDIA_NOT_ALLOWED', error.message);
+  }
+  if (svServeCachedPlaybackTail(req, res, parsed.href, meta)) return;
+
+  const headers = {
+    'User-Agent': req.headers['user-agent'] || 'StreamVault/1.0',
+    'Accept': '*/*',
+    'Accept-Encoding': 'identity',
+  };
+  if (req.headers.range) headers.Range = req.headers.range;
+  const transport = parsed.protocol === 'https:' ? https : http;
+  const startedAt = Date.now();
+  const upstream = transport.request(parsed, {
+    method: req.method === 'HEAD' ? 'HEAD' : 'GET',
+    headers,
+  }, upstreamResponse => {
+    upstream.setTimeout(0);
+    try { req.socket?.setNoDelay?.(true); res.socket?.setNoDelay?.(true); upstreamResponse.socket?.setNoDelay?.(true); } catch {}
+    const status = upstreamResponse.statusCode || 502;
+    const location = upstreamResponse.headers.location;
+    if ([301, 302, 303, 307, 308].includes(status) && location) {
+      upstreamResponse.resume();
+      if (redirectsLeft <= 0) return jsonError(res, 502, 'REMOTE_REDIRECT_LIMIT', 'Remote source redirected too many times');
+      let nextUrl;
+      try { nextUrl = new URL(location, parsed).href; }
+      catch { return jsonError(res, 502, 'REMOTE_REDIRECT_INVALID', 'Remote source returned an invalid redirect'); }
+      return svStreamRemotePlayback(req, res, nextUrl, meta, redirectsLeft - 1, false);
+    }
+    if (status >= 400) {
+      upstreamResponse.resume();
+      return jsonError(res, status === 404 ? 404 : 502, 'REMOTE_MEDIA_REQUEST_FAILED', 'Remote media request failed', { upstreamStatus: status });
+    }
+
+    const upstreamType = String(upstreamResponse.headers['content-type'] || '').toLowerCase();
+    const contentType = !upstreamType || upstreamType.includes('octet-stream')
+      ? mimeForMediaPath(parsed.href)
+      : upstreamResponse.headers['content-type'];
+    const responseHeaders = svPlaybackSourceHeaders(meta, {
+      'Content-Type': contentType,
+      'X-StreamVault-Range-Cache': 'MISS',
+    });
+    for (const name of ['content-length', 'content-range', 'last-modified', 'etag']) {
+      if (upstreamResponse.headers[name]) {
+        responseHeaders[name.replace(/(^|-)([a-z])/g, (_, prefix, letter) => `${prefix}${letter.toUpperCase()}`)] = upstreamResponse.headers[name];
+      }
+    }
+    if (String(upstreamResponse.headers['accept-ranges'] || '').toLowerCase() !== 'bytes' && status !== 206) {
+      delete responseHeaders['Accept-Ranges'];
+    }
+    svCapturePlaybackTail(parsed.href, req, upstreamResponse, contentType);
+    res.writeHead(status === 206 ? 206 : 200, responseHeaders);
+    console.log(`[Playback Range] canonicalId=${meta.canonicalId || ''} cache=miss requestRange=${req.headers.range || ''} status=${status} contentRange=${upstreamResponse.headers['content-range'] || ''} contentLength=${upstreamResponse.headers['content-length'] || ''} headerMs=${Date.now() - startedAt}`);
+    if (req.method === 'HEAD') {
+      upstreamResponse.resume();
+      return res.end();
+    }
+    let finished = false;
+    res.once('finish', () => { finished = true; });
+    res.once('close', () => {
+      upstreamResponse.destroy();
+      upstream.destroy();
+      if (!finished) console.log(`[Playback Range] canonicalId=${meta.canonicalId || ''} client=disconnected range=${req.headers.range || ''}`);
+    });
+    pipeline(upstreamResponse, res, error => {
+      if (error && error.code !== 'ERR_STREAM_PREMATURE_CLOSE' && !res.destroyed) {
+        console.error('[Playback Range] stream failed:', error.message);
+        res.destroy(error);
+      }
+    });
+  });
+  upstream.on('error', error => {
+    console.error('[Playback Range] upstream failed:', error.message);
+    if (!res.headersSent) jsonError(res, 502, 'REMOTE_PROXY_FAILED', 'Could not reach remote media source');
+    else res.destroy(error);
+  });
+  res.once('close', () => upstream.destroy());
+  upstream.end();
+}
+
 app.get('/api/ftp/proxy', (req, res) => {
   let media;
   try {
@@ -11527,61 +11903,11 @@ app.get('/api/ftp/proxy', (req, res) => {
   console.log(`[FTP Proxy] final play URL: ${urls.proxyUrl}`);
   if (SV_PLAYBACK_VERBOSE) console.log(`[Media Playback] playbackType=${req.query.playbackType || 'media'} route=ftp-legacy-proxy selected source URL=${srcUrl} fallback reason=${req.query.fallbackReason || 'proxy'}`);
 
-  const headers = {
-    'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0',
-  };
-  if (req.headers.range) headers.Range = req.headers.range;
-
-  const mod = srcUrl.startsWith('https://') ? https : http;
-  const proxyReq = mod.get(srcUrl, { headers, timeout: 20000 }, proxyRes => {
-    try { req.socket?.setNoDelay?.(true); res.socket?.setNoDelay?.(true); proxyRes.socket?.setNoDelay?.(true); } catch {}
-    const status = proxyRes.statusCode || 200;
-    if (status >= 400) {
-      proxyRes.resume();
-      return jsonError(res, status, 'REMOTE_MEDIA_REQUEST_FAILED', 'Remote media request failed', {
-        requestedUrl: media.requestedUrl,
-        decodedUrl: srcUrl,
-        matchedCatalogItem: matched,
-        upstreamStatus: status,
-      });
-    }
-
-    const upstreamType = String(proxyRes.headers['content-type'] || '').toLowerCase();
-    const contentType = !upstreamType || upstreamType.includes('octet-stream')
-      ? mimeForMediaPath(srcUrl)
-      : proxyRes.headers['content-type'];
-    const mobilePlayback = isMobilePlaybackRequest(req);
-    const passHeaders = {
-      'Content-Type': contentType,
-      'Accept-Ranges': proxyRes.headers['accept-ranges'] || 'bytes',
-      'Access-Control-Allow-Origin': '*',
-      'Cache-Control': mobilePlayback ? 'no-cache' : 'private, max-age=0, must-revalidate',
-    };
-    if (proxyRes.headers['content-length']) passHeaders['Content-Length'] = proxyRes.headers['content-length'];
-    if (proxyRes.headers['content-range']) passHeaders['Content-Range'] = proxyRes.headers['content-range'];
-
-    res.writeHead(status, passHeaders);
-    proxyRes.pipe(res);
+  svStreamRemotePlayback(req, res, srcUrl, {
+    canonicalId: matched?.canonicalId || matched?.id || '',
+    sourceKind: 'remote',
+    fingerprint: crypto.createHash('sha1').update(srcUrl).digest('hex').slice(0, 20),
   });
-
-  proxyReq.on('error', e => {
-    console.error('[FTP Proxy] Error:', e.message);
-    if (!res.headersSent) {
-      jsonError(res, 502, 'REMOTE_PROXY_FAILED', 'Could not reach remote media source', {
-        decodedUrl: srcUrl,
-        details: e.message,
-      });
-    }
-  });
-  proxyReq.on('timeout', () => {
-    proxyReq.destroy();
-    if (!res.headersSent) {
-      jsonError(res, 504, 'REMOTE_PROXY_TIMEOUT', 'Remote media source timed out', {
-        decodedUrl: srcUrl,
-      });
-    }
-  });
-  res.on('close', () => proxyReq.destroy());
 });
 
 app.get('/api/ftp/duration', async (req, res) => {
@@ -11923,29 +12249,168 @@ app.get('/api/infra/nodes', requireInfraAccess, (req, res) => res.json(infraTele
 
 /* StreamVault playback capability v2: direct first, stable alternate-audio HLS,
    and independently cached WebVTT subtitle tracks. */
+function svPlaybackCapabilitySource(resolved, requestedId) {
+  if (!resolved) return null;
+  const canonicalId = String(
+    resolved.mediaId
+      || resolved.episode?.mediaId
+      || resolved.episode?.id
+      || resolved.movie?.id
+      || resolved.streamId
+      || requestedId
+  );
+  if (resolved.kind === 'remote') {
+    const input = String(resolved.url || resolved.source?.url || resolved.source?.streamUrl || '').trim();
+    if (!input) return null;
+    return {
+      id: canonicalId,
+      canonicalId,
+      input,
+      remote: true,
+      filename: resolved.source?.file || resolved.source?.filename || remoteFilename(input),
+      label: resolved.movie?.name || resolved.movie?.title || resolved.episode?.title || resolved.episode?.name || remoteFilename(input),
+      matched: resolved.movie || resolved.episode || resolved.source,
+      fingerprint: crypto.createHash('sha1').update(input).digest('hex').slice(0, 20),
+      directUrl: `/api/playback-source/${encodeURIComponent(canonicalId)}?playbackType=media`,
+    };
+  }
+  if (resolved.kind === 'local') {
+    const input = String(resolved.filePath || '');
+    if (!input || !fs.existsSync(input)) return null;
+    const entry = resolved.entry || resolved.source;
+    return {
+      id: entry?.id || resolved.streamId || canonicalId,
+      canonicalId,
+      input,
+      remote: false,
+      filename: entry?.file || resolved.filename || path.basename(input),
+      label: entry?.file || resolved.filename || path.basename(input),
+      dir: entry?.dir || path.dirname(input),
+      entry,
+      fingerprint: crypto.createHash('sha1').update(input).digest('hex').slice(0, 20),
+      directUrl: `/api/playback-source/${encodeURIComponent(canonicalId)}?playbackType=media`,
+    };
+  }
+  return null;
+}
+
+const SV_PLAYBACK_SOURCE_CACHE_MS = Math.max(30000, Number(process.env.SV_PLAYBACK_SOURCE_CACHE_MS || 10 * 60 * 1000));
+const svPlaybackSourceResolutionCache = new Map();
+
+function svResolveAuthoritativePlaybackSource(id, query = {}) {
+  const mediaId = String(id ?? '').trim();
+  const cacheKey = `${mediaId}|${String(query.title || '')}|${String(query.year || '')}`;
+  const cached = svPlaybackSourceResolutionCache.get(cacheKey) || svPlaybackSourceResolutionCache.get(`${mediaId}||`);
+  if (cached && Date.now() - cached.resolvedAt <= SV_PLAYBACK_SOURCE_CACHE_MS) {
+    if (cached.source.remote || fs.existsSync(cached.source.input)) return cached.source;
+    svPlaybackSourceResolutionCache.delete(cacheKey);
+  }
+  const indexed = resolveMediaEntry(mediaId);
+  if (indexed) {
+    const indexedSource = svPlaybackCapabilitySource({
+      kind: 'local',
+      streamId: indexed.id || mediaId,
+      entry: indexed,
+      filePath: entryPath(indexed),
+    }, mediaId);
+    if (indexedSource) {
+      svPlaybackSourceResolutionCache.set(cacheKey, { source: indexedSource, resolvedAt: Date.now() });
+      svPlaybackSourceResolutionCache.set(`${indexedSource.canonicalId}||`, { source: indexedSource, resolvedAt: Date.now() });
+      return indexedSource;
+    }
+    console.warn(`[Playback v2] stale local source canonicalId=${mediaId}; reconciling with authoritative media resolver`);
+  }
+
+  const attempts = [
+    () => svMediaDownloadResolver.resolveMovie({
+      id: mediaId,
+      title: query.title,
+      year: query.year,
+    }),
+    () => svMediaDownloadResolver.resolveEpisodeById({ id: mediaId }),
+  ];
+  for (const resolve of attempts) {
+    try {
+      const source = svPlaybackCapabilitySource(resolve(), mediaId);
+      if (source) {
+        svPlaybackSourceResolutionCache.set(cacheKey, { source, resolvedAt: Date.now() });
+        svPlaybackSourceResolutionCache.set(`${source.canonicalId}||`, { source, resolvedAt: Date.now() });
+        return source;
+      }
+    } catch (error) {
+      if (error?.status !== 404) throw error;
+    }
+  }
+  return null;
+}
+
+function svServeLocalPlaybackSource(req, res, source) {
+  let stat;
+  try { stat = fs.statSync(source.input); }
+  catch { return jsonError(res, 503, 'LOCAL_MEDIA_MISSING', 'Local media file is missing'); }
+  if (!stat.isFile()) return jsonError(res, 503, 'LOCAL_MEDIA_MISSING', 'Local media file is missing');
+  const requestedRange = req.headers.range;
+  const range = requestedRange ? parseSingleByteRange(requestedRange, stat.size) : null;
+  if (requestedRange && !range) {
+    res.writeHead(416, svPlaybackSourceHeaders({
+      canonicalId: source.canonicalId,
+      sourceKind: 'local',
+      fingerprint: source.fingerprint,
+    }, { 'Content-Range': `bytes */${stat.size}`, 'Content-Length': '0' }));
+    return res.end();
+  }
+  const start = range?.start ?? 0;
+  const end = range?.end ?? stat.size - 1;
+  const headers = svPlaybackSourceHeaders({
+    canonicalId: source.canonicalId,
+    sourceKind: 'local',
+    fingerprint: source.fingerprint,
+  }, {
+    'Content-Type': mimeForMediaPath(source.filename || source.input),
+    'Content-Length': String(end - start + 1),
+    'Last-Modified': stat.mtime.toUTCString(),
+    'X-StreamVault-Range-Cache': 'LOCAL',
+  });
+  if (range) headers['Content-Range'] = `bytes ${start}-${end}/${stat.size}`;
+  res.writeHead(range ? 206 : 200, headers);
+  if (req.method === 'HEAD') return res.end();
+  const stream = fs.createReadStream(source.input, range ? { start, end } : undefined);
+  res.once('close', () => stream.destroy());
+  pipeline(stream, res, error => {
+    if (error && error.code !== 'ERR_STREAM_PREMATURE_CLOSE' && !res.destroyed) res.destroy(error);
+  });
+}
+
+app.get('/api/playback-source/:id', (req, res) => {
+  let source;
+  try {
+    source = svResolveAuthoritativePlaybackSource(req.params.id, req.query || {});
+  } catch (error) {
+    console.error('[Playback Range] authoritative resolution failed:', error.message);
+    return jsonError(res, error.status || 502, error.code || 'PLAYBACK_SOURCE_RESOLUTION_FAILED', 'Playback source resolution failed');
+  }
+  if (!source) return jsonError(res, 404, 'SOURCE_MISSING', 'Source file missing');
+  console.log(`[Playback Range] canonicalId=${source.canonicalId} sourceType=${source.remote ? 'remote' : 'local'} sourceFingerprint=${source.fingerprint}`);
+  if (!source.remote) return svServeLocalPlaybackSource(req, res, source);
+  return svStreamRemotePlayback(req, res, source.input, {
+    canonicalId: source.canonicalId,
+    sourceKind: 'remote',
+    fingerprint: source.fingerprint,
+  });
+});
+
 try {
   require('./lib/playback-capability').installPlaybackCapability({
     app,
     cacheDir: path.join(SV_CACHE_DIR, 'playback-v2'),
     ffmpegBin: FFMPEG_BIN,
     getMediaInfo: getCachedMediaInfo,
-    resolveLocal(id) {
-      const mediaId = String(id ?? '');
-      const entry = typeof resolveMediaEntry === 'function'
-        ? resolveMediaEntry(mediaId)
-        : (/^\d+$/.test(mediaId) ? fileIndex[Number(mediaId)] : null);
-      if (!entry) return null;
-      const input = entryPath(entry);
-      if (!fs.existsSync(input)) return null;
-      return {
-        id: entry.id || mediaId,
-        input,
-        filename: entry.file,
-        label: entry.file,
-        dir: entry.dir,
-        entry,
-        directUrl: `/stream/${encodeURIComponent(entry.id || mediaId)}?playbackType=media`,
-      };
+    resolveLocal(id, req) {
+      const source = svResolveAuthoritativePlaybackSource(id, req?.query || {});
+      if (source) {
+        console.log(`[Playback v2] canonicalId=${source.canonicalId} sourceType=${source.remote ? 'remote' : 'local'} sourceFingerprint=${source.fingerprint}`);
+      }
+      return source;
     },
     resolveRemote(rawUrl) {
       let input;
@@ -11957,13 +12422,26 @@ try {
       if (!/^https?:\/\//i.test(input)) return null;
       const matched = findCatalogItemByStreamUrl(input);
       if (!matched) return null;
+      const canonicalId = matched.canonicalId || matched.id || matched.streamId || null;
+      if (canonicalId) {
+        const authoritative = svResolveAuthoritativePlaybackSource(canonicalId, {
+          title: matched.title || matched.name,
+        });
+        if (authoritative) return authoritative;
+      }
+      const fingerprint = crypto.createHash('sha1').update(input).digest('hex').slice(0, 20);
       return {
-        id: matched.id ?? matched.streamId ?? null,
+        id: canonicalId,
+        canonicalId,
         input,
+        remote: true,
         filename: matched.filename || remoteFilename(input),
         label: matched.title || matched.name || remoteFilename(input),
         matched,
-        directUrl: `/api/ftp/proxy?playbackType=media&url=${encodeURIComponent(input)}`,
+        fingerprint,
+        directUrl: canonicalId
+          ? `/api/playback-source/${encodeURIComponent(canonicalId)}?playbackType=media`
+          : `/api/ftp/proxy?playbackType=media&url=${encodeURIComponent(input)}`,
       };
     },
     getLocalSidecars(source) {
@@ -12020,9 +12498,21 @@ process.on('unhandledRejection', reason => {
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // STARTUP
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-buildFileIndex();
-buildInstantLists();                                   // âš¡ instant â€” sync, ~10ms
-filterCartoonsAndAnime();                              // ðŸ§¹ remove cartoons/anime (with logging)
+catalogManager = new CatalogManager({
+  moviesDir: MOVIES_DIR,
+  seriesDir: SERIES_DIR,
+  indexFile: INDEX_FILE,
+  videoExts: VIDEO_EXTS,
+  posterCache,
+  reconcileIntervalMs: Math.max(30000, Number(process.env.CATALOG_RECONCILE_MS || 300000) || 300000),
+});
+catalogManager.on('swap', svApplyActiveCatalog);
+if (!catalogManager.loadPersisted()) {
+  fileIndex = [];
+  mediaById = new Map();
+  _movieList = [];
+  _seriesList = [];
+}
 svGetBootSearchIndex();                                // instant search boot payload, no massive catalog
 try { svDetailCatalogIndex(); }                        // warm playable recommendations before first detail click
 catch (e) { console.warn('Detail recommendation warmup failed:', e.message); }
@@ -12059,6 +12549,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`âœ¨ Seeking, pausing, and all controls work instantly\n`);
   console.log(`ðŸ§¹ Cartoon/Anime filter active â€” only real movies & series are shown`);
   console.log('Ã°Å¸â€œÂ¡ Infra telemetry active at /infra/live');
+  catalogManager.start();
   setTimeout(() => svWarmFifaLiveCache('startup'), 750);
   setTimeout(() => {
     svGetFifaNewsPayload().catch(err => svFifaWarn('startup news warmup failed', err));

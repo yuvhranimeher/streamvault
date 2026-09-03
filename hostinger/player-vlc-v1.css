@@ -34,8 +34,25 @@
 #playerModal .play-pause-center {
   min-width: 42px;
   min-height: 42px;
-  border-radius: 6px;
+  border-radius: 999px;
   transition: background-color 120ms ease, transform 120ms ease, opacity 120ms ease;
+}
+
+#playerModal .ctrl-icon-only,
+#playerModal .player-back,
+#playerModal .skip-btn,
+#playerModal .play-pause-center {
+  flex: 0 0 auto;
+  padding: 0;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  justify-content: center;
+}
+
+#playerModal .player-tool-wrap .ctrl,
+#playerModal .series-ctrl-btn,
+#playerModal .next-ep-btn {
+  border-radius: 999px;
 }
 
 #playerModal .player-back:hover,
@@ -74,7 +91,7 @@
 
 #playerModal .progress-track {
   height: 4px;
-  border-radius: 2px;
+  border-radius: 999px;
   background: rgba(255, 255, 255, .27);
   transition: height 100ms ease;
 }
@@ -93,9 +110,12 @@
 }
 
 #playerModal .progress-thumb {
-  width: 12px;
-  height: 12px;
-  margin-top: -4px;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-top: 0;
+  box-sizing: border-box;
+  border-radius: 50%;
   background: #fff;
   border: 2px solid #ff7a1a;
   box-shadow: none;

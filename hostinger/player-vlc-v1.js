@@ -773,11 +773,21 @@
         seekHlsWindow(Number(seconds)||0).catch(error=>failPlayback(userError(error)));
         return;
       }
+      if(session.active && session.capability?.mode==='direct'){
+        const requested=Number(seconds)||0;
+        const duration=Number(video.duration);
+        const target=Number.isFinite(duration) && duration>0
+          ? Math.max(0,Math.min(requested,Math.max(0,duration-.05)))
+          : Math.max(0,requested);
+        video.currentTime=target;
+        return;
+      }
       return seekToTimeLegacy(seconds);
     };
   }catch(_){ }
   try{video.disablePictureInPicture=false;}catch(_){ }
   video.removeAttribute('disablepictureinpicture');
+  window.STREAMVAULT_PLAYER_BUILD='20260904-player-v7.1';
   window.STREAMVAULT_PLAYER_VERSION='player-v7';
   window.StreamVaultVlcPlayerV1={version:'player-v7',STATES,session,start,reset:resetSession};
   console.log('[Playback v2] VLC-like capability player-v7 active');
